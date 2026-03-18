@@ -414,6 +414,65 @@ function InvoiceRow({
               </div>
             ) : detail.data ? (
               <div className="space-y-4">
+                {/* Estimate Approval Card */}
+                {invoice.isEstimate && (
+                  <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900 dark:bg-purple-950/30">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
+                        This is an estimate
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const d = detail.data!;
+                          const clientName = [d.clientFirstName, d.clientLastName]
+                            .filter(Boolean)
+                            .join(" ");
+                          generateInvoicePdf({
+                            practiceName: "Your Practice",
+                            clientName,
+                            clientEmail: d.clientEmail ?? undefined,
+                            patientName: d.patientName ?? undefined,
+                            invoiceDate: d.createdAt
+                              ? new Date(d.createdAt).toLocaleDateString()
+                              : new Date().toLocaleDateString(),
+                            dueDate: d.dueDate
+                              ? new Date(d.dueDate).toLocaleDateString()
+                              : undefined,
+                            status: "estimate",
+                            items: d.items.map((item) => ({
+                              description: item.description ?? "",
+                              quantity: Number(item.quantity ?? 1),
+                              unitPrice: formatCurrency(item.unitPrice),
+                              total: formatCurrency(item.total),
+                            })),
+                            subtotal: formatCurrency(d.subtotal),
+                            tax: formatCurrency(d.tax),
+                            total: formatCurrency(d.total),
+                            paidAmount: formatCurrency(d.paidAmount),
+                          }).save(`estimate-${clientName || "unknown"}.pdf`);
+                        }}
+                      >
+                        <Download className="mr-1 h-3.5 w-3.5" />
+                        Present to Client
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={isMutating}
+                        onClick={(e) => onConvertEstimate(e, invoice.id)}
+                      >
+                        <CheckCircle className="mr-1 h-3.5 w-3.5" />
+                        Approve &amp; Convert
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-6 text-sm">
                   <span className="text-muted-foreground">
                     Client:{" "}

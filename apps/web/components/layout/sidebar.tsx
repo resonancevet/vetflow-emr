@@ -17,6 +17,7 @@ import {
   ClipboardList,
   BarChart3,
   Settings,
+  ShieldAlert,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -41,6 +42,7 @@ const navItems: {
   { href: "/inventory", label: "Inventory", icon: Package, roles: allRoles },
   { href: "/inbox", label: "Inbox", icon: MessageSquare, roles: allRoles },
   { href: "/whiteboard", label: "Whiteboard", icon: ClipboardList, roles: allRoles },
+  { href: "/controlled-substances", label: "Controlled Substances", icon: ShieldAlert, roles: ["admin", "veterinarian"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "veterinarian"] },
   { href: "/settings", label: "Settings", icon: Settings, roles: ["admin"] },
 ];

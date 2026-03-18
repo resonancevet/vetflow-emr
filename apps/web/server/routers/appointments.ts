@@ -9,6 +9,7 @@ import {
   clients,
   users,
   rooms,
+  recurringSeries,
 } from "@openpims/db";
 
 export const appointmentsRouter = createRouter({
@@ -228,4 +229,129 @@ export const appointmentsRouter = createRouter({
         )
       );
   }),
+
+  createRecurring: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "front_desk"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        clientId: z.string().uuid(),
+        doctorId: z.string().uuid().optional(),
+        typeId: z.string().uuid().optional(),
+        roomId: z.string().uuid().optional(),
+        startTime: z.string(),
+        endTime: z.string(),
+        frequency: z.enum(["weekly", "monthly", "annual"]),
+        interval: z.number().int().min(1),
+        occurrences: z.number().int().min(1).max(52),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Calculate the duration of a single appointment
+      const firstStart = new Date(input.startTime);
+      const firstEnd = new Date(input.endTime);
+      const durationMs = firstEnd.getTime() - firstStart.getTime();
+
+      if (durationMs <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "End time must be after start time.",
+        });
+      }
+
+      // Create the recurring series record
+      // Calculate the last occurrence date for the series endDate
+      const lastOccurrenceDate = computeOccurrenceDate(
+        firstStart,
+        input.frequency,
+        input.interval,
+        input.occurrences - 1
+      );
+
+      const [series] = await ctx.db
+        .insert(recurringSeries)
+        .values({
+          practiceId: ctx.practiceId,
+          frequency: input.frequency,
+          interval: input.interval,
+          endDate: lastOccurrenceDate.toISOString().split("T")[0]!,
+        })
+        .returning();
+
+      let created = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < input.occurrences; i++) {
+        const occStart = computeOccurrenceDate(
+          firstStart,
+          input.frequency,
+          input.interval,
+          i
+        );
+        const occEnd = new Date(occStart.getTime() + durationMs);
+
+        // Check for conflicts if a doctor is assigned
+        if (input.doctorId) {
+          const conflicts = await ctx.db
+            .select({ id: appointments.id })
+            .from(appointments)
+            .where(
+              and(
+                eq(appointments.practiceId, ctx.practiceId),
+                eq(appointments.doctorId, input.doctorId),
+                isNull(appointments.deletedAt),
+                lte(appointments.startTime, occEnd),
+                gte(appointments.endTime, occStart),
+                not(inArray(appointments.status, ["cancelled", "no_show"]))
+              )
+            )
+            .limit(1);
+
+          if (conflicts.length > 0) {
+            skipped++;
+            continue;
+          }
+        }
+
+        await ctx.db.insert(appointments).values({
+          practiceId: ctx.practiceId,
+          patientId: input.patientId,
+          clientId: input.clientId,
+          doctorId: input.doctorId,
+          typeId: input.typeId,
+          roomId: input.roomId,
+          startTime: occStart,
+          endTime: occEnd,
+          notes: input.notes,
+          recurringSeriesId: series!.id,
+        });
+
+        created++;
+      }
+
+      return { seriesId: series!.id, created, skipped };
+    }),
 });
+
+/** Compute the start date/time for the Nth occurrence (0-based). */
+function computeOccurrenceDate(
+  baseDate: Date,
+  frequency: "weekly" | "monthly" | "annual",
+  interval: number,
+  n: number
+): Date {
+  const d = new Date(baseDate);
+  switch (frequency) {
+    case "weekly":
+      d.setDate(d.getDate() + 7 * interval * n);
+      break;
+    case "monthly":
+      d.setMonth(d.getMonth() + interval * n);
+      break;
+    case "annual":
+      d.setFullYear(d.getFullYear() + interval * n);
+      break;
+  }
+  return d;
+}

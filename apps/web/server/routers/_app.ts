@@ -16,6 +16,8 @@ import { dataRouter } from "./data";
 import { aiRouter } from "./ai";
 import { webhooksRouter } from "./webhooks";
 import { notificationsRouter } from "./notifications";
+import { templatesRouter } from "./templates";
+import { controlledSubstancesRouter } from "./controlled-substances";
 
 export const appRouter = createRouter({
   auth: authRouter,
@@ -35,6 +37,8 @@ export const appRouter = createRouter({
   ai: aiRouter,
   webhooks: webhooksRouter,
   notifications: notificationsRouter,
+  templates: templatesRouter,
+  controlledSubstances: controlledSubstancesRouter,
 });
 
 export type AppRouter = typeof appRouter;

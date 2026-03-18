@@ -19,6 +19,7 @@ import {
   Upload,
   FileSpreadsheet,
   Check,
+  Layers,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────────────
-type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data";
+type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data" | "templates";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "practice", label: "Practice Info", icon: Settings },
@@ -35,6 +36,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "appointmentTypes", label: "Appointment Types", icon: Calendar },
   { id: "rooms", label: "Rooms", icon: DoorOpen },
   { id: "data", label: "Data", icon: Database },
+  { id: "templates", label: "Templates", icon: Layers },
 ];
 
 const TIMEZONES = [
@@ -124,6 +126,7 @@ export default function SettingsPage() {
         {activeTab === "appointmentTypes" && <AppointmentTypesTab />}
         {activeTab === "rooms" && <RoomsTab />}
         {activeTab === "data" && <DataTab />}
+        {activeTab === "templates" && <TemplatesTab />}
       </div>
     </div>
   );
@@ -1463,6 +1466,439 @@ function RoomsTab() {
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
                   No rooms configured.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Templates ────────────────────────────────────────────────
+const TEMPLATE_CATEGORIES = [
+  "surgery",
+  "wellness",
+  "dental",
+  "preventive",
+  "emergency",
+  "other",
+] as const;
+
+type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
+
+const CATEGORY_BADGE: Record<string, string> = {
+  surgery: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  wellness: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+  dental: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+  preventive: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
+  emergency: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
+  other: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
+};
+
+interface TemplateItem {
+  itemType: "service" | "product";
+  description: string;
+  defaultQuantity: number;
+  defaultUnitPrice: string;
+  sortOrder: number;
+}
+
+function TemplatesTab() {
+  const utils = trpc.useUtils();
+  const { data: templateList, isLoading } = trpc.templates.list.useQuery();
+  const createMutation = trpc.templates.create.useMutation({
+    onSuccess: () => {
+      utils.templates.list.invalidate();
+      setShowAdd(false);
+      resetAddForm();
+      toast.success("Template created");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+  const updateMutation = trpc.templates.update.useMutation({
+    onSuccess: () => {
+      utils.templates.list.invalidate();
+      toast.success("Template updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    description: "",
+    category: "other" as TemplateCategory,
+  });
+  const [addItems, setAddItems] = useState<TemplateItem[]>([
+    { itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: 0 },
+  ]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    null
+  );
+
+  const resetAddForm = () => {
+    setAddForm({ name: "", description: "", category: "other" });
+    setAddItems([{ itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: 0 }]);
+  };
+
+  const addItemRow = () => {
+    setAddItems([
+      ...addItems,
+      { itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: addItems.length },
+    ]);
+  };
+
+  const removeItemRow = (index: number) => {
+    setAddItems(addItems.filter((_, i) => i !== index));
+  };
+
+  const updateItem = (index: number, field: keyof TemplateItem, value: string | number) => {
+    setAddItems(
+      addItems.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item
+      )
+    );
+  };
+
+  const selectedTemplate = templateList?.find(
+    (t) => t.id === selectedTemplateId
+  );
+  const { data: selectedTemplateDetail } = trpc.templates.getById.useQuery(
+    { id: selectedTemplateId! },
+    { enabled: !!selectedTemplateId }
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Detail view for a selected template
+  if (selectedTemplate) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedTemplateId(null)}
+          >
+            <X className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+          <h3 className="text-sm font-semibold">{selectedTemplate.name}</h3>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              selectedTemplate.isActive !== false
+                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
+            )}
+          >
+            {selectedTemplate.isActive !== false ? "Active" : "Inactive"}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updateMutation.isPending}
+            onClick={() =>
+              updateMutation.mutate({
+                id: selectedTemplate.id,
+                isActive: !selectedTemplate.isActive,
+              })
+            }
+          >
+            {updateMutation.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            {selectedTemplate.isActive !== false ? "Deactivate" : "Activate"}
+          </Button>
+        </div>
+
+        {selectedTemplate.description && (
+          <p className="text-sm text-muted-foreground">
+            {selectedTemplate.description}
+          </p>
+        )}
+
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-3 text-left font-medium">Description</th>
+                <th className="px-4 py-3 text-left font-medium">Type</th>
+                <th className="px-4 py-3 text-left font-medium">Quantity</th>
+                <th className="px-4 py-3 text-right font-medium">Unit Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedTemplateDetail?.items?.map((item: any, i: number) => (
+                <tr
+                  key={i}
+                  className="border-b border-border last:border-0"
+                >
+                  <td className="px-4 py-3 font-medium">{item.description}</td>
+                  <td className="px-4 py-3 text-muted-foreground capitalize">
+                    {item.itemType}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {item.defaultQuantity}
+                  </td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">
+                    ${Number(item.defaultUnitPrice).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {(!selectedTemplateDetail?.items || selectedTemplateDetail.items.length === 0) && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
+                    No items in this template.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          onClick={() => {
+            setShowAdd(!showAdd);
+            resetAddForm();
+          }}
+          size="sm"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Add Template
+        </Button>
+      </div>
+
+      {showAdd && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <h3 className="text-sm font-semibold">New Treatment Template</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              placeholder="Template name"
+              value={addForm.name}
+              onChange={(e) =>
+                setAddForm({ ...addForm, name: e.target.value })
+              }
+            />
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={addForm.category}
+              onChange={(e) =>
+                setAddForm({
+                  ...addForm,
+                  category: e.target.value as TemplateCategory,
+                })
+              }
+            >
+              {TEMPLATE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c.charAt(0).toUpperCase() + c.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Input
+            placeholder="Description (optional)"
+            value={addForm.description}
+            onChange={(e) =>
+              setAddForm({ ...addForm, description: e.target.value })
+            }
+          />
+
+          {/* Items */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Items</h4>
+            {addItems.map((item, index) => (
+              <div key={index} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center">
+                <Input
+                  placeholder="Item description"
+                  value={item.description}
+                  onChange={(e) =>
+                    updateItem(index, "description", e.target.value)
+                  }
+                />
+                <select
+                  className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+                  value={item.itemType}
+                  onChange={(e) =>
+                    updateItem(index, "itemType", e.target.value)
+                  }
+                >
+                  <option value="service">Service</option>
+                  <option value="product">Product</option>
+                </select>
+                <Input
+                  type="number"
+                  placeholder="Qty"
+                  className="w-20"
+                  value={item.defaultQuantity}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "defaultQuantity",
+                      parseInt(e.target.value) || 1
+                    )
+                  }
+                />
+                <Input
+                  type="number"
+                  placeholder="Price"
+                  className="w-28"
+                  value={item.defaultUnitPrice}
+                  onChange={(e) =>
+                    updateItem(
+                      index,
+                      "defaultUnitPrice",
+                      e.target.value
+                    )
+                  }
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={addItems.length <= 1}
+                  onClick={() => removeItemRow(index)}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+            <Button size="sm" variant="outline" onClick={addItemRow}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Item
+            </Button>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={
+                !addForm.name ||
+                addItems.every((i) => !i.description) ||
+                createMutation.isPending
+              }
+              onClick={() =>
+                createMutation.mutate({
+                  ...addForm,
+                  description: addForm.description || undefined,
+                  items: addItems.filter((i) => i.description),
+                })
+              }
+            >
+              {createMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Create
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowAdd(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+          {createMutation.error && (
+            <p className="text-sm text-destructive">
+              {createMutation.error.message}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-3 text-left font-medium">Name</th>
+              <th className="px-4 py-3 text-left font-medium">Category</th>
+              <th className="px-4 py-3 text-left font-medium">Items</th>
+              <th className="px-4 py-3 text-left font-medium">Status</th>
+              <th className="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {templateList?.map((template) => (
+              <tr
+                key={template.id}
+                className="border-b border-border last:border-0 cursor-pointer hover:bg-muted/30"
+                onClick={() => setSelectedTemplateId(template.id)}
+              >
+                <td className="px-4 py-3 font-medium">{template.name}</td>
+                <td className="px-4 py-3">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                      CATEGORY_BADGE[template.category ?? "other"] ?? CATEGORY_BADGE.other
+                    )}
+                  >
+                    {template.category}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  —
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      template.isActive !== false
+                        ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                        : "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
+                    )}
+                  >
+                    {template.isActive !== false ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateMutation.mutate({
+                        id: template.id,
+                        isActive: !template.isActive,
+                      });
+                    }}
+                  >
+                    {template.isActive !== false ? (
+                      <X className="h-4 w-4 text-destructive" />
+                    ) : (
+                      <Check className="h-4 w-4 text-green-600" />
+                    )}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {templateList?.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
+                  No templates configured.
                 </td>
               </tr>
             )}

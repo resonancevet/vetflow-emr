@@ -1,12 +1,21 @@
 import { z } from "zod";
-import { eq, and, isNull, ilike, or, sql, desc } from "drizzle-orm";
+import { eq, and, isNull, ilike, or, sql, desc, ne } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
   patients,
   patientWeights,
   patientAllergies,
   clients,
+  appointments,
+  soapNotes,
+  vaccinationRecords,
+  labResults,
+  procedures,
+  prescriptions,
+  invoices,
 } from "@openpims/db";
+import { alias } from "drizzle-orm/pg-core";
 
 export const patientsRouter = createRouter({
   list: protectedProcedure
@@ -283,5 +292,201 @@ export const patientsRouter = createRouter({
         })
         .returning();
       return allergy!;
+    }),
+
+  merge: protectedProcedure
+    .use(requireRole("admin"))
+    .input(
+      z.object({
+        keepId: z.string().uuid(),
+        mergeId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.keepId === input.mergeId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot merge a patient into itself.",
+        });
+      }
+
+      // Verify both patients exist in the practice
+      const [keepPatient] = await ctx.db
+        .select({ id: patients.id })
+        .from(patients)
+        .where(
+          and(
+            eq(patients.id, input.keepId),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patients.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!keepPatient) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "The patient to keep was not found.",
+        });
+      }
+
+      const [mergePatient] = await ctx.db
+        .select({ id: patients.id })
+        .from(patients)
+        .where(
+          and(
+            eq(patients.id, input.mergeId),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patients.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!mergePatient) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "The patient to merge was not found.",
+        });
+      }
+
+      // Re-point all records from mergeId to keepId
+      await Promise.all([
+        ctx.db
+          .update(appointments)
+          .set({ patientId: input.keepId })
+          .where(eq(appointments.patientId, input.mergeId)),
+        ctx.db
+          .update(soapNotes)
+          .set({ patientId: input.keepId })
+          .where(eq(soapNotes.patientId, input.mergeId)),
+        ctx.db
+          .update(vaccinationRecords)
+          .set({ patientId: input.keepId })
+          .where(eq(vaccinationRecords.patientId, input.mergeId)),
+        ctx.db
+          .update(labResults)
+          .set({ patientId: input.keepId })
+          .where(eq(labResults.patientId, input.mergeId)),
+        ctx.db
+          .update(procedures)
+          .set({ patientId: input.keepId })
+          .where(eq(procedures.patientId, input.mergeId)),
+        ctx.db
+          .update(prescriptions)
+          .set({ patientId: input.keepId })
+          .where(eq(prescriptions.patientId, input.mergeId)),
+        ctx.db
+          .update(patientWeights)
+          .set({ patientId: input.keepId })
+          .where(eq(patientWeights.patientId, input.mergeId)),
+        ctx.db
+          .update(patientAllergies)
+          .set({ patientId: input.keepId })
+          .where(eq(patientAllergies.patientId, input.mergeId)),
+        ctx.db
+          .update(invoices)
+          .set({ patientId: input.keepId })
+          .where(eq(invoices.patientId, input.mergeId)),
+      ]);
+
+      // Soft-delete the merged patient
+      await ctx.db
+        .update(patients)
+        .set({ deletedAt: new Date() })
+        .where(eq(patients.id, input.mergeId));
+
+      // Return the kept patient
+      const [kept] = await ctx.db
+        .select()
+        .from(patients)
+        .where(eq(patients.id, input.keepId))
+        .limit(1);
+
+      return kept!;
+    }),
+
+  findDuplicates: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Find patients with similar names within the practice.
+      // Self-join patients table where names match via ILIKE and IDs differ.
+      const p2 = alias(patients, "p2");
+
+      const rows = await ctx.db
+        .select({
+          id: patients.id,
+          name: patients.name,
+          species: patients.species,
+          breed: patients.breed,
+          clientId: patients.clientId,
+          duplicateId: p2.id,
+          duplicateName: p2.name,
+          duplicateSpecies: p2.species,
+          duplicateBreed: p2.breed,
+          duplicateClientId: p2.clientId,
+        })
+        .from(patients)
+        .innerJoin(
+          p2,
+          and(
+            eq(patients.practiceId, p2.practiceId),
+            ilike(patients.name, p2.name),
+            ne(patients.id, p2.id),
+            // Use id ordering to avoid returning both (A,B) and (B,A)
+            sql`${patients.id} < ${p2.id}`
+          )
+        )
+        .where(
+          and(
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patients.deletedAt),
+            isNull(p2.deletedAt)
+          )
+        )
+        .orderBy(patients.name)
+        .limit(100);
+
+      // Group into sets of potential duplicates
+      const groupMap = new Map<
+        string,
+        {
+          name: string;
+          patients: {
+            id: string;
+            name: string;
+            species: string;
+            breed: string | null;
+            clientId: string;
+          }[];
+        }
+      >();
+
+      for (const row of rows) {
+        const key = row.name.toLowerCase();
+        if (!groupMap.has(key)) {
+          groupMap.set(key, { name: row.name, patients: [] });
+        }
+        const group = groupMap.get(key)!;
+        // Add both sides if not already present
+        if (!group.patients.some((p) => p.id === row.id)) {
+          group.patients.push({
+            id: row.id,
+            name: row.name,
+            species: row.species,
+            breed: row.breed,
+            clientId: row.clientId,
+          });
+        }
+        if (!group.patients.some((p) => p.id === row.duplicateId)) {
+          group.patients.push({
+            id: row.duplicateId,
+            name: row.duplicateName,
+            species: row.duplicateSpecies,
+            breed: row.duplicateBreed,
+            clientId: row.duplicateClientId,
+          });
+        }
+      }
+
+      return Array.from(groupMap.values());
     }),
 });
