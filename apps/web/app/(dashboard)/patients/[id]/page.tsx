@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -8,10 +8,14 @@ import {
   User,
   Activity,
   Shield,
+  Camera,
+  FileDown,
 } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { generateMedicalSummaryPdf } from "@/lib/pdf";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -65,10 +69,141 @@ export default function PatientDetailPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
   const { data: patient, isLoading, error } = trpc.patients.getById.useQuery(
     { id: params.id },
     { enabled: !!params.id }
   );
+
+  const updatePhotoMutation = trpc.patients.update.useMutation({
+    onSuccess: () => {
+      toast.success("Patient photo updated");
+      utils.patients.getById.invalidate({ id: params.id });
+    },
+    onError: (err) => {
+      toast.error(`Failed to update patient photo: ${err.message}`);
+    },
+  });
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", "patient-photos");
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const data = await res.json();
+      updatePhotoMutation.mutate({ id: params.id, photoUrl: data.url });
+    } catch {
+      toast.error("Failed to upload photo");
+    }
+
+    // Reset file input so the same file can be re-selected
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  // Medical summary PDF data queries (lazy -- only fetched on demand)
+  const problemsQuery = trpc.records.listProblems.useQuery(
+    { patientId: params.id },
+    { enabled: false }
+  );
+  const vaccinationsQuery = trpc.records.listVaccinations.useQuery(
+    { patientId: params.id },
+    { enabled: false }
+  );
+  const soapNotesQuery = trpc.records.listSoapNotes.useQuery(
+    { patientId: params.id },
+    { enabled: false }
+  );
+  const prescriptionsQuery = trpc.records.listPrescriptions.useQuery(
+    { patientId: params.id },
+    { enabled: false }
+  );
+
+  async function handleDownloadSummary() {
+    if (!patient) return;
+
+    try {
+      const [problemsResult, vaccinationsResult, soapNotesResult, prescriptionsResult] =
+        await Promise.all([
+          problemsQuery.refetch(),
+          vaccinationsQuery.refetch(),
+          soapNotesQuery.refetch(),
+          prescriptionsQuery.refetch(),
+        ]);
+
+      const problems = problemsResult.data ?? [];
+      const vaccinations = vaccinationsResult.data ?? [];
+      const soapNotes = soapNotesResult.data ?? [];
+      const prescriptions = prescriptionsResult.data ?? [];
+
+      generateMedicalSummaryPdf({
+        practiceName: "",
+        patientName: patient.name,
+        species: patient.species ?? "Unknown",
+        breed: patient.breed ?? undefined,
+        sex: patient.sex ?? undefined,
+        dob: patient.dob ?? undefined,
+        color: patient.color ?? undefined,
+        microchip: patient.microchipNumber ?? undefined,
+        clientName: [patient.clientFirstName, patient.clientLastName]
+          .filter(Boolean)
+          .join(" "),
+        allergies: (patient.allergies ?? []).map((a) => ({
+          allergen: a.allergen,
+          severity: a.severity ?? "unknown",
+        })),
+        problems: problems.map((p) => ({
+          description: p.description,
+          status: p.status ?? "active",
+          onsetDate: p.onsetDate ?? undefined,
+        })),
+        vaccinations: vaccinations.map((v) => ({
+          name: v.vaccineName,
+          date: v.administeredAt
+            ? new Date(v.administeredAt).toLocaleDateString()
+            : "Unknown",
+          nextDue: v.nextDueDate
+            ? new Date(v.nextDueDate).toLocaleDateString()
+            : undefined,
+        })),
+        recentNotes: soapNotes.slice(0, 5).map((n) => ({
+          date: n.createdAt
+            ? new Date(n.createdAt).toLocaleDateString()
+            : "Unknown",
+          subjective: n.subjective ?? undefined,
+          objective: n.objective ?? undefined,
+          assessment: n.assessment ?? undefined,
+          plan: n.plan ?? undefined,
+        })),
+        prescriptions: prescriptions.map((rx) => ({
+          medication: rx.medicationName,
+          dosage: rx.dosage ?? "",
+          frequency: rx.frequency ?? "",
+          status: rx.status ?? "active",
+        })),
+      }).save(`${patient.name.replace(/\s+/g, "_")}_medical_summary.pdf`);
+
+      toast.success("Medical summary downloaded");
+    } catch {
+      toast.error("Failed to generate medical summary");
+    }
+  }
 
   if (isLoading) {
     return (
@@ -109,8 +244,33 @@ export default function PatientDetailPage() {
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-2xl">
-              {speciesEmoji[patient.species ?? "other"] ?? "\uD83D\uDC3E"}
+            <div className="group relative h-14 w-14">
+              {patient.photoUrl ? (
+                <img
+                  src={patient.photoUrl}
+                  alt={patient.name}
+                  className="h-14 w-14 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-2xl">
+                  {speciesEmoji[patient.species ?? "other"] ?? "\uD83D\uDC3E"}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                title="Upload photo"
+              >
+                <Camera className="h-5 w-5 text-white" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -152,13 +312,23 @@ export default function PatientDetailPage() {
               )}
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/patients/${patient.id}/edit`)}
-          >
-            Edit
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadSummary}
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              Download Summary
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/patients/${patient.id}/edit`)}
+            >
+              Edit
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -346,14 +516,81 @@ export default function PatientDetailPage() {
         )}
 
         {activeTab === "vaccinations" && (
-          <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
-            <Shield className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-sm text-muted-foreground">
-              Vaccination records coming soon
-            </p>
-          </div>
+          <VaccinationsTab patientId={patient.id} />
         )}
       </div>
+    </div>
+  );
+}
+
+function VaccinationsTab({ patientId }: { patientId: string }) {
+  const { data: vaccinations, isLoading } =
+    trpc.records.listVaccinations.useQuery({ patientId });
+
+  if (isLoading) {
+    return (
+      <div className="text-center text-muted-foreground py-8">Loading...</div>
+    );
+  }
+
+  if (!vaccinations || vaccinations.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+        <Shield className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          No vaccination records yet
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/50">
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Vaccine Name
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Date Given
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Next Due
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Lot Number
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Administered By
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {vaccinations.map((vax) => (
+            <tr
+              key={vax.id}
+              className="border-b border-border last:border-0"
+            >
+              <td className="px-4 py-3 font-medium">{vax.vaccineName}</td>
+              <td className="px-4 py-3">
+                {vax.administeredAt
+                  ? new Date(vax.administeredAt).toLocaleDateString()
+                  : "\u2014"}
+              </td>
+              <td className="px-4 py-3">
+                {vax.nextDueDate
+                  ? new Date(vax.nextDueDate).toLocaleDateString()
+                  : "\u2014"}
+              </td>
+              <td className="px-4 py-3">{vax.lotNumber ?? "\u2014"}</td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {vax.administeredByName ?? "\u2014"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

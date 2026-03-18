@@ -14,12 +14,14 @@ import {
   ChevronUp,
   FlaskConical,
   Scissors,
+  Tag,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { generatePrescriptionLabelPdf } from "@/lib/pdf";
 
 type Tab = "soap" | "vaccinations" | "prescriptions" | "problems" | "labResults" | "procedures";
 
@@ -545,6 +547,9 @@ export default function RecordsPage() {
                           <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                             Refills
                           </th>
+                          <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -572,6 +577,42 @@ export default function RecordsPage() {
                             </td>
                             <td className="px-4 py-3">
                               {rx.refillsRemaining ?? 0}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Print Label"
+                                onClick={() => {
+                                  const clientName = [
+                                    selectedPatient?.clientFirstName,
+                                    selectedPatient?.clientLastName,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ");
+                                  generatePrescriptionLabelPdf({
+                                    practiceName: "",
+                                    patientName: selectedPatient?.name ?? "",
+                                    clientName,
+                                    species: selectedPatient?.species ?? "",
+                                    medicationName: rx.medicationName,
+                                    dosage: rx.dosage ?? "",
+                                    frequency: rx.frequency ?? "",
+                                    instructions: rx.instructions ?? undefined,
+                                    prescribedBy: rx.prescriberName ?? "",
+                                    startDate: rx.startDate
+                                      ? new Date(rx.startDate).toLocaleDateString()
+                                      : new Date().toLocaleDateString(),
+                                    quantity: rx.quantity != null ? String(rx.quantity) : undefined,
+                                    refillsRemaining: rx.refillsRemaining ?? undefined,
+                                  }).save(
+                                    `label-${rx.medicationName.replace(/\s+/g, "-").toLowerCase()}.pdf`
+                                  );
+                                }}
+                              >
+                                <Tag className="mr-1 h-3.5 w-3.5" />
+                                Print Label
+                              </Button>
                             </td>
                           </tr>
                         ))}

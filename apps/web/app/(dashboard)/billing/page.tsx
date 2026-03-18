@@ -12,9 +12,11 @@ import {
   Plus,
   DollarSign,
   ArrowRightLeft,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { generateInvoicePdf } from "@/lib/pdf";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
@@ -503,22 +505,61 @@ function InvoiceRow({
 
                 {/* Balance Summary */}
                 {!invoice.isEstimate && (
-                  <div className="flex items-center gap-6 rounded-lg border border-border bg-background p-3 text-sm">
-                    <span>
-                      Total: <span className="font-semibold">{formatCurrency(detail.data.total)}</span>
-                    </span>
-                    <span>
-                      Paid: <span className="font-semibold text-green-600">{formatCurrency(detail.data.paidAmount)}</span>
-                    </span>
-                    <span>
-                      Balance:{" "}
-                      <span className="font-semibold text-red-600">
-                        {formatCurrency(
-                          Number(detail.data.total ?? 0) -
-                            Number(detail.data.paidAmount ?? 0)
-                        )}
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-background p-3 text-sm">
+                    <div className="flex items-center gap-6">
+                      <span>
+                        Total: <span className="font-semibold">{formatCurrency(detail.data.total)}</span>
                       </span>
-                    </span>
+                      <span>
+                        Paid: <span className="font-semibold text-green-600">{formatCurrency(detail.data.paidAmount)}</span>
+                      </span>
+                      <span>
+                        Balance:{" "}
+                        <span className="font-semibold text-red-600">
+                          {formatCurrency(
+                            Number(detail.data.total ?? 0) -
+                              Number(detail.data.paidAmount ?? 0)
+                          )}
+                        </span>
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const d = detail.data!;
+                        const clientName = [d.clientFirstName, d.clientLastName]
+                          .filter(Boolean)
+                          .join(" ");
+                        generateInvoicePdf({
+                          practiceName: "Your Practice",
+                          clientName,
+                          clientEmail: d.clientEmail ?? undefined,
+                          patientName: d.patientName ?? undefined,
+                          invoiceDate: d.createdAt
+                            ? new Date(d.createdAt).toLocaleDateString()
+                            : new Date().toLocaleDateString(),
+                          dueDate: d.dueDate
+                            ? new Date(d.dueDate).toLocaleDateString()
+                            : undefined,
+                          status: d.status,
+                          items: d.items.map((item) => ({
+                            description: item.description ?? "",
+                            quantity: Number(item.quantity ?? 1),
+                            unitPrice: formatCurrency(item.unitPrice),
+                            total: formatCurrency(item.total),
+                          })),
+                          subtotal: formatCurrency(d.subtotal),
+                          tax: formatCurrency(d.tax),
+                          total: formatCurrency(d.total),
+                          paidAmount: formatCurrency(d.paidAmount),
+                        }).save(`invoice-${clientName || "unknown"}.pdf`);
+                      }}
+                    >
+                      <Download className="mr-1 h-3.5 w-3.5" />
+                      Download PDF
+                    </Button>
                   </div>
                 )}
 

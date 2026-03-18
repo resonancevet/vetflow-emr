@@ -212,6 +212,7 @@ export const patientsRouter = createRouter({
         color: z.string().optional(),
         microchipNumber: z.string().optional(),
         status: z.enum(["active", "inactive", "deceased"]).optional(),
+        photoUrl: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {

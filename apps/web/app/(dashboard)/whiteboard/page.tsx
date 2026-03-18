@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Clock, User, X, Loader2, MapPin } from "lucide-react";
+import { Clock, User, X, Loader2, MapPin, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { generateDischargeInstructions } from "@/lib/pdf";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -295,6 +296,29 @@ function AppointmentDetailModal({
     });
   }
 
+  const handlePrintDischarge = () => {
+    generateDischargeInstructions({
+      practiceName: "",
+      patientName: appointment.patientName || "Unknown",
+      species: appointment.patientSpecies || "unknown",
+      clientName: clientName,
+      visitDate: new Date(appointment.startTime).toLocaleDateString(),
+      doctorName: appointment.doctorName || undefined,
+      medications: [],
+      instructions: [
+        "Monitor your pet for any changes in behavior or appetite",
+        "Administer all prescribed medications as directed",
+        "Keep the follow-up appointment if one was scheduled",
+        "Ensure fresh water is available at all times",
+      ],
+      emergencyNotes:
+        "If your pet shows signs of difficulty breathing, excessive bleeding, seizures, collapse, or inability to urinate, seek emergency veterinary care immediately.",
+    }).save(
+      `discharge_${(appointment.patientName || "patient").replace(/\s+/g, "_")}.pdf`
+    );
+    toast.success("Discharge instructions downloaded");
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div
@@ -384,7 +408,7 @@ function AppointmentDetailModal({
         </div>
 
         {/* Actions */}
-        {statusActions.length > 0 && (
+        {(statusActions.length > 0 || current === "checked_out") && (
           <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
             {statusActions.map((action) => (
               <Button
@@ -400,6 +424,16 @@ function AppointmentDetailModal({
                 {action.label}
               </Button>
             ))}
+            {current === "checked_out" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handlePrintDischarge}
+              >
+                <FileText className="mr-1.5 h-3 w-3" />
+                Print Discharge
+              </Button>
+            )}
           </div>
         )}
       </div>
