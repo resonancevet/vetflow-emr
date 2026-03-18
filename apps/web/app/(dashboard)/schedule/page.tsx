@@ -11,6 +11,7 @@ import {
   X,
   Loader2,
   Plus,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -364,8 +365,11 @@ function AppointmentDetailPopover({
         </div>
 
         {/* Actions */}
-        {statusActions.length > 0 && (
+        {(statusActions.length > 0 || current === "scheduled" || current === "confirmed") && (
           <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
+            {(current === "scheduled" || current === "confirmed") && (
+              <SendReminderButton appointmentId={appointment.id} />
+            )}
             {statusActions.map((action) => (
               <Button
                 key={action.status}
@@ -384,6 +388,33 @@ function AppointmentDetailPopover({
         )}
       </div>
     </div>
+  );
+}
+
+function SendReminderButton({ appointmentId }: { appointmentId: string }) {
+  const sendReminder = trpc.notifications.sendAppointmentReminder.useMutation({
+    onSuccess: () => {
+      toast.success("Reminder sent");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={sendReminder.isPending}
+      onClick={() => sendReminder.mutate({ appointmentId })}
+    >
+      {sendReminder.isPending ? (
+        <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+      ) : (
+        <Mail className="mr-1.5 h-3 w-3" />
+      )}
+      Send Reminder
+    </Button>
   );
 }
 

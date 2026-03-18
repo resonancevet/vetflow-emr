@@ -13,6 +13,7 @@ import {
   DollarSign,
   ArrowRightLeft,
   Download,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -523,43 +524,46 @@ function InvoiceRow({
                         </span>
                       </span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const d = detail.data!;
-                        const clientName = [d.clientFirstName, d.clientLastName]
-                          .filter(Boolean)
-                          .join(" ");
-                        generateInvoicePdf({
-                          practiceName: "Your Practice",
-                          clientName,
-                          clientEmail: d.clientEmail ?? undefined,
-                          patientName: d.patientName ?? undefined,
-                          invoiceDate: d.createdAt
-                            ? new Date(d.createdAt).toLocaleDateString()
-                            : new Date().toLocaleDateString(),
-                          dueDate: d.dueDate
-                            ? new Date(d.dueDate).toLocaleDateString()
-                            : undefined,
-                          status: d.status,
-                          items: d.items.map((item) => ({
-                            description: item.description ?? "",
-                            quantity: Number(item.quantity ?? 1),
-                            unitPrice: formatCurrency(item.unitPrice),
-                            total: formatCurrency(item.total),
-                          })),
-                          subtotal: formatCurrency(d.subtotal),
-                          tax: formatCurrency(d.tax),
-                          total: formatCurrency(d.total),
-                          paidAmount: formatCurrency(d.paidAmount),
-                        }).save(`invoice-${clientName || "unknown"}.pdf`);
-                      }}
-                    >
-                      <Download className="mr-1 h-3.5 w-3.5" />
-                      Download PDF
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const d = detail.data!;
+                          const clientName = [d.clientFirstName, d.clientLastName]
+                            .filter(Boolean)
+                            .join(" ");
+                          generateInvoicePdf({
+                            practiceName: "Your Practice",
+                            clientName,
+                            clientEmail: d.clientEmail ?? undefined,
+                            patientName: d.patientName ?? undefined,
+                            invoiceDate: d.createdAt
+                              ? new Date(d.createdAt).toLocaleDateString()
+                              : new Date().toLocaleDateString(),
+                            dueDate: d.dueDate
+                              ? new Date(d.dueDate).toLocaleDateString()
+                              : undefined,
+                            status: d.status,
+                            items: d.items.map((item) => ({
+                              description: item.description ?? "",
+                              quantity: Number(item.quantity ?? 1),
+                              unitPrice: formatCurrency(item.unitPrice),
+                              total: formatCurrency(item.total),
+                            })),
+                            subtotal: formatCurrency(d.subtotal),
+                            tax: formatCurrency(d.tax),
+                            total: formatCurrency(d.total),
+                            paidAmount: formatCurrency(d.paidAmount),
+                          }).save(`invoice-${clientName || "unknown"}.pdf`);
+                        }}
+                      >
+                        <Download className="mr-1 h-3.5 w-3.5" />
+                        Download PDF
+                      </Button>
+                      <EmailInvoiceButton invoiceId={invoice.id} />
+                    </div>
                   </div>
                 )}
 
@@ -582,6 +586,36 @@ function InvoiceRow({
         </tr>
       )}
     </>
+  );
+}
+
+function EmailInvoiceButton({ invoiceId }: { invoiceId: string }) {
+  const sendInvoiceEmail = trpc.notifications.sendInvoiceEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Invoice emailed");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={sendInvoiceEmail.isPending}
+      onClick={(e) => {
+        e.stopPropagation();
+        sendInvoiceEmail.mutate({ invoiceId });
+      }}
+    >
+      {sendInvoiceEmail.isPending ? (
+        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Mail className="mr-1 h-3.5 w-3.5" />
+      )}
+      Email Invoice
+    </Button>
   );
 }
 
