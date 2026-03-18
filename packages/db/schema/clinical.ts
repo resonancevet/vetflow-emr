@@ -1,0 +1,315 @@
+import {
+  pgTable,
+  pgEnum,
+  uuid,
+  varchar,
+  text,
+  timestamp,
+  integer,
+  numeric,
+  date,
+  index,
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { baseColumns } from "./common";
+import { practices } from "./practices";
+import { users } from "./users";
+import { patients } from "./patients";
+import { appointments } from "./scheduling";
+
+export const problemStatusEnum = pgEnum("problem_status", [
+  "active",
+  "resolved",
+  "chronic",
+]);
+
+export const labStatusEnum = pgEnum("lab_status", [
+  "pending",
+  "completed",
+  "reviewed",
+]);
+
+export const noteTypeEnum = pgEnum("note_type", [
+  "general",
+  "follow_up",
+  "phone_call",
+]);
+
+export const caseStatusEnum = pgEnum("case_status", ["open", "closed"]);
+
+export const soapNotes = pgTable(
+  "soap_notes",
+  {
+    ...baseColumns(),
+    practiceId: uuid("practice_id")
+      .notNull()
+      .references(() => practices.id),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    appointmentId: uuid("appointment_id").references(() => appointments.id),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id),
+    subjective: text("subjective"),
+    objective: text("objective"),
+    assessment: text("assessment"),
+    plan: text("plan"),
+  },
+  (table) => ({
+    patientIdx: index("soap_notes_patient_idx").on(table.patientId),
+    practiceIdx: index("soap_notes_practice_idx").on(table.practiceId, table.deletedAt),
+  })
+);
+
+export const vaccinationRecords = pgTable("vaccination_records", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  vaccineName: varchar("vaccine_name", { length: 255 }).notNull(),
+  lotNumber: varchar("lot_number", { length: 64 }),
+  manufacturer: varchar("manufacturer", { length: 128 }),
+  administeredBy: uuid("administered_by").references(() => users.id),
+  administeredAt: timestamp("administered_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  nextDueDate: date("next_due_date"),
+  certificateUrl: varchar("certificate_url", { length: 512 }),
+});
+
+export const labResults = pgTable("lab_results", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  appointmentId: uuid("appointment_id").references(() => appointments.id),
+  testName: varchar("test_name", { length: 255 }).notNull(),
+  resultValue: varchar("result_value", { length: 128 }),
+  unit: varchar("unit", { length: 32 }),
+  referenceRangeLow: numeric("reference_range_low", {
+    precision: 10,
+    scale: 3,
+  }),
+  referenceRangeHigh: numeric("reference_range_high", {
+    precision: 10,
+    scale: 3,
+  }),
+  status: labStatusEnum("status").notNull().default("pending"),
+  orderedBy: uuid("ordered_by").references(() => users.id),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+});
+
+export const procedures = pgTable("procedures", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  appointmentId: uuid("appointment_id").references(() => appointments.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  performedBy: uuid("performed_by").references(() => users.id),
+  anesthesiaUsed: text("anesthesia_used"),
+  durationMinutes: integer("duration_minutes"),
+  notes: text("notes"),
+});
+
+export const clinicalNotes = pgTable("clinical_notes", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  authorId: uuid("author_id")
+    .notNull()
+    .references(() => users.id),
+  noteType: noteTypeEnum("note_type").notNull().default("general"),
+  content: text("content").notNull(),
+});
+
+export const problemList = pgTable("problem_list", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  description: varchar("description", { length: 500 }).notNull(),
+  status: problemStatusEnum("status").notNull().default("active"),
+  onsetDate: date("onset_date"),
+  resolvedDate: date("resolved_date"),
+});
+
+export const cases = pgTable("cases", {
+  ...baseColumns(),
+  practiceId: uuid("practice_id")
+    .notNull()
+    .references(() => practices.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: caseStatusEnum("status").notNull().default("open"),
+  openedAt: timestamp("opened_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  primaryVetId: uuid("primary_vet_id").references(() => users.id),
+});
+
+export const caseEntries = pgTable("case_entries", {
+  ...baseColumns(),
+  caseId: uuid("case_id")
+    .notNull()
+    .references(() => cases.id),
+  appointmentId: uuid("appointment_id").references(() => appointments.id),
+  medicalRecordType: varchar("medical_record_type", { length: 64 }),
+  medicalRecordId: uuid("medical_record_id"),
+  notes: text("notes"),
+});
+
+// Relations
+export const soapNotesRelations = relations(soapNotes, ({ one }) => ({
+  practice: one(practices, {
+    fields: [soapNotes.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [soapNotes.patientId],
+    references: [patients.id],
+  }),
+  appointment: one(appointments, {
+    fields: [soapNotes.appointmentId],
+    references: [appointments.id],
+  }),
+  author: one(users, {
+    fields: [soapNotes.authorId],
+    references: [users.id],
+  }),
+}));
+
+export const vaccinationRecordsRelations = relations(
+  vaccinationRecords,
+  ({ one }) => ({
+    practice: one(practices, {
+      fields: [vaccinationRecords.practiceId],
+      references: [practices.id],
+    }),
+    patient: one(patients, {
+      fields: [vaccinationRecords.patientId],
+      references: [patients.id],
+    }),
+    administeredByUser: one(users, {
+      fields: [vaccinationRecords.administeredBy],
+      references: [users.id],
+    }),
+  })
+);
+
+export const labResultsRelations = relations(labResults, ({ one }) => ({
+  practice: one(practices, {
+    fields: [labResults.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [labResults.patientId],
+    references: [patients.id],
+  }),
+  appointment: one(appointments, {
+    fields: [labResults.appointmentId],
+    references: [appointments.id],
+  }),
+  orderedByUser: one(users, {
+    fields: [labResults.orderedBy],
+    references: [users.id],
+  }),
+  reviewedByUser: one(users, {
+    fields: [labResults.reviewedBy],
+    references: [users.id],
+  }),
+}));
+
+export const proceduresRelations = relations(procedures, ({ one }) => ({
+  practice: one(practices, {
+    fields: [procedures.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [procedures.patientId],
+    references: [patients.id],
+  }),
+  appointment: one(appointments, {
+    fields: [procedures.appointmentId],
+    references: [appointments.id],
+  }),
+  performedByUser: one(users, {
+    fields: [procedures.performedBy],
+    references: [users.id],
+  }),
+}));
+
+export const clinicalNotesRelations = relations(clinicalNotes, ({ one }) => ({
+  practice: one(practices, {
+    fields: [clinicalNotes.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [clinicalNotes.patientId],
+    references: [patients.id],
+  }),
+  author: one(users, {
+    fields: [clinicalNotes.authorId],
+    references: [users.id],
+  }),
+}));
+
+export const problemListRelations = relations(problemList, ({ one }) => ({
+  practice: one(practices, {
+    fields: [problemList.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [problemList.patientId],
+    references: [patients.id],
+  }),
+}));
+
+export const casesRelations = relations(cases, ({ one, many }) => ({
+  practice: one(practices, {
+    fields: [cases.practiceId],
+    references: [practices.id],
+  }),
+  patient: one(patients, {
+    fields: [cases.patientId],
+    references: [patients.id],
+  }),
+  primaryVet: one(users, {
+    fields: [cases.primaryVetId],
+    references: [users.id],
+  }),
+  entries: many(caseEntries),
+}));
+
+export const caseEntriesRelations = relations(caseEntries, ({ one }) => ({
+  case: one(cases, {
+    fields: [caseEntries.caseId],
+    references: [cases.id],
+  }),
+  appointment: one(appointments, {
+    fields: [caseEntries.appointmentId],
+    references: [appointments.id],
+  }),
+}));

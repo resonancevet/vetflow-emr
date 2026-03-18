@@ -1,0 +1,364 @@
+import { z } from "zod";
+import { eq, and, isNull, desc } from "drizzle-orm";
+import { createRouter, protectedProcedure, requireRole } from "../trpc";
+import {
+  soapNotes,
+  vaccinationRecords,
+  labResults,
+  procedures,
+  problemList,
+  prescriptions,
+  patients,
+  users,
+} from "@openpims/db";
+
+export const recordsRouter = createRouter({
+  // SOAP Notes
+  listSoapNotes: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: soapNotes.id,
+          subjective: soapNotes.subjective,
+          objective: soapNotes.objective,
+          assessment: soapNotes.assessment,
+          plan: soapNotes.plan,
+          authorName: users.name,
+          createdAt: soapNotes.createdAt,
+        })
+        .from(soapNotes)
+        .leftJoin(users, eq(soapNotes.authorId, users.id))
+        .where(
+          and(
+            eq(soapNotes.patientId, input.patientId),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .orderBy(desc(soapNotes.createdAt));
+    }),
+
+  createSoapNote: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        appointmentId: z.string().uuid().optional(),
+        subjective: z.string().optional(),
+        objective: z.string().optional(),
+        assessment: z.string().optional(),
+        plan: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [note] = await ctx.db
+        .insert(soapNotes)
+        .values({
+          ...input,
+          authorId: ctx.user.id,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return note!;
+    }),
+
+  // Vaccinations
+  listVaccinations: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: vaccinationRecords.id,
+          vaccineName: vaccinationRecords.vaccineName,
+          lotNumber: vaccinationRecords.lotNumber,
+          manufacturer: vaccinationRecords.manufacturer,
+          administeredAt: vaccinationRecords.administeredAt,
+          nextDueDate: vaccinationRecords.nextDueDate,
+          administeredByName: users.name,
+        })
+        .from(vaccinationRecords)
+        .leftJoin(users, eq(vaccinationRecords.administeredBy, users.id))
+        .where(
+          and(
+            eq(vaccinationRecords.patientId, input.patientId),
+            eq(vaccinationRecords.practiceId, ctx.practiceId),
+            isNull(vaccinationRecords.deletedAt)
+          )
+        )
+        .orderBy(desc(vaccinationRecords.administeredAt));
+    }),
+
+  createVaccination: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        vaccineName: z.string().min(1),
+        lotNumber: z.string().optional(),
+        manufacturer: z.string().optional(),
+        nextDueDate: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [record] = await ctx.db
+        .insert(vaccinationRecords)
+        .values({
+          ...input,
+          administeredBy: ctx.user.id,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return record!;
+    }),
+
+  // Problem List
+  listProblems: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select()
+        .from(problemList)
+        .where(
+          and(
+            eq(problemList.patientId, input.patientId),
+            eq(problemList.practiceId, ctx.practiceId),
+            isNull(problemList.deletedAt)
+          )
+        )
+        .orderBy(desc(problemList.createdAt));
+    }),
+
+  createProblem: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        description: z.string().min(1),
+        status: z.enum(["active", "resolved", "chronic"]).default("active"),
+        onsetDate: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [problem] = await ctx.db
+        .insert(problemList)
+        .values({
+          ...input,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return problem!;
+    }),
+
+  updateProblemStatus: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(["active", "resolved", "chronic"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [problem] = await ctx.db
+        .update(problemList)
+        .set({
+          status: input.status,
+          resolvedDate:
+            input.status === "resolved"
+              ? new Date().toISOString().slice(0, 10)
+              : null,
+        })
+        .returning();
+      return problem!;
+    }),
+
+  // Prescriptions
+  listPrescriptions: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: prescriptions.id,
+          medicationName: prescriptions.medicationName,
+          dosage: prescriptions.dosage,
+          frequency: prescriptions.frequency,
+          quantity: prescriptions.quantity,
+          refillsRemaining: prescriptions.refillsRemaining,
+          startDate: prescriptions.startDate,
+          endDate: prescriptions.endDate,
+          status: prescriptions.status,
+          instructions: prescriptions.instructions,
+          prescriberName: users.name,
+          createdAt: prescriptions.createdAt,
+        })
+        .from(prescriptions)
+        .leftJoin(users, eq(prescriptions.prescribedBy, users.id))
+        .where(
+          and(
+            eq(prescriptions.patientId, input.patientId),
+            eq(prescriptions.practiceId, ctx.practiceId),
+            isNull(prescriptions.deletedAt)
+          )
+        )
+        .orderBy(desc(prescriptions.createdAt));
+    }),
+
+  createPrescription: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        medicationName: z.string().min(1),
+        dosage: z.string().min(1),
+        frequency: z.string().min(1),
+        quantity: z.number().optional(),
+        refillsRemaining: z.number().default(0),
+        startDate: z.string(),
+        endDate: z.string().optional(),
+        instructions: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [rx] = await ctx.db
+        .insert(prescriptions)
+        .values({
+          ...input,
+          prescribedBy: ctx.user.id,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return rx!;
+    }),
+
+  // Lab Results
+  listLabResults: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select({
+          id: labResults.id,
+          testName: labResults.testName,
+          resultValue: labResults.resultValue,
+          unit: labResults.unit,
+          referenceRangeLow: labResults.referenceRangeLow,
+          referenceRangeHigh: labResults.referenceRangeHigh,
+          status: labResults.status,
+          orderedByName: users.name,
+          createdAt: labResults.createdAt,
+        })
+        .from(labResults)
+        .leftJoin(users, eq(labResults.orderedBy, users.id))
+        .where(
+          and(
+            eq(labResults.patientId, input.patientId),
+            eq(labResults.practiceId, ctx.practiceId),
+            isNull(labResults.deletedAt)
+          )
+        )
+        .orderBy(desc(labResults.createdAt));
+      return rows;
+    }),
+
+  createLabResult: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        testName: z.string().min(1),
+        resultValue: z.string().optional(),
+        unit: z.string().optional(),
+        referenceRangeLow: z.string().optional(),
+        referenceRangeHigh: z.string().optional(),
+        status: z.enum(["pending", "completed", "reviewed"]).default("pending"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [result] = await ctx.db
+        .insert(labResults)
+        .values({
+          ...input,
+          orderedBy: ctx.user.id,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return result!;
+    }),
+
+  updateLabResultStatus: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(["pending", "completed", "reviewed"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [result] = await ctx.db
+        .update(labResults)
+        .set({
+          status: input.status,
+          ...(input.status === "reviewed"
+            ? { reviewedBy: ctx.user.id }
+            : {}),
+        })
+        .where(
+          and(
+            eq(labResults.id, input.id),
+            eq(labResults.practiceId, ctx.practiceId)
+          )
+        )
+        .returning();
+      return result!;
+    }),
+
+  // Procedures
+  listProcedures: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: procedures.id,
+          name: procedures.name,
+          description: procedures.description,
+          performedByName: users.name,
+          anesthesiaUsed: procedures.anesthesiaUsed,
+          durationMinutes: procedures.durationMinutes,
+          notes: procedures.notes,
+          createdAt: procedures.createdAt,
+        })
+        .from(procedures)
+        .leftJoin(users, eq(procedures.performedBy, users.id))
+        .where(
+          and(
+            eq(procedures.patientId, input.patientId),
+            eq(procedures.practiceId, ctx.practiceId),
+            isNull(procedures.deletedAt)
+          )
+        )
+        .orderBy(desc(procedures.createdAt));
+    }),
+
+  createProcedure: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        appointmentId: z.string().uuid().optional(),
+        name: z.string().min(1),
+        description: z.string().optional(),
+        anesthesiaUsed: z.string().optional(),
+        durationMinutes: z.number().int().positive().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [procedure] = await ctx.db
+        .insert(procedures)
+        .values({
+          ...input,
+          performedBy: ctx.user.id,
+          practiceId: ctx.practiceId,
+        })
+        .returning();
+      return procedure!;
+    }),
+});

@@ -1,0 +1,23 @@
+{
+  "name": "openpims",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "db:push": "pnpm --filter @openpims/db db:push",
+    "db:generate": "pnpm --filter @openpims/db db:generate",
+    "db:migrate": "pnpm --filter @openpims/db db:migrate",
+    "db:seed": "pnpm --filter @openpims/db db:seed",
+    "db:studio": "pnpm --filter @openpims/db db:studio",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
