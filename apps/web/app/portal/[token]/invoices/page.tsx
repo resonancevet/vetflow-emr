@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
@@ -27,6 +28,37 @@ function formatCurrency(amount: string | number | null): string {
     style: "currency",
     currency: "USD",
   }).format(n);
+}
+
+function PayButton({ token, invoiceId }: { token: string; invoiceId: string }) {
+  const [loading, setLoading] = useState(false);
+
+  const handlePay = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/portal/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, invoiceId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handlePay}
+      disabled={loading}
+      className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
+    >
+      {loading ? "Redirecting..." : "Pay Online"}
+    </button>
+  );
 }
 
 export default function InvoicesPage() {
@@ -104,6 +136,11 @@ export default function InvoicesPage() {
                   {inv.dueDate && (
                     <p className="text-xs text-gray-400 mt-1">Due: {formatDate(inv.dueDate)}</p>
                   )}
+                  {balance > 0 && inv.status !== "void" && (
+                    <div className="mt-3">
+                      <PayButton token={token} invoiceId={inv.id} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -121,6 +158,7 @@ export default function InvoicesPage() {
                   <th className="pb-2 font-medium text-right">Balance</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium">Due Date</th>
+                  <th className="pb-2 font-medium" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -150,6 +188,11 @@ export default function InvoicesPage() {
                         </span>
                       </td>
                       <td className="py-3 text-gray-500">{formatDate(inv.dueDate)}</td>
+                      <td className="py-3">
+                        {balance > 0 && inv.status !== "void" && (
+                          <PayButton token={token} invoiceId={inv.id} />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

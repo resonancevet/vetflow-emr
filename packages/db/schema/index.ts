@@ -11,3 +11,4 @@ export * from "./auth";
 export * from "./controlled-substances";
 export * from "./files";
 export * from "./templates";
+export * from "./insurance";
