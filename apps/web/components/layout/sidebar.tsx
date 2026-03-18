@@ -77,7 +77,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav className="flex-1 overflow-y-auto px-2 py-2" role="navigation" aria-label="Main navigation">
         <ul className="space-y-0.5">
           {visibleNavItems.map((item) => {
             const isActive =
@@ -89,6 +89,7 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                     isActive
@@ -126,6 +127,7 @@ export function Sidebar() {
             </div>
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
+              aria-label="Sign out"
               className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <LogOut className="h-4 w-4" />
@@ -134,6 +136,7 @@ export function Sidebar() {
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="flex w-full items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           {collapsed ? (

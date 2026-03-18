@@ -10,6 +10,7 @@
     "db:generate": "pnpm --filter @openpims/db db:generate",
     "db:migrate": "pnpm --filter @openpims/db db:migrate",
     "db:seed": "pnpm --filter @openpims/db db:seed",
+    "db:seed-demo": "pnpm --filter @openpims/db seed-demo",
     "db:studio": "pnpm --filter @openpims/db db:studio",
     "clean": "turbo clean",
     "test:e2e": "playwright test",

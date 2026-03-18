@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { createRouter, publicProcedure, protectedProcedure } from "../trpc";
 import { users, practices, locations } from "@openpims/db";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const authRouter = createRouter({
   register: publicProcedure
@@ -15,6 +17,20 @@ export const authRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Rate limit by email: 5 registrations per hour
+      const { success } = rateLimit({
+        key: `register:${input.email}`,
+        limit: 5,
+        windowMs: 3600000,
+      });
+
+      if (!success) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many registration attempts. Please try again later.",
+        });
+      }
+
       // Check if email already exists
       const [existing] = await ctx.db
         .select()

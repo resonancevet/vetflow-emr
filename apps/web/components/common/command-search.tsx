@@ -72,7 +72,7 @@ export function CommandSearch({
   const hasResults = patientResults.length > 0 || clientResults.length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" role="dialog" aria-label="Search" aria-modal="true">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full max-w-lg rounded-lg border border-border bg-background shadow-elevated">
         <Command className="flex flex-col" shouldFilter={!hasQuery}>

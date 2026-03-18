@@ -33,7 +33,7 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar onSearchOpen={() => setSearchOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-surface p-6">
+        <main id="main-content" className="flex-1 overflow-y-auto bg-surface p-6">
           <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
