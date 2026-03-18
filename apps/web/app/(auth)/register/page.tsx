@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function RegisterPage() {
 
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: async () => {
+      toast.success("Account created! Redirecting...");
       // Auto-sign in after registration
       const result = await signIn("credentials", {
         email,
@@ -30,6 +32,7 @@ export default function RegisterPage() {
       }
     },
     onError: (err) => {
+      toast.error(err.message);
       setError(err.message);
       setLoading(false);
     },

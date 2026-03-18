@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -23,9 +24,11 @@ export default function NewClientPage() {
 
   const createClient = trpc.clients.create.useMutation({
     onSuccess: () => {
+      toast.success("Client created");
       router.push("/clients");
     },
     onError: (err) => {
+      toast.error(err.message);
       setError(err.message);
     },
   });

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
+import { Toaster } from "sonner";
 import superjson from "superjson";
 import { trpc } from "./trpc";
 
@@ -27,6 +28,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <SessionProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
             {children}
+            <Toaster richColors position="bottom-right" />
           </ThemeProvider>
         </SessionProvider>
       </QueryClientProvider>

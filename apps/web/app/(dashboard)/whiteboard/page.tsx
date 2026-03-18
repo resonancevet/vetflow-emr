@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Clock, User, X, Loader2, MapPin } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -430,8 +431,12 @@ export default function WhiteboardPage() {
   const utils = trpc.useUtils();
   const updateStatus = trpc.whiteboard.updateStatus.useMutation({
     onSuccess: () => {
+      toast.success("Status updated");
       setSelectedAppointment(null);
       utils.whiteboard.getActive.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

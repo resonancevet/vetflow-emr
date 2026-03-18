@@ -6,6 +6,7 @@ import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 interface LineItem {
   id: string;
@@ -66,8 +67,12 @@ export default function NewInvoicePage() {
   const utils = trpc.useUtils();
   const createInvoice = trpc.billing.createInvoice.useMutation({
     onSuccess: () => {
+      toast.success("Invoice created");
       utils.billing.listInvoices.invalidate();
       router.push("/billing");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

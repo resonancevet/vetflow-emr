@@ -12,6 +12,7 @@ import {
   Loader2,
   Plus,
 } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -457,8 +458,12 @@ function BookingForm({
 
   const createAppointment = trpc.appointments.create.useMutation({
     onSuccess: () => {
+      toast.success("Appointment created");
       utils.appointments.list.invalidate();
       onClose();
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -741,7 +746,11 @@ export default function SchedulePage() {
 
   const updateStatus = trpc.appointments.updateStatus.useMutation({
     onSuccess: () => {
+      toast.success("Appointment status updated");
       setSelectedAppointment(null);
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

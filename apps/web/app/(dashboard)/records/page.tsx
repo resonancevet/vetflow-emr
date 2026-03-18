@@ -19,6 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type Tab = "soap" | "vaccinations" | "prescriptions" | "problems" | "labResults" | "procedures";
 
@@ -163,20 +164,32 @@ export default function RecordsPage() {
 
   const createLabResult = trpc.records.createLabResult.useMutation({
     onSuccess: () => {
+      toast.success("Lab result created");
       refetchLabResults();
       setShowLabForm(false);
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const updateLabResultStatus =
     trpc.records.updateLabResultStatus.useMutation({
       onSuccess: () => {
+        toast.success("Lab result status updated");
         refetchLabResults();
+      },
+      onError: (err) => {
+        toast.error(err.message);
       },
     });
   const createProcedure = trpc.records.createProcedure.useMutation({
     onSuccess: () => {
+      toast.success("Procedure recorded");
       refetchProcedures();
       setShowProcedureForm(false);
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

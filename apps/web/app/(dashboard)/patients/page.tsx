@@ -6,6 +6,7 @@ import { Search, Plus, PawPrint } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TableSkeleton } from "@/components/common/loading";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -101,9 +102,7 @@ export default function PatientsPage() {
       )}
 
       {isLoading ? (
-        <div className="mt-6 text-center text-muted-foreground">
-          Loading...
-        </div>
+        <TableSkeleton rows={8} cols={5} />
       ) : data && data.items.length > 0 ? (
         <div className="mt-6 overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">

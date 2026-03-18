@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 const speciesOptions = [
   { value: "canine", label: "Canine" },
@@ -67,9 +68,11 @@ export default function EditPatientPage() {
 
   const updatePatient = trpc.patients.update.useMutation({
     onSuccess: () => {
+      toast.success("Patient updated");
       router.push(`/patients/${params.id}`);
     },
     onError: (err) => {
+      toast.error(err.message);
       setError(err.message);
     },
   });

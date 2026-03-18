@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 const speciesEmoji: Record<string, string> = {
   canine: "🐶",
@@ -42,12 +43,16 @@ export default function PortalHomePage() {
 
   const requestAppt = trpc.portal.requestAppointment.useMutation({
     onSuccess: (result) => {
+      toast.success("Appointment request submitted");
       setApptSuccess(result.message);
       setShowApptForm(false);
       setApptPatientId("");
       setApptDate("");
       setApptTime("morning");
       setApptReason("");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

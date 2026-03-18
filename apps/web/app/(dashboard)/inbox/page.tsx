@@ -19,6 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type FilterTab = "all" | "unread" | "sent";
 type Channel = "phone" | "sms" | "email" | "portal";
@@ -95,6 +96,7 @@ export default function InboxPage() {
 
   const createMutation = trpc.communications.create.useMutation({
     onSuccess: () => {
+      toast.success("Message sent");
       utils.communications.list.invalidate();
       if (selectedClientId) {
         utils.communications.getByClient.invalidate({
@@ -103,6 +105,9 @@ export default function InboxPage() {
       }
       setComposeContent("");
       setComposeSubject("");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

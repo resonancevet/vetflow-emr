@@ -24,6 +24,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────────────
 type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data";
@@ -133,7 +134,13 @@ function PracticeInfoTab() {
   const utils = trpc.useUtils();
   const { data: practice, isLoading } = trpc.settings.getPractice.useQuery();
   const updateMutation = trpc.settings.updatePractice.useMutation({
-    onSuccess: () => utils.settings.getPractice.invalidate(),
+    onSuccess: () => {
+      utils.settings.getPractice.invalidate();
+      toast.success("Practice info updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
   });
 
   const [form, setForm] = useState<{
@@ -249,16 +256,30 @@ function StaffTab() {
       utils.settings.listUsers.invalidate();
       setShowAdd(false);
       resetAddForm();
+      toast.success("Staff member added");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const updateMutation = trpc.settings.updateUser.useMutation({
     onSuccess: () => {
       utils.settings.listUsers.invalidate();
       setEditingId(null);
+      toast.success("Staff member updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const deactivateMutation = trpc.settings.deactivateUser.useMutation({
-    onSuccess: () => utils.settings.listUsers.invalidate(),
+    onSuccess: () => {
+      utils.settings.listUsers.invalidate();
+      toast.success("Staff member deactivated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
   });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -608,16 +629,30 @@ function AppointmentTypesTab() {
       utils.settings.listAppointmentTypes.invalidate();
       setShowAdd(false);
       resetAddForm();
+      toast.success("Appointment type created");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const updateMutation = trpc.settings.updateAppointmentType.useMutation({
     onSuccess: () => {
       utils.settings.listAppointmentTypes.invalidate();
       setEditingId(null);
+      toast.success("Appointment type updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const deleteMutation = trpc.settings.deleteAppointmentType.useMutation({
-    onSuccess: () => utils.settings.listAppointmentTypes.invalidate(),
+    onSuccess: () => {
+      utils.settings.listAppointmentTypes.invalidate();
+      toast.success("Appointment type deleted");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
   });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -969,12 +1004,20 @@ function DataTab() {
     onSuccess: (data) => {
       setImportResult({ imported: data.imported });
       setCsvData(null);
+      toast.success("Clients imported");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const importPatientsMutation = trpc.data.importPatients.useMutation({
     onSuccess: (data) => {
       setImportResult({ imported: data.imported, errors: data.errors });
       setCsvData(null);
+      toast.success("Patients imported");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -1291,10 +1334,20 @@ function RoomsTab() {
       utils.settings.listRooms.invalidate();
       setShowAdd(false);
       setAddForm({ name: "", type: "exam" });
+      toast.success("Room created");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
   const deleteMutation = trpc.settings.deleteRoom.useMutation({
-    onSuccess: () => utils.settings.listRooms.invalidate(),
+    onSuccess: () => {
+      utils.settings.listRooms.invalidate();
+      toast.success("Room deleted");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
   });
 
   const [showAdd, setShowAdd] = useState(false);

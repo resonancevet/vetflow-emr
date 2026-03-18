@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 export default function EditClientPage() {
   const params = useParams<{ id: string }>();
@@ -44,9 +45,11 @@ export default function EditClientPage() {
 
   const updateClient = trpc.clients.update.useMutation({
     onSuccess: () => {
+      toast.success("Client updated");
       router.push(`/clients/${params.id}`);
     },
     onError: (err) => {
+      toast.error(err.message);
       setError(err.message);
     },
   });

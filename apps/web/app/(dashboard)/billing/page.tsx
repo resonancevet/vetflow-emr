@@ -13,9 +13,11 @@ import {
   DollarSign,
   ArrowRightLeft,
 } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TableSkeleton } from "@/components/common/loading";
 
 const STATUS_TABS = [
   { label: "All", value: undefined, isEstimate: false as const },
@@ -91,14 +93,22 @@ export default function BillingPage() {
 
   const updateStatus = trpc.billing.updateInvoiceStatus.useMutation({
     onSuccess: () => {
+      toast.success("Invoice status updated");
       utils.billing.listInvoices.invalidate();
       utils.billing.getInvoice.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
   const convertEstimate = trpc.billing.convertEstimateToInvoice.useMutation({
     onSuccess: () => {
+      toast.success("Estimate converted to invoice");
       utils.billing.listInvoices.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -160,9 +170,7 @@ export default function BillingPage() {
       )}
 
       {isLoading ? (
-        <div className="mt-6 text-center text-muted-foreground">
-          Loading...
-        </div>
+        <TableSkeleton rows={8} cols={7} />
       ) : data && data.items.length > 0 ? (
         <>
           <div className="mt-6 overflow-hidden rounded-lg border border-border">
@@ -558,6 +566,7 @@ function PaymentSection({
 
   const recordPayment = trpc.billing.recordPayment.useMutation({
     onSuccess: () => {
+      toast.success("Payment recorded");
       utils.billing.listPayments.invalidate({ invoiceId });
       utils.billing.listInvoices.invalidate();
       utils.billing.getInvoice.invalidate({ id: invoiceId });
@@ -565,6 +574,9 @@ function PaymentSection({
       setPaymentAmount("");
       setPaymentMethod("cash");
       setPaymentNotes("");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

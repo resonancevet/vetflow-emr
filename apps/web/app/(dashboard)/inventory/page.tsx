@@ -15,6 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const CATEGORIES = [
   { label: "All Categories", value: "" },
@@ -46,6 +47,10 @@ function AddProductForm({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       utils.inventory.list.invalidate();
       onClose();
+      toast.success("Product added");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -189,6 +194,10 @@ function EditProductRow({
     onSuccess: () => {
       utils.inventory.list.invalidate();
       onClose();
+      toast.success("Product updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -316,6 +325,10 @@ function StockAdjustPopover({
     onSuccess: () => {
       utils.inventory.list.invalidate();
       onClose();
+      toast.success("Stock adjusted");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -395,6 +408,10 @@ function AddSupplierForm({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       utils.inventory.listSuppliers.invalidate();
       onClose();
+      toast.success("Supplier added");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 

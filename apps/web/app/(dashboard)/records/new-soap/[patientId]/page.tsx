@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { ArrowLeft, Save, ShieldAlert } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export default function NewSoapNotePage() {
   const params = useParams<{ patientId: string }>();
@@ -45,7 +46,11 @@ export default function NewSoapNotePage() {
 
   const createNote = trpc.records.createSoapNote.useMutation({
     onSuccess: () => {
+      toast.success("SOAP note created");
       router.push("/records");
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
