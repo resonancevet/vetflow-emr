@@ -1,4 +1,4 @@
-# OpenPIMS
+# OpenVPM
 
 Open-source, cloud-native veterinary Practice Information Management System.
 
