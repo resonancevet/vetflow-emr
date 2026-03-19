@@ -47,7 +47,7 @@ OpenVPM is a modern, cloud-native veterinary practice information management sys
 - **Free and open source** — MIT licensed, forever. No per-provider pricing. No vendor lock-in. Your data is yours.
 
 > *"I would need to see the product benefit us by reducing our staff hours."*
-> — Dr. Emily Falls, DVM — Burnt Hills Veterinary Hospital
+> — A practice manager we interviewed during research
 
 That's the bar we're building to.
 
@@ -208,12 +208,12 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with the demo cr
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@burnthillsvet.com | password123 |
-| Veterinarian | sarah.chen@burnthillsvet.com | password123 |
-| Technician | jamie.torres@burnthillsvet.com | password123 |
-| Front Desk | morgan.bailey@burnthillsvet.com | password123 |
+| Admin | admin@neighborhoodvet.example.com | password123 |
+| Veterinarian | sarah.chen@neighborhoodvet.example.com | password123 |
+| Technician | jamie.torres@neighborhoodvet.example.com | password123 |
+| Front Desk | morgan.bailey@neighborhoodvet.example.com | password123 |
 
-The seed data creates a complete demo practice — "Burnt Hills Veterinary Hospital" — with 7 staff, 25 clients, 40 patients, 2 weeks of appointments, SOAP notes, vaccination records, invoices, and 50 inventory products.
+The seed data creates a complete demo practice — "Neighborhood Veterinary" — with 8 staff, 25 clients, 40 patients, 2 weeks of appointments, SOAP notes, vaccination records, invoices, and 50 inventory products.
 
 ### Deploy with Docker
 

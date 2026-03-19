@@ -1,5 +1,4 @@
-"use client";
-
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Calendar,
@@ -27,7 +26,6 @@ import {
   Mic,
   Bot,
   Terminal,
-  Copy,
   Server,
 } from "lucide-react";
 
@@ -156,6 +154,12 @@ const howItWorksSteps = [
     description: "Seed demo data, open your browser, and you're running a full practice management system.",
   },
 ];
+
+export const metadata: Metadata = {
+  title: "OpenVPM — Open-Source Veterinary Practice Management",
+  description:
+    "The first modern, API-first practice management system built for the veterinary community. Beautiful, fast, free, and open source.",
+};
 
 export default function LandingPage() {
   return (
@@ -651,15 +655,16 @@ export default function LandingPage() {
       {/* Quote / Testimonial */}
       <section className="py-16 sm:py-20 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-sm font-medium text-teal-600 uppercase tracking-wider mb-4">What practice owners told us</p>
           <blockquote className="text-2xl sm:text-3xl font-heading font-semibold text-gray-900 leading-snug mb-6">
-            &ldquo;I would need to see the product benefit us by reducing our staff hours.&rdquo;
+            &ldquo;Show me software that actually reduces our staff hours. That&apos;s the only thing that matters.&rdquo;
           </blockquote>
           <div className="text-gray-500">
-            <span className="font-medium text-gray-700">Dr. Emily Falls, DVM</span>
-            {" "}&mdash; Owner, Burnt Hills Veterinary Hospital
+            <span className="font-medium text-gray-700">A practice manager</span>
+            {" "}&mdash; from our early research interviews
           </div>
           <p className="mt-4 text-gray-400 text-sm max-w-xl mx-auto">
-            That&apos;s the bar we&apos;re building to. OpenVPM is designed from the ground up
+            That&apos;s exactly what we&apos;re building. OpenVPM is designed from the ground up
             to make every team member faster &mdash; from the front desk to the exam room.
           </p>
         </div>
