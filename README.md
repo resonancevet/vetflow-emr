@@ -51,15 +51,11 @@ OpenVPM is a modern, cloud-native veterinary practice information management sys
 
 That's the bar we're building to.
 
-<!--
 ## Screenshots
-
-> Screenshots coming soon — see the [live demo](https://openvpm.com/demo) to experience the full application.
 
 | Dashboard | Schedule | Patient Record |
 |-----------|----------|----------------|
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Schedule](docs/screenshots/schedule.png) | ![Patient](docs/screenshots/patient.png) |
--->
 
 ## Features
 
@@ -131,11 +127,11 @@ openvpm/
 │   │   ├── app/                # App Router pages
 │   │   │   ├── (auth)/         # Login, register
 │   │   │   ├── (dashboard)/    # Main app (12 modules)
-│   │   │   ├── (marketing)/    # Landing page
 │   │   │   └── portal/         # Client-facing portal
 │   │   ├── components/         # UI component library
 │   │   ├── lib/                # Utilities and integrations
 │   │   └── server/             # 21 tRPC routers
+│   ├── www/                    # Marketing website (Next.js)
 │   └── docs/                   # API documentation
 ├── packages/
 │   ├── db/                     # 16 schema files, seed data
