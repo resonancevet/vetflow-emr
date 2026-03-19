@@ -25,14 +25,4 @@ jobs:
       - run: pnpm type-check
 
       - run: pnpm build
-
-      # TODO: Add lint step once eslint is configured
-      # - run: pnpm lint
-
-      # TODO: Add E2E tests (Playwright) on PRs
-      # - name: Install Playwright browsers
-      #   if: github.event_name == 'pull_request'
-      #   run: pnpm exec playwright install --with-deps
-      # - name: Run E2E tests
-      #   if: github.event_name == 'pull_request'
-      #   run: pnpm exec playwright test
+        # Note: next build includes linting — no separate lint step needed
