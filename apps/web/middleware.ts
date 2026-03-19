@@ -16,11 +16,10 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Unauthenticated visitors at root get the landing page
+  // Unauthenticated visitors at root get redirected to the marketing site
   if (!token && request.nextUrl.pathname === "/") {
-    const landingUrl = new URL("/landing", request.url);
-    const response = NextResponse.rewrite(landingUrl);
-    return setSecurityHeaders(response);
+    const wwwUrl = process.env.NEXT_PUBLIC_WWW_URL || "https://openvpm.com";
+    return NextResponse.redirect(wwwUrl);
   }
 
   if (!token) {
@@ -34,6 +33,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|register|landing|features|install|why|api/auth|_next|favicon.ico|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
+    "/((?!login|register|api/auth|_next|favicon.ico|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
   ],
 };

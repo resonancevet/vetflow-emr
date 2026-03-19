@@ -6,7 +6,7 @@ export function MarketingFooter() {
     <footer className="border-t border-gray-100 bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-          <Link href="/landing" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-teal-600">
               <Stethoscope className="w-4 h-4 text-white" />
             </div>

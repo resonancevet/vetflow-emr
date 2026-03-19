@@ -13,6 +13,14 @@ import {
   Heart,
 } from "lucide-react";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+
+export const metadata = {
+  title: "Why OpenVPM — OpenVPM",
+  description:
+    "We got tired of hitting the same wall. So we built our own practice management system. And then we gave it away.",
+};
+
 export default function WhyPage() {
   return (
     <div>
@@ -225,13 +233,13 @@ export default function WhyPage() {
                 Try the demo, star the repo, or just reach out. We&apos;re building something the veterinary industry actually needs, and we want to build it with the community.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link
-                  href="/register"
+                <a
+                  href={`${appUrl}/register`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-3.5 text-base font-semibold text-teal-700 shadow-lg hover:bg-teal-50 transition-all"
                 >
                   Try the Live Demo
                   <ArrowRight className="w-4 h-4" />
-                </Link>
+                </a>
                 <a
                   href="https://github.com/evangauer/openvpm"
                   target="_blank"

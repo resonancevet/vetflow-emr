@@ -38,6 +38,8 @@ import {
   FileBarChart,
 } from "lucide-react";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+
 const modules = [
   {
     id: "schedule",
@@ -302,6 +304,41 @@ const modules = [
     ),
   },
   {
+    id: "compliance",
+    icon: Shield,
+    title: "Built for Compliance",
+    description:
+      "Veterinary practices handle controlled substances, sensitive client data, and regulated medical records. OpenVPM gives you the audit trail and access controls to stay compliant without slowing your team down.",
+    bullets: [
+      { icon: Lock, text: "DEA-compliant controlled substance logging with full chain of custody" },
+      { icon: FileText, text: "Complete audit trails — every record change tracked with who, what, and when" },
+      { icon: Users, text: "Role-based access control with granular permission sets" },
+      { icon: Database, text: "Full data export at any time — CSV, JSON, or PDF" },
+    ],
+    mockup: (
+      <div className="space-y-3">
+        <div className="text-xs font-medium text-gray-700 mb-2">Audit Log</div>
+        {[
+          { user: "Dr. Chen", action: "Updated SOAP note", record: "Luna — Wellness Exam", time: "2m ago" },
+          { user: "Emily C.", action: "Dispensed Rimadyl 100mg (x14)", record: "Cooper — Post-Op", time: "18m ago" },
+          { user: "Lisa P.", action: "Modified appointment", record: "Oliver — Vaccination", time: "45m ago" },
+          { user: "Dr. Rodriguez", action: "Signed prescription", record: "Mochi — Antibiotics", time: "1h ago" },
+        ].map((entry) => (
+          <div key={entry.time} className="flex items-start gap-2.5 rounded-lg border border-gray-100 p-2.5">
+            <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
+              {entry.user[0]}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-gray-800">{entry.action}</div>
+              <div className="text-xs text-gray-400">{entry.record}</div>
+            </div>
+            <div className="text-xs text-gray-400 shrink-0">{entry.time}</div>
+          </div>
+        ))}
+      </div>
+    ),
+  },
+  {
     id: "reports",
     icon: BarChart3,
     title: "Reports & Analytics",
@@ -517,13 +554,13 @@ const response = await fetch(
                 The demo is live and loaded with real-looking data. Click around, try scheduling an appointment, write a SOAP note. It really is damn cool.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link
-                  href="/register"
+                <a
+                  href={`${appUrl}/register`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-3.5 text-base font-semibold text-teal-700 shadow-lg hover:bg-teal-50 transition-all"
                 >
                   Try the Live Demo
                   <ArrowRight className="w-4 h-4" />
-                </Link>
+                </a>
                 <Link
                   href="/install"
                   className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-teal-400 px-8 py-3.5 text-base font-semibold text-white hover:bg-teal-600 transition-all"

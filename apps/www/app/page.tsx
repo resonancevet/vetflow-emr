@@ -29,6 +29,8 @@ import {
   Server,
 } from "lucide-react";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+
 const features = [
   {
     icon: Calendar,
@@ -202,13 +204,13 @@ export default function LandingPage() {
               className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
               style={{ animationDelay: "300ms" }}
             >
-              <Link
-                href="/register"
+              <a
+                href={`${appUrl}/register`}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-teal-600/25 hover:bg-teal-700 hover:shadow-teal-600/30 transition-all w-full sm:w-auto"
               >
                 Try the Live Demo
                 <ArrowRight className="w-4 h-4" />
-              </Link>
+              </a>
               <a
                 href="https://github.com/evangauer/openvpm"
                 target="_blank"
@@ -686,13 +688,13 @@ export default function LandingPage() {
                 with the veterinary community, not sold to it.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link
-                  href="/register"
+                <a
+                  href={`${appUrl}/register`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-3.5 text-base font-semibold text-teal-700 shadow-lg hover:bg-teal-50 transition-all"
                 >
                   Try the Live Demo
                   <ArrowRight className="w-4 h-4" />
-                </Link>
+                </a>
                 <a
                   href="https://github.com/evangauer/openvpm"
                   target="_blank"

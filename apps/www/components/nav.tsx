@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Stethoscope, Github, Menu, X } from "lucide-react";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+
 const navLinks = [
   { label: "Features", href: "/features" },
   { label: "Install", href: "/install" },
@@ -20,7 +22,7 @@ export function MarketingNav() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/landing" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-600">
               <Stethoscope className="w-5 h-5 text-white" />
             </div>
@@ -57,18 +59,18 @@ export function MarketingNav() {
 
           {/* Desktop CTAs */}
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              href="/login"
+            <a
+              href={`${appUrl}/login`}
               className="text-sm font-medium text-gray-700 hover:text-teal-600 transition-colors"
             >
               Sign In
-            </Link>
-            <Link
-              href="/register"
+            </a>
+            <a
+              href={`${appUrl}/register`}
               className="inline-flex items-center justify-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-700 transition-colors"
             >
               Try the Demo
-            </Link>
+            </a>
           </div>
 
           {/* Mobile menu button */}
@@ -110,20 +112,18 @@ export function MarketingNav() {
               GitHub
             </a>
             <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
-              <Link
-                href="/login"
-                onClick={() => setMobileOpen(false)}
+              <a
+                href={`${appUrl}/login`}
                 className="block px-3 py-2 text-sm font-medium text-gray-700 hover:text-teal-600 transition-colors"
               >
                 Sign In
-              </Link>
-              <Link
-                href="/register"
-                onClick={() => setMobileOpen(false)}
+              </a>
+              <a
+                href={`${appUrl}/register`}
                 className="block text-center rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-700 transition-colors"
               >
                 Try the Demo
-              </Link>
+              </a>
             </div>
           </div>
         </div>
