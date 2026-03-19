@@ -11,7 +11,7 @@ test.describe("Dashboard", () => {
 
   test("login page is accessible", async ({ page }) => {
     await page.goto("/login");
-    await expect(page).toHaveTitle(/OpenPIMS/);
+    await expect(page).toHaveTitle(/OpenVPM/);
   });
 
   test("portal pages are accessible without auth", async ({ page }) => {

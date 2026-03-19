@@ -111,6 +111,13 @@ async function seed() {
   // =========================================================================
   const usersData = [
     {
+      email: "admin@burnthillsvet.com",
+      name: "Practice Admin",
+      role: "admin" as const,
+      licenseNumber: null,
+      phone: "(518) 399-5213 x100",
+    },
+    {
       email: "sarah.chen@burnthillsvet.com",
       name: "Dr. Sarah Chen",
       role: "veterinarian" as const,

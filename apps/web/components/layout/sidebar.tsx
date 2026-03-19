@@ -70,7 +70,7 @@ export function Sidebar() {
           </div>
           {!collapsed && (
             <span className="font-heading text-lg font-semibold">
-              OpenPIMS
+              OpenVPM
             </span>
           )}
         </Link>

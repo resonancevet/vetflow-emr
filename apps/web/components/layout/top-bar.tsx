@@ -25,7 +25,7 @@ export function TopBar({
 }) {
   const pathname = usePathname();
   const basePath = "/" + (pathname.split("/")[1] ?? "");
-  const label = routeLabels[basePath] ?? "OpenPIMS";
+  const label = routeLabels[basePath] ?? "OpenVPM";
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-6">

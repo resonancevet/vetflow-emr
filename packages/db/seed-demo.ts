@@ -26,7 +26,7 @@ import {
 // Generated with: bcryptjs.hashSync("demo123", 10)
 // ---------------------------------------------------------------------------
 const PASSWORD_HASH =
-  "$2a$10$dKz7R5QzXzHXYZQ5tB5L3e.WdPaJxFqVnM1L2rCgOWvw1t8BsYdHO";
+  "$2a$10$jBKNgwBVBAC/0kuXTDguY.9UmNdJs/zBO4C2uPl8IQhLwxAOjr4Ie";
 
 // ---------------------------------------------------------------------------
 // Helper: date math
@@ -118,8 +118,8 @@ async function seedDemo() {
   // =========================================================================
   const staffData = [
     {
-      email: "sarah.mitchell@pawsitivecarevet.example.com",
-      name: "Dr. Sarah Mitchell",
+      email: "sarah.chen@pawsitivecarevet.example.com",
+      name: "Dr. Sarah Chen",
       role: "admin" as const,
       licenseNumber: "VET-OR-44281",
       phone: "(503) 555-7297 x101",
@@ -160,7 +160,7 @@ async function seedDemo() {
     .returning();
   console.log(`Users: ${insertedUsers.length} created`);
 
-  const drMitchell = insertedUsers.find((u) => u.name === "Dr. Sarah Mitchell")!;
+  const drMitchell = insertedUsers.find((u) => u.name === "Dr. Sarah Chen")!;
   const drRodriguez = insertedUsers.find((u) => u.name === "Dr. James Rodriguez")!;
   const emilyChen = insertedUsers.find((u) => u.name === "Emily Chen")!;
   const vets = [drMitchell, drRodriguez];
@@ -720,7 +720,7 @@ Summary:
 Login credentials (all users):
   Password: demo123
   Emails:
-    - sarah.mitchell@pawsitivecarevet.example.com (admin/vet)
+    - sarah.chen@pawsitivecarevet.example.com (admin/vet)
     - james.rodriguez@pawsitivecarevet.example.com (veterinarian)
     - emily.chen@pawsitivecarevet.example.com (technician)
     - lisa.park@pawsitivecarevet.example.com (front desk)

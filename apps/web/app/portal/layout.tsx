@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Pet Portal - OpenPIMS",
+  title: "Pet Portal - OpenVPM",
   description: "View your pet's health information",
 };
 
@@ -19,7 +19,7 @@ export default function PortalLayout({
               <span className="text-white font-bold text-sm">OP</span>
             </div>
             <div>
-              <span className="font-semibold text-gray-900 text-sm">OpenPIMS</span>
+              <span className="font-semibold text-gray-900 text-sm">OpenVPM</span>
               <span className="text-teal-600 text-sm ml-1.5 font-medium">Pet Portal</span>
             </div>
           </div>
@@ -28,7 +28,7 @@ export default function PortalLayout({
       <main className="mx-auto max-w-4xl px-4 py-6">{children}</main>
       <footer className="border-t border-gray-100 mt-12">
         <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-gray-400">
-          Powered by OpenPIMS
+          Powered by OpenVPM
         </div>
       </footer>
     </div>

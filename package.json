@@ -1,5 +1,5 @@
 {
-  "name": "openpims",
+  "name": "openvpm",
   "private": true,
   "scripts": {
     "build": "turbo build",

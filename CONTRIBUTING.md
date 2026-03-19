@@ -1,6 +1,6 @@
-# Contributing to OpenPIMS
+# Contributing to OpenVPM
 
-Thank you for your interest in contributing to OpenPIMS!
+Thank you for your interest in contributing to OpenVPM!
 
 ## Development Setup
 

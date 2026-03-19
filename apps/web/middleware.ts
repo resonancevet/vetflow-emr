@@ -16,6 +16,13 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
+  // Unauthenticated visitors at root get the landing page
+  if (!token && request.nextUrl.pathname === "/") {
+    const landingUrl = new URL("/landing", request.url);
+    const response = NextResponse.rewrite(landingUrl);
+    return setSecurityHeaders(response);
+  }
+
   if (!token) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
@@ -27,6 +34,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|register|landing|api/auth|_next|favicon.ico|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
+    "/((?!login|register|landing|features|install|why|api/auth|_next|favicon.ico|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
   ],
 };
