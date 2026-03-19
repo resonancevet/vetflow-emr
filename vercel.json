@@ -2,7 +2,7 @@
   "buildCommand": "pnpm --filter @openpims/web build",
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
-  "framework": "nextjs",
+  "framework": null,
   "crons": [
     {
       "path": "/api/cron/reminders",
