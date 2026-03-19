@@ -7,8 +7,8 @@ Thank you for your interest in contributing to OpenVPM!
 1. **Prerequisites**: Node.js 20+, pnpm 9+, Docker
 2. **Clone and install**:
    ```bash
-   git clone https://github.com/gettalky/openpims.git
-   cd openpims
+   git clone https://github.com/evangauer/openvpm.git
+   cd openvpm
    cp .env.example .env
    pnpm install
    ```

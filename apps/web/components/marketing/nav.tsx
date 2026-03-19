@@ -45,7 +45,7 @@ export function MarketingNav() {
               </Link>
             ))}
             <a
-              href="https://github.com/gettalky/openpims"
+              href="https://github.com/evangauer/openvpm"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-gray-600 hover:text-teal-600 transition-colors inline-flex items-center gap-1"
@@ -101,7 +101,7 @@ export function MarketingNav() {
               </Link>
             ))}
             <a
-              href="https://github.com/gettalky/openpims"
+              href="https://github.com/evangauer/openvpm"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"

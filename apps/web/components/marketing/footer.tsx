@@ -28,7 +28,7 @@ export function MarketingFooter() {
               Pricing <span className="text-teal-600 font-medium">(free)</span>
             </span>
             <a
-              href="https://github.com/gettalky/openpims"
+              href="https://github.com/evangauer/openvpm"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-gray-500 hover:text-teal-600 transition-colors inline-flex items-center gap-1"

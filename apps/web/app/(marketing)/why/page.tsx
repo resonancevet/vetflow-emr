@@ -233,7 +233,7 @@ export default function WhyPage() {
                   <ArrowRight className="w-4 h-4" />
                 </Link>
                 <a
-                  href="https://github.com/gettalky/openpims"
+                  href="https://github.com/evangauer/openvpm"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-teal-400 px-8 py-3.5 text-base font-semibold text-white hover:bg-teal-600 transition-all"

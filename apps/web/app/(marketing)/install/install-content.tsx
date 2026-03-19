@@ -12,9 +12,9 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Clock,
   Shield,
   Cpu,
+  Zap,
 } from "lucide-react";
 import { CodeBlock } from "@/components/marketing/code-block";
 
@@ -89,7 +89,38 @@ const troubleshootingItems = [
   },
 ];
 
-export default function InstallPage() {
+function CredentialsTable({ showAccess = false }: { showAccess?: boolean }) {
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Password</th>
+            {showAccess && (
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Access</th>
+            )}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {demoCredentials.map((cred) => (
+            <tr key={cred.role} className="hover:bg-gray-50 transition-colors">
+              <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{cred.role}</td>
+              <td className="px-4 py-3 text-gray-600 font-mono text-xs break-all">{cred.email}</td>
+              <td className="px-4 py-3 text-gray-600 font-mono hidden sm:table-cell">{cred.password}</td>
+              {showAccess && (
+                <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell">{cred.note}</td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function InstallContent() {
   const [activeTab, setActiveTab] = useState<TabId>("demo");
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
@@ -100,25 +131,7 @@ export default function InstallPage() {
   ];
 
   return (
-    <div>
-      {/* Hero */}
-      <section className="relative py-16 sm:py-24 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-teal-50 via-white to-teal-50/30" />
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-teal-100/40 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 border border-teal-200 px-4 py-1.5 mb-6">
-            <Clock className="w-4 h-4 text-teal-600" />
-            <span className="text-sm font-medium text-teal-700">Up and running in 5 minutes</span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold font-heading text-gray-900 tracking-tight leading-[1.1] mb-6">
-            Let&apos;s get this going.
-          </h1>
-          <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto">
-            Three ways to start. Try the live demo right now, self-host with Docker, or deploy to Vercel in one click.
-          </p>
-        </div>
-      </section>
-
+    <>
       {/* Tabs + Content */}
       <section className="pb-20 sm:pb-28">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -168,7 +181,7 @@ export default function InstallPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto text-left">
                   {[
-                    { icon: Shield, text: "No signup required" },
+                    { icon: Zap, text: "Instant access" },
                     { icon: CheckCircle2, text: "Full feature access" },
                     { icon: Cpu, text: "Realistic demo data" },
                   ].map((item) => {
@@ -186,28 +199,7 @@ export default function InstallPage() {
               {/* Demo credentials */}
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-4">Demo credentials</h3>
-                <div className="rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Password</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Access</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {demoCredentials.map((cred) => (
-                        <tr key={cred.role} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{cred.role}</td>
-                          <td className="px-4 py-3 text-gray-600 font-mono text-xs">{cred.email}</td>
-                          <td className="px-4 py-3 text-gray-600 font-mono hidden sm:table-cell">{cred.password}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell">{cred.note}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <CredentialsTable showAccess />
                 <p className="mt-3 text-xs text-gray-400">All accounts use password: <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">demo123</code></p>
               </div>
             </div>
@@ -219,8 +211,8 @@ export default function InstallPage() {
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-600 flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
                 <div>
-                  <span className="font-medium text-gray-800">You'll need:</span>{" "}
-                  Git, Docker Desktop, Node.js 18+, and pnpm. That's it.
+                  <span className="font-medium text-gray-800">You&apos;ll need:</span>{" "}
+                  Git, Docker Desktop, Node.js 18+, and pnpm. That&apos;s it.
                 </div>
               </div>
 
@@ -228,7 +220,7 @@ export default function InstallPage() {
                 {installSteps.map((step, i) => (
                   <div key={step.number} className="relative">
                     {i < installSteps.length - 1 && (
-                      <div className="absolute left-5 top-12 bottom-0 w-px bg-gray-100" style={{ top: "2.75rem" }} />
+                      <div className="absolute left-5 bottom-0 w-px bg-gray-100" style={{ top: "2.75rem" }} />
                     )}
                     <div className="flex gap-4">
                       <div className="flex items-center justify-center w-10 h-10 rounded-full bg-teal-600 text-white text-sm font-bold shrink-0 z-10">
@@ -259,26 +251,7 @@ export default function InstallPage() {
               {/* Demo credentials */}
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-4">Sign in with these demo accounts</h3>
-                <div className="rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Password</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {demoCredentials.map((cred) => (
-                        <tr key={cred.role} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{cred.role}</td>
-                          <td className="px-4 py-3 text-gray-600 font-mono text-xs">{cred.email}</td>
-                          <td className="px-4 py-3 text-gray-600 font-mono hidden sm:table-cell">{cred.password}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <CredentialsTable />
               </div>
             </div>
           )}
@@ -350,29 +323,33 @@ export default function InstallPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold font-heading text-gray-900 mb-8">Troubleshooting</h2>
           <div className="space-y-2">
-            {troubleshootingItems.map((item, i) => (
-              <div
-                key={i}
-                className="rounded-xl border border-gray-200 bg-white overflow-hidden"
-              >
-                <button
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left text-sm font-medium text-gray-900 hover:bg-gray-50 transition-colors"
+            {troubleshootingItems.map((item, i) => {
+              const isOpen = openFaq === i;
+              return (
+                <div
+                  key={i}
+                  className="rounded-xl border border-gray-200 bg-white overflow-hidden"
                 >
-                  <span>{item.q}</span>
-                  {openFaq === i ? (
-                    <ChevronUp className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                  <button
+                    onClick={() => setOpenFaq(isOpen ? null : i)}
+                    aria-expanded={isOpen}
+                    className="w-full flex items-center justify-between px-5 py-4 text-left text-sm font-medium text-gray-900 hover:bg-gray-50 transition-colors"
+                  >
+                    <span>{item.q}</span>
+                    {isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                    )}
+                  </button>
+                  {isOpen && (
+                    <div className="px-5 pb-4 text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-3">
+                      {item.a}
+                    </div>
                   )}
-                </button>
-                {openFaq === i && (
-                  <div className="px-5 pb-4 text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-3">
-                    {item.a}
-                  </div>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
           <p className="mt-8 text-sm text-gray-500">
             Still stuck?{" "}
@@ -422,6 +399,6 @@ export default function InstallPage() {
           </div>
         </div>
       </section>
-    </div>
+    </>
   );
 }

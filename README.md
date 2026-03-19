@@ -18,9 +18,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gettalky/openpims/actions"><img src="https://github.com/gettalky/openpims/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/evangauer/openvpm/actions"><img src="https://github.com/evangauer/openvpm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <a href="https://github.com/gettalky/openpims/stargazers"><img src="https://img.shields.io/github/stars/gettalky/openpims?style=social" alt="GitHub Stars" /></a>
+  <a href="https://github.com/evangauer/openvpm/stargazers"><img src="https://img.shields.io/github/stars/evangauer/openvpm?style=social" alt="GitHub Stars" /></a>
 </p>
 
 ---
@@ -125,7 +125,7 @@ Structured data models queryable by AI agents. Event stream for agent subscripti
 ## Architecture
 
 ```
-openpims/
+openvpm/
 ├── apps/
 │   ├── web/                    # Next.js frontend + API
 │   │   ├── app/                # App Router pages
@@ -182,8 +182,8 @@ Every endpoint includes Zod validation, role-based access control, and is also a
 
 ```bash
 # Clone the repository
-git clone https://github.com/gettalky/openpims.git
-cd openpims
+git clone https://github.com/evangauer/openvpm.git
+cd openvpm
 
 # Copy environment config
 cp .env.example .env
@@ -312,7 +312,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 ## Community
 
 - **Website:** [openvpm.com](https://openvpm.com)
-- **GitHub Discussions:** [Join the conversation](https://github.com/gettalky/openpims/discussions)
+- **GitHub Discussions:** [Join the conversation](https://github.com/evangauer/openvpm/discussions)
 - **Email:** hello@openvpm.com
 
 ## License
