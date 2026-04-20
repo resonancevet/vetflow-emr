@@ -314,6 +314,16 @@ export function InstallContent() {
                   in the README covering environment variables, database setup, and production configuration.
                 </p>
               </div>
+
+              <div className="rounded-xl border border-teal-100 bg-teal-50/30 p-5 text-sm text-center">
+                <p className="font-medium text-gray-800 mb-1">Not technical? We&apos;ll handle it.</p>
+                <p className="text-gray-600">
+                  We&apos;re building a managed hosting option.{" "}
+                  <a href="/#waitlist" className="text-teal-600 font-medium hover:underline">
+                    Join the waitlist &rarr;
+                  </a>
+                </p>
+              </div>
             </div>
           )}
         </div>

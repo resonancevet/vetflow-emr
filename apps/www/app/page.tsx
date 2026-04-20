@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { WaitlistForm } from "@/components/waitlist-form";
 import {
   Calendar,
   FileText,
@@ -669,6 +670,50 @@ export default function LandingPage() {
             That&apos;s exactly what we&apos;re building. OpenVPM is designed from the ground up
             to make every team member faster &mdash; from the front desk to the exam room.
           </p>
+        </div>
+      </section>
+
+      {/* Managed Hosting Waitlist */}
+      <section id="waitlist" className="py-16 sm:py-20 bg-white">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border border-teal-100 bg-teal-50/30 p-8 sm:p-12 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold font-heading text-gray-900 tracking-tight mb-4">
+              Don&apos;t want to self-host?
+            </h2>
+            <p className="text-gray-600 max-w-lg mx-auto mb-8 leading-relaxed">
+              We&apos;re working on managed hosting so your practice can use OpenVPM
+              for a fraction of what you&apos;re paying today &mdash; no terminal, no devops, just software that works.
+            </p>
+
+            <WaitlistForm />
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-10 max-w-lg mx-auto text-left">
+              {[
+                "Full data transfer",
+                "Managed hosting",
+                "Fully secure",
+                "You own your data",
+              ].map((item) => (
+                <div key={item} className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                  <span className="text-xs text-gray-600">{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-8 text-xs text-gray-400">
+              Built by the team at{" "}
+              <a
+                href="https://gettalky.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-500 hover:text-teal-600 underline underline-offset-2"
+              >
+                Get Talky
+              </a>
+              {" "}&mdash; we&apos;ve been building AI tools for veterinary practices since 2023.
+            </p>
+          </div>
         </div>
       </section>
 
