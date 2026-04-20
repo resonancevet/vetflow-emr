@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { CodeBlock } from "@/components/code-block";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://demo.openvpm.com";
 
 type TabId = "demo" | "self-host" | "cloud";
 

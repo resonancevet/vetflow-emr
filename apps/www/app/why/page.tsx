@@ -13,7 +13,7 @@ import {
   Heart,
 } from "lucide-react";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://demo.openvpm.com";
 
 export const metadata = {
   title: "Why OpenVPM — OpenVPM",

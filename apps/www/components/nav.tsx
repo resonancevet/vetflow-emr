@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Stethoscope, Github, Menu, X } from "lucide-react";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.openvpm.com";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://demo.openvpm.com";
 
 const navLinks = [
   { label: "Features", href: "/features" },
