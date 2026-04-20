@@ -61,6 +61,9 @@ test.describe("Demo screenshots + audit", () => {
         }
       }
     });
+    const AUDIT_OUT = path.resolve(__dirname, "../docs/screenshots/audit");
+    const fs = await import("fs");
+    fs.mkdirSync(AUDIT_OUT, { recursive: true });
 
     // Login
     await page.goto("/login", { waitUntil: "networkidle" });
@@ -93,10 +96,20 @@ test.describe("Demo screenshots + audit", () => {
         errors.push({ route, msg: `navigation error: ${e.message}` });
         return null;
       });
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(1500);
       const status = response?.status() ?? "nav-failed";
+      // capture body text content length as a rough "empty state?" signal
+      const bodyText = await page.locator("main, [role=main], body").first().textContent().catch(() => "");
+      const fileSafe = route.replace(/\//g, "_") || "_root";
+      await page.screenshot({ path: path.join(AUDIT_OUT, `${fileSafe}.png`) }).catch(() => {});
+      const emptyStateWords = ["No upcoming", "No data", "No records", "No messages", "No patients found", "No clients", "No results"];
+      const emptyHits = emptyStateWords.filter((w) => (bodyText ?? "").includes(w));
       const newErrors = errors.length - startErrors;
-      results.push(`${route}: HTTP ${status}${newErrors > 0 ? ` ⚠️  ${newErrors} error(s)` : ""}`);
+      results.push(
+        `${route}: HTTP ${status}` +
+          (newErrors > 0 ? ` ⚠️ ${newErrors} error(s)` : "") +
+          (emptyHits.length > 0 ? ` · empty: ${emptyHits.join(", ")}` : "")
+      );
     }
 
     console.log("\n=== Route audit ===");

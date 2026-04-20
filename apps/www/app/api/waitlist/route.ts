@@ -16,45 +16,52 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.INSTANTLY_API_KEY;
-    const listId = process.env.INSTANTLY_LIST_ID;
+    const webhookUrl = process.env.SLACK_WEBHOOK_URL;
 
-    if (!apiKey || !listId) {
-      console.error("Missing INSTANTLY_API_KEY or INSTANTLY_LIST_ID");
+    if (!webhookUrl) {
+      console.error("Missing SLACK_WEBHOOK_URL");
       return NextResponse.json(
         { error: "Waitlist is temporarily unavailable." },
         { status: 503 }
       );
     }
 
-    // Split name into first/last if provided
-    const nameParts = name?.split(" ") || [];
-    const firstName = nameParts[0] || undefined;
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : undefined;
+    const fields: { type: "mrkdwn"; text: string }[] = [
+      { type: "mrkdwn", text: `*Email:*\n${email}` },
+    ];
+    if (name) fields.push({ type: "mrkdwn", text: `*Name:*\n${name}` });
+    if (practiceName)
+      fields.push({ type: "mrkdwn", text: `*Practice:*\n${practiceName}` });
 
-    const res = await fetch("https://api.instantly.ai/api/v2/leads", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        first_name: firstName,
-        last_name: lastName,
-        company_name: practiceName,
-        list_id: listId,
-        skip_if_in_list: true,
-        custom_variables: {
-          source: "openvpm-website",
-          interest: "managed-hosting",
+    const slackPayload = {
+      text: `New OpenVPM waitlist signup — ${email}`,
+      blocks: [
+        {
+          type: "header",
+          text: { type: "plain_text", text: "🐾 New OpenVPM waitlist signup" },
         },
-      }),
+        { type: "section", fields },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `Source: openvpm.com · ${new Date().toISOString()}`,
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(slackPayload),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("Instantly API error:", res.status, text);
+      console.error("Slack webhook error:", res.status, text);
       return NextResponse.json(
         { error: "Something went wrong. Please try again." },
         { status: 500 }

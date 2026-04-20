@@ -12,7 +12,7 @@ OpenVPM is currently in early development. Security fixes are applied to the lat
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability, please report it by emailing the maintainers directly. We will acknowledge your report within 48 hours and provide a resolution timeline.
+If you discover a security vulnerability, please report it by emailing **evan@gettalky.ai** with `[SECURITY]` in the subject line. We will acknowledge your report within 48 hours and provide a resolution timeline.
 
 When reporting, please include:
 - A description of the vulnerability and its potential impact

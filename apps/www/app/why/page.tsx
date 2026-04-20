@@ -252,8 +252,8 @@ export default function WhyPage() {
               </div>
               <p className="mt-8 text-teal-200 text-sm">
                 Questions?{" "}
-                <a href="mailto:hello@openvpm.com" className="text-white underline underline-offset-2 hover:text-teal-100">
-                  hello@openvpm.com
+                <a href="mailto:evan@gettalky.ai" className="text-white underline underline-offset-2 hover:text-teal-100">
+                  evan@gettalky.ai
                 </a>
               </p>
             </div>

@@ -309,7 +309,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 
 - **Website:** [openvpm.com](https://openvpm.com)
 - **GitHub Discussions:** [Join the conversation](https://github.com/evangauer/openvpm/discussions)
-- **Email:** hello@openvpm.com
+- **Email:** evan@gettalky.ai
 
 ## License
 

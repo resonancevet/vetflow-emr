@@ -374,8 +374,8 @@ export function InstallContent() {
               <ExternalLink className="w-3 h-3" />
             </a>{" "}
             or email us at{" "}
-            <a href="mailto:hello@openvpm.com" className="text-teal-600 hover:underline">
-              hello@openvpm.com
+            <a href="mailto:evan@gettalky.ai" className="text-teal-600 hover:underline">
+              evan@gettalky.ai
             </a>
           </p>
         </div>
@@ -392,8 +392,8 @@ export function InstallContent() {
               </h2>
               <p className="text-teal-100 max-w-lg mx-auto mb-6">
                 Reach out at{" "}
-                <a href="mailto:hello@openvpm.com" className="text-white underline underline-offset-2">
-                  hello@openvpm.com
+                <a href="mailto:evan@gettalky.ai" className="text-white underline underline-offset-2">
+                  evan@gettalky.ai
                 </a>{" "}
                 or open an issue on GitHub.
               </p>
