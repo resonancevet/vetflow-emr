@@ -38,7 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8">
         <div className="mb-6 text-center">
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            OpenPIMS
+            OpenVPM
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Sign in to your practice

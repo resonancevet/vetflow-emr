@@ -11,7 +11,7 @@ export default function AIIntegrationDocs() {
             AI Integration Guide
           </h1>
           <p className="text-lg text-gray-600">
-            Connect AI tools to OpenPIMS for automated clinical workflows,
+            Connect AI tools to OpenVPM for automated clinical workflows,
             intelligent queries, and real-time event processing.
           </p>
         </div>
@@ -19,7 +19,7 @@ export default function AIIntegrationDocs() {
         {/* Overview */}
         <Section id="overview" title="Overview">
           <p className="mb-4 text-gray-700">
-            OpenPIMS is designed to be <strong>AI-first</strong>. Every clinical
+            OpenVPM is designed to be <strong>AI-first</strong>. Every clinical
             action &mdash; creating SOAP notes, querying patient records,
             tracking vaccinations &mdash; is available via a structured API. This
             means AI scribes, voice agents, and dashboard assistants can
@@ -41,7 +41,7 @@ export default function AIIntegrationDocs() {
             <strong>HappyDoc</strong> &mdash; to automatically populate SOAP
             notes after each appointment. The AI listens to the consultation,
             generates structured clinical notes, and posts them directly to
-            OpenPIMS.
+            OpenVPM.
           </p>
 
           <h3 className="mb-2 mt-6 text-sm font-semibold uppercase tracking-wider text-gray-500">
@@ -72,7 +72,7 @@ Content-Type: application/json`}
             Example (cURL)
           </h3>
           <CodeBlock>
-            {`curl -X POST https://your-practice.openpims.com/api/trpc/ai.createSoapFromAI \\
+            {`curl -X POST https://your-practice.openvpm.com/api/trpc/ai.createSoapFromAI \\
   -H "Content-Type: application/json" \\
   -H "Cookie: next-auth.session-token=<SESSION>" \\
   -d '{
@@ -91,7 +91,7 @@ Content-Type: application/json`}
         {/* Structured Queries */}
         <Section id="structured-queries" title="Structured Queries">
           <p className="mb-6 text-gray-700">
-            AI assistants can query OpenPIMS for actionable clinical insights.
+            AI assistants can query OpenVPM for actionable clinical insights.
             These endpoints return structured data optimized for AI consumption
             &mdash; no parsing required.
           </p>
@@ -157,7 +157,7 @@ Content-Type: application/json`}
         <Section id="webhooks" title="Webhook Events">
           <p className="mb-4 text-gray-700">
             Subscribe to real-time events for reactive AI workflows. When
-            something happens in OpenPIMS, your AI system gets notified
+            something happens in OpenVPM, your AI system gets notified
             instantly.
           </p>
 
@@ -239,7 +239,7 @@ Content-Type: application/json`}
         {/* Footer */}
         <div className="mt-16 border-t border-gray-200 pt-8 text-center text-sm text-gray-500">
           <p>
-            OpenPIMS AI Integration API &mdash; Built for the next generation of
+            OpenVPM AI Integration API &mdash; Built for the next generation of
             veterinary care.
           </p>
         </div>

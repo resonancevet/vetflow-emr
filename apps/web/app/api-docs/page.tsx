@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "OpenPIMS API Reference",
-  description: "API documentation for OpenPIMS veterinary practice management",
+  title: "OpenVPM API Reference",
+  description: "API documentation for OpenVPM veterinary practice management",
 };
 
 // ── Endpoint definitions ─────────────────────────────────────
@@ -902,7 +902,7 @@ export default function ApiDocsPage() {
       <nav className="sticky top-0 hidden h-screen w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 lg:block">
         <div className="mb-6">
           <h2 className="text-lg font-bold text-teal-600 dark:text-teal-400">
-            OpenPIMS API
+            OpenVPM API
           </h2>
           <p className="text-xs text-slate-500">v1.0 Reference</p>
         </div>
@@ -951,10 +951,10 @@ export default function ApiDocsPage() {
           {/* Header */}
           <div className="mb-12">
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-              OpenPIMS API Reference
+              OpenVPM API Reference
             </h1>
             <p className="mt-3 text-lg text-slate-600 dark:text-slate-400">
-              Complete API documentation for the OpenPIMS veterinary practice
+              Complete API documentation for the OpenVPM veterinary practice
               management system. All endpoints are available via tRPC and return
               JSON responses.
             </p>
@@ -1058,7 +1058,7 @@ export default function ApiDocsPage() {
               <pre className="overflow-x-auto rounded bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-300">
                 {`POST https://your-server.com/webhook
 Content-Type: application/json
-X-OpenPIMS-Signature: sha256=<hmac-sha256-hex>
+X-OpenVPM-Signature: sha256=<hmac-sha256-hex>
 
 {
   "event": "appointment.created",
@@ -1104,12 +1104,12 @@ function verifySignature(
           {/* Footer */}
           <footer className="mt-16 border-t border-slate-200 pt-6 text-center text-sm text-slate-500 dark:border-slate-700">
             <p>
-              OpenPIMS &mdash; Open-source veterinary practice management.
+              OpenVPM &mdash; Open-source veterinary practice management.
             </p>
             <p className="mt-1">
               API questions? Check the{" "}
               <a
-                href="https://github.com/openpims/openpims"
+                href="https://github.com/evangauer/openvpm"
                 className="text-teal-600 hover:underline dark:text-teal-400"
               >
                 GitHub repository
