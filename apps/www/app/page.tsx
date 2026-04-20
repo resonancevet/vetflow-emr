@@ -206,7 +206,7 @@ export default function LandingPage() {
               style={{ animationDelay: "300ms" }}
             >
               <a
-                href={`${appUrl}/register`}
+                href={`${appUrl}/login`}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-teal-600/25 hover:bg-teal-700 hover:shadow-teal-600/30 transition-all w-full sm:w-auto"
               >
                 Try the Live Demo
@@ -734,7 +734,7 @@ export default function LandingPage() {
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <a
-                  href={`${appUrl}/register`}
+                  href={`${appUrl}/login`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-3.5 text-base font-semibold text-teal-700 shadow-lg hover:bg-teal-50 transition-all"
                 >
                   Try the Live Demo

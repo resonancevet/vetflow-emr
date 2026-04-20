@@ -234,7 +234,7 @@ export default function WhyPage() {
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <a
-                  href={`${appUrl}/register`}
+                  href={`${appUrl}/login`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-3.5 text-base font-semibold text-teal-700 shadow-lg hover:bg-teal-50 transition-all"
                 >
                   Try the Live Demo
