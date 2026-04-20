@@ -446,10 +446,12 @@ function AppointmentDetailModal({
 export default function WhiteboardPage() {
   const [selectedAppointment, setSelectedAppointment] =
     useState<WhiteboardAppointment | null>(null);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Auto-update clock every second
+  // Set initial time on client mount and update every second to avoid
+  // SSR/client hydration mismatch from Date() evaluating differently.
   useEffect(() => {
+    setCurrentTime(new Date());
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -502,9 +504,11 @@ export default function WhiteboardPage() {
           </p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-medium">{formatCurrentTime(currentTime)}</p>
+          <p className="text-sm font-medium">
+            {currentTime ? formatCurrentTime(currentTime) : "\u00A0"}
+          </p>
           <p className="text-xs text-muted-foreground">
-            {formatCurrentDate(currentTime)}
+            {currentTime ? formatCurrentDate(currentTime) : "\u00A0"}
           </p>
         </div>
       </div>
