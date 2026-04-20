@@ -31,7 +31,7 @@ The veterinary PIMS market is broken — and everyone knows it.
 
 **For clinics:** Commercial systems like ezyVet, ProVet Cloud, and Cornerstone charge $200–600+/month, lock you into proprietary data formats, and deliver software that staff describe as "extremely nonuser friendly," "very clunky," with "terrible" financial reporting and support that declines after the sale closes. Legacy systems crash. Modern ones charge extra for texting. Every one of them holds your data hostage.
 
-**For innovators:** Jonathan Ayers (former IDEXX CEO) published research in February 2026 asking whether AI agents will disrupt the PIMS as the "system of record." The answer is yes — but only if there's an open system to build on. Today, most PIMS have closed or poorly documented APIs, making it nearly impossible for AI tools, voice agents, or third-party developers to read and write patient data. There is no widely adopted data interoperability standard in veterinary medicine.
+**For innovators:** AI agents are poised to disrupt the PIMS as the "system of record" — but only if there's an open system to build on. Today, most PIMS have closed or poorly documented APIs, making it nearly impossible for AI tools, voice agents, or third-party developers to read and write patient data. There is no widely adopted data interoperability standard in veterinary medicine.
 
 **The open-source gap:** OpenVPMS is Java-based, dated, and primarily Australian-focused. A few student projects exist on GitHub but none are production-ready. Until now, there has been **no modern, well-designed, open-source PIMS with an open API.**
 
