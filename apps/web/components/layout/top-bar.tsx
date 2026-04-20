@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { Search, Plus } from "lucide-react";
+import Link from "next/link";
+import { Search, Plus, Users, PawPrint, Calendar, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const routeLabels: Record<string, string> = {
@@ -18,6 +20,13 @@ const routeLabels: Record<string, string> = {
   "/settings": "Settings",
 };
 
+const NEW_ACTIONS = [
+  { label: "New Client", href: "/clients/new", Icon: Users },
+  { label: "New Patient", href: "/patients/new", Icon: PawPrint },
+  { label: "New Appointment", href: "/schedule", Icon: Calendar },
+  { label: "New Invoice", href: "/billing/new", Icon: Receipt },
+];
+
 export function TopBar({
   onSearchOpen,
 }: {
@@ -26,6 +35,27 @@ export function TopBar({
   const pathname = usePathname();
   const basePath = "/" + (pathname.split("/")[1] ?? "");
   const label = routeLabels[basePath] ?? "OpenVPM";
+
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setNewMenuOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setNewMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [newMenuOpen]);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-6">
@@ -43,10 +73,37 @@ export function TopBar({
           </kbd>
         </button>
 
-        <Button size="sm" className="gap-1">
-          <Plus className="h-4 w-4" />
-          New
-        </Button>
+        <div className="relative" ref={newMenuRef}>
+          <Button
+            size="sm"
+            className="gap-1"
+            onClick={() => setNewMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+          >
+            <Plus className="h-4 w-4" />
+            New
+          </Button>
+          {newMenuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-md"
+            >
+              {NEW_ACTIONS.map(({ label: actionLabel, href, Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  role="menuitem"
+                  onClick={() => setNewMenuOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  {actionLabel}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
