@@ -22,6 +22,12 @@ import {
   invoiceItems,
   products,
   services,
+  payments,
+  communications,
+  auditLog,
+  controlledSubstanceLog,
+  treatmentTemplates,
+  treatmentTemplateItems,
 } from "./schema/index";
 
 // Pre-hashed bcrypt value for "password123"
@@ -976,6 +982,374 @@ async function seed() {
   console.log(`Products: ${insertedProducts.length} created`);
 
   // =========================================================================
+  // 16. Payments — one per paid invoice
+  // =========================================================================
+  const frontDeskUsers = insertedUsers.filter((u) => u.role === "front_desk");
+  const vetUsers = insertedUsers.filter((u) => u.role === "veterinarian");
+  const techUsers = insertedUsers.filter((u) => u.role === "technician");
+  const adminUser = insertedUsers.find((u) => u.role === "admin")!;
+  const paidInvoices = insertedInvoices.filter((i) => i.status === "paid");
+  const paymentMethods = ["credit_card", "credit_card", "debit_card", "cash", "check", "credit_card", "online"] as const;
+
+  const paymentValues = paidInvoices.map((inv, i) => ({
+    invoiceId: inv.id,
+    amount: inv.total,
+    method: paymentMethods[i % paymentMethods.length]!,
+    receivedBy: frontDeskUsers[i % frontDeskUsers.length]!.id,
+    receivedAt: daysAgo(Math.floor(Math.random() * 14)),
+    notes: null,
+  }));
+  const insertedPayments = await db.insert(payments).values(paymentValues).returning();
+  console.log(`Payments: ${insertedPayments.length} created`);
+
+  // =========================================================================
+  // 17. Communications — messages, calls, emails, portal
+  // =========================================================================
+  type CommRow = typeof communications.$inferInsert;
+  const commValues: CommRow[] = [];
+  const someClients = insertedClients.slice(0, 12);
+
+  // SMS appointment reminders (outbound, delivered)
+  for (let i = 0; i < 5; i++) {
+    commValues.push({
+      practiceId,
+      clientId: someClients[i]!.id,
+      channel: "sms",
+      direction: "outbound",
+      subject: null,
+      content: `Hi ${someClients[i]!.firstName}, this is Neighborhood Veterinary reminding you of your appointment tomorrow. Reply C to confirm or R to reschedule.`,
+      status: "delivered",
+      assignedTo: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      createdAt: daysAgo(Math.floor(Math.random() * 7)),
+    });
+  }
+
+  // Emails — wellness reminders + Rx refill reply + invoice copy
+  const emailSubjects = [
+    { subject: "Annual wellness exam due for your pet", content: "It's time for your yearly wellness visit. Reply to this email or call the clinic to schedule." },
+    { subject: "Vaccination booster reminder", content: "Your pet is due for a DHPP booster this month. We have openings on Tuesday and Thursday afternoons." },
+    { subject: "Re: Prescription refill for Rimadyl", content: "Thanks for the refill request. We've approved a 30-day refill — pick up anytime this week during office hours." },
+    { subject: "Invoice copy — recent visit", content: "Attached is the itemized invoice for your recent visit. Let us know if you have any questions." },
+  ];
+  emailSubjects.forEach((e, i) => {
+    commValues.push({
+      practiceId,
+      clientId: someClients[5 + i]!.id,
+      channel: "email",
+      direction: "outbound",
+      subject: e.subject,
+      content: e.content,
+      status: "sent",
+      assignedTo: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      createdAt: daysAgo(Math.floor(Math.random() * 10) + 1),
+    });
+  });
+
+  // Portal messages — inbound from clients
+  const portalMessages = [
+    { subject: "Question about Luna's medication", content: "Is it okay to give Luna her Rimadyl with food? She seems to have an upset stomach after taking it on an empty stomach." },
+    { subject: "Rescheduling Tuesday appointment", content: "Hi — my work schedule changed. Can we move Tuesday's appointment to later in the week?" },
+    { subject: "Vaccination records needed for boarding", content: "We're boarding Max next weekend. Can you send his vaccination records to Happy Tails Kennel?" },
+  ];
+  portalMessages.forEach((m, i) => {
+    commValues.push({
+      practiceId,
+      clientId: someClients[9 + i]!.id,
+      channel: "portal",
+      direction: "inbound",
+      subject: m.subject,
+      content: m.content,
+      status: "delivered",
+      assignedTo: i === 0 ? vetUsers[0]!.id : frontDeskUsers[0]!.id,
+      createdAt: daysAgo(Math.floor(Math.random() * 5)),
+    });
+  });
+
+  // Phone call logs
+  const callLogs = [
+    { content: "Client called about limping on left hind leg, started this morning. Advised to bring in today — booked 3pm slot.", direction: "inbound" as const },
+    { content: "Called to confirm surgery consent for tomorrow's dental. Client confirmed drop-off at 7:30am, fasting since 10pm.", direction: "outbound" as const },
+    { content: "Post-op check-in call — patient eating normally, sutures look clean. Recheck scheduled in 10 days.", direction: "outbound" as const },
+  ];
+  callLogs.forEach((c, i) => {
+    commValues.push({
+      practiceId,
+      clientId: someClients[i]!.id,
+      channel: "phone",
+      direction: c.direction,
+      subject: null,
+      content: c.content,
+      status: "delivered",
+      assignedTo: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      createdAt: daysAgo(Math.floor(Math.random() * 5)),
+    });
+  });
+
+  const insertedComms = await db.insert(communications).values(commValues).returning();
+  console.log(`Communications: ${insertedComms.length} created`);
+
+  // =========================================================================
+  // 18. Audit log — recent practice activity
+  // =========================================================================
+  type AuditRow = typeof auditLog.$inferInsert;
+  const auditValues: AuditRow[] = [];
+
+  const samplePatients = insertedPatients.slice(0, 15);
+  const sampleAppts = insertedAppointments.slice(0, 20);
+  const sampleInvoicesForAudit = insertedInvoices.slice(0, 10);
+  const auditIp = () => `192.168.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
+
+  // Appointment lifecycle events
+  sampleAppts.slice(0, 12).forEach((appt, i) => {
+    auditValues.push({
+      practiceId,
+      userId: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      action: "appointment.created",
+      entityType: "appointment",
+      entityId: appt.id,
+      changes: { status: "scheduled" },
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 7)),
+    });
+  });
+  sampleAppts.slice(0, 6).forEach((appt, i) => {
+    auditValues.push({
+      practiceId,
+      userId: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      action: "appointment.checked_in",
+      entityType: "appointment",
+      entityId: appt.id,
+      changes: { status: "checked_in" },
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 3)),
+    });
+  });
+
+  // Invoice lifecycle
+  sampleInvoicesForAudit.slice(0, 6).forEach((inv, i) => {
+    auditValues.push({
+      practiceId,
+      userId: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      action: "invoice.created",
+      entityType: "invoice",
+      entityId: inv.id,
+      changes: { total: inv.total },
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 14)),
+    });
+  });
+  paidInvoices.slice(0, 4).forEach((inv, i) => {
+    auditValues.push({
+      practiceId,
+      userId: frontDeskUsers[i % frontDeskUsers.length]!.id,
+      action: "invoice.paid",
+      entityType: "invoice",
+      entityId: inv.id,
+      changes: { status: "paid", paidAmount: inv.total },
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 10)),
+    });
+  });
+
+  // Patient record edits by vets
+  samplePatients.slice(0, 5).forEach((patient, i) => {
+    auditValues.push({
+      practiceId,
+      userId: vetUsers[i % vetUsers.length]!.id,
+      action: "patient.updated",
+      entityType: "patient",
+      entityId: patient.id,
+      changes: { weight: "updated" },
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 5)),
+    });
+  });
+
+  // Login events (practice-level, not tied to an entity)
+  [adminUser, ...vetUsers, ...frontDeskUsers].forEach((user, i) => {
+    auditValues.push({
+      practiceId,
+      userId: user.id,
+      action: "user.login",
+      entityType: "user",
+      entityId: user.id,
+      changes: null,
+      ipAddress: auditIp(),
+      createdAt: daysAgo(Math.floor(Math.random() * 2)),
+    });
+  });
+
+  const insertedAudit = await db.insert(auditLog).values(auditValues).returning();
+  console.log(`Audit log entries: ${insertedAudit.length} created`);
+
+  // =========================================================================
+  // 19. Controlled substance log — DEA-compliant dispense trail
+  // =========================================================================
+  type CsLogRow = typeof controlledSubstanceLog.$inferInsert;
+  const csEntries: CsLogRow[] = [
+    {
+      practiceId,
+      drugName: "Tramadol HCl 50mg",
+      deaSchedule: "IV",
+      action: "administered",
+      quantity: "2.000",
+      unit: "tablet",
+      patientId: samplePatients[0]!.id,
+      performedBy: vetUsers[0]!.id,
+      witnessedBy: techUsers[0]!.id,
+      lotNumber: "TR-2026-0318-A",
+      notes: "Post-op pain management, dental extraction",
+      performedAt: daysAgo(2),
+    },
+    {
+      practiceId,
+      drugName: "Buprenorphine 0.3 mg/mL",
+      deaSchedule: "III",
+      action: "administered",
+      quantity: "0.500",
+      unit: "mL",
+      patientId: samplePatients[1]!.id,
+      performedBy: vetUsers[1]!.id,
+      witnessedBy: techUsers[0]!.id,
+      lotNumber: "BUP-2026-Q1-7",
+      notes: "Pre-surgical analgesia",
+      performedAt: daysAgo(4),
+    },
+    {
+      practiceId,
+      drugName: "Phenobarbital 30mg",
+      deaSchedule: "IV",
+      action: "administered",
+      quantity: "30.000",
+      unit: "tablet",
+      patientId: samplePatients[2]!.id,
+      performedBy: vetUsers[0]!.id,
+      witnessedBy: techUsers[1]!.id,
+      lotNumber: "PB-2026-0201",
+      notes: "30-day supply dispensed for seizure control",
+      performedAt: daysAgo(6),
+    },
+    {
+      practiceId,
+      drugName: "Ketamine 100 mg/mL",
+      deaSchedule: "III",
+      action: "administered",
+      quantity: "1.200",
+      unit: "mL",
+      patientId: samplePatients[3]!.id,
+      performedBy: vetUsers[2]!.id,
+      witnessedBy: techUsers[0]!.id,
+      lotNumber: "KET-2026-0405",
+      notes: "Induction for spay procedure",
+      performedAt: daysAgo(1),
+    },
+    {
+      practiceId,
+      drugName: "Morphine 15 mg/mL",
+      deaSchedule: "II",
+      action: "wasted",
+      quantity: "0.200",
+      unit: "mL",
+      patientId: null,
+      performedBy: vetUsers[0]!.id,
+      witnessedBy: vetUsers[1]!.id,
+      lotNumber: "MOR-2026-0112",
+      notes: "Partial vial waste after dose preparation — witnessed disposal",
+      performedAt: daysAgo(3),
+    },
+    {
+      practiceId,
+      drugName: "Gabapentin 100mg",
+      deaSchedule: "V",
+      action: "administered",
+      quantity: "60.000",
+      unit: "capsule",
+      patientId: samplePatients[4]!.id,
+      performedBy: vetUsers[1]!.id,
+      witnessedBy: techUsers[1]!.id,
+      lotNumber: "GAB-2026-0227",
+      notes: "30-day supply for chronic pain management",
+      performedAt: daysAgo(8),
+    },
+  ];
+  const insertedCs = await db.insert(controlledSubstanceLog).values(csEntries).returning();
+  console.log(`Controlled substance log: ${insertedCs.length} created`);
+
+  // =========================================================================
+  // 20. Treatment templates — common procedure bundles
+  // =========================================================================
+  type TemplateRow = typeof treatmentTemplates.$inferInsert;
+  const templatesData: Array<TemplateRow & { items: Array<{ description: string; defaultQuantity: number; defaultUnitPrice: string }> }> = [
+    {
+      practiceId,
+      name: "Wellness Exam — Adult Dog",
+      description: "Standard annual wellness exam for adult canines. Includes physical exam, heartworm test, and fecal analysis.",
+      category: "Wellness",
+      isActive: true,
+      items: [
+        { description: "Physical examination (15 min)", defaultQuantity: 1, defaultUnitPrice: "65.00" },
+        { description: "Heartworm antigen test", defaultQuantity: 1, defaultUnitPrice: "45.00" },
+        { description: "Fecal flotation", defaultQuantity: 1, defaultUnitPrice: "35.00" },
+      ],
+    },
+    {
+      practiceId,
+      name: "Puppy DHPP Booster Visit",
+      description: "Routine puppy vaccine visit — DHPP booster with brief exam.",
+      category: "Vaccination",
+      isActive: true,
+      items: [
+        { description: "Brief exam (10 min)", defaultQuantity: 1, defaultUnitPrice: "45.00" },
+        { description: "DHPP vaccine", defaultQuantity: 1, defaultUnitPrice: "32.00" },
+      ],
+    },
+    {
+      practiceId,
+      name: "Dental Prophylaxis — Standard",
+      description: "Routine dental cleaning under anesthesia. Includes pre-anesthetic bloodwork and scale/polish.",
+      category: "Dental",
+      isActive: true,
+      items: [
+        { description: "Pre-anesthetic bloodwork panel", defaultQuantity: 1, defaultUnitPrice: "95.00" },
+        { description: "General anesthesia (first 30 min)", defaultQuantity: 1, defaultUnitPrice: "180.00" },
+        { description: "Dental scale and polish", defaultQuantity: 1, defaultUnitPrice: "220.00" },
+        { description: "IV fluid support", defaultQuantity: 1, defaultUnitPrice: "55.00" },
+      ],
+    },
+    {
+      practiceId,
+      name: "Canine Spay — Under 40 lb",
+      description: "Routine ovariohysterectomy for small/medium canines. Includes anesthesia, surgery, and 3-day pain meds.",
+      category: "Surgery",
+      isActive: true,
+      items: [
+        { description: "Pre-surgical exam & bloodwork", defaultQuantity: 1, defaultUnitPrice: "135.00" },
+        { description: "Spay surgery — under 40 lb", defaultQuantity: 1, defaultUnitPrice: "385.00" },
+        { description: "General anesthesia (60 min)", defaultQuantity: 1, defaultUnitPrice: "220.00" },
+        { description: "Take-home pain medication (3 days)", defaultQuantity: 1, defaultUnitPrice: "28.00" },
+        { description: "E-collar", defaultQuantity: 1, defaultUnitPrice: "18.00" },
+      ],
+    },
+  ];
+
+  for (const tpl of templatesData) {
+    const { items, ...tplFields } = tpl;
+    const [inserted] = await db.insert(treatmentTemplates).values(tplFields).returning();
+    await db.insert(treatmentTemplateItems).values(
+      items.map((item, idx) => ({
+        templateId: inserted!.id,
+        itemType: "service" as const,
+        itemId: null,
+        description: item.description,
+        defaultQuantity: item.defaultQuantity,
+        defaultUnitPrice: item.defaultUnitPrice,
+        sortOrder: idx,
+      }))
+    );
+  }
+  console.log(`Treatment templates: ${templatesData.length} created`);
+
+  // =========================================================================
   // Done!
   // =========================================================================
   console.log("\nSeed completed successfully!");
@@ -995,6 +1369,11 @@ Summary:
   - ${labResultValues.length} lab results
   - ${procedureValues.length} procedures
   - ${insertedInvoices.length} invoices with ${invoiceItemValues.length} line items
+  - ${insertedPayments.length} payments
+  - ${insertedComms.length} communications (SMS/email/portal/phone)
+  - ${insertedAudit.length} audit log entries
+  - ${insertedCs.length} controlled substance log entries
+  - ${templatesData.length} treatment templates
   - ${insertedServices.length} services
   - ${insertedProducts.length} products
   `);
