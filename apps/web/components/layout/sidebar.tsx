@@ -23,6 +23,24 @@ import {
   LogOut,
 } from "lucide-react";
 
+function PawMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <ellipse cx="12" cy="16" rx="4.5" ry="3.5" />
+      <ellipse cx="6" cy="9" rx="2" ry="2.5" />
+      <ellipse cx="9.5" cy="4.5" rx="1.7" ry="2.2" />
+      <ellipse cx="14.5" cy="4.5" rx="1.7" ry="2.2" />
+      <ellipse cx="18" cy="9" rx="2" ry="2.5" />
+    </svg>
+  );
+}
+
 type UserRole = "admin" | "veterinarian" | "technician" | "front_desk";
 
 const allRoles: UserRole[] = ["admin", "veterinarian", "technician", "front_desk"];
@@ -66,7 +84,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center border-b border-border px-4">
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <PawPrint className="h-4 w-4 text-primary-foreground" />
+            <PawMark className="h-4 w-4 text-primary-foreground" />
           </div>
           {!collapsed && (
             <span className="font-heading text-lg font-semibold">

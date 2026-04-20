@@ -3,7 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Stethoscope, Github, Menu, X } from "lucide-react";
+import { Github, Menu, X } from "lucide-react";
+
+function PawMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <ellipse cx="12" cy="16" rx="4.5" ry="3.5" />
+      <ellipse cx="6" cy="9" rx="2" ry="2.5" />
+      <ellipse cx="9.5" cy="4.5" rx="1.7" ry="2.2" />
+      <ellipse cx="14.5" cy="4.5" rx="1.7" ry="2.2" />
+      <ellipse cx="18" cy="9" rx="2" ry="2.5" />
+    </svg>
+  );
+}
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://demo.openvpm.com";
 
@@ -24,7 +42,7 @@ export function MarketingNav() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-600">
-              <Stethoscope className="w-5 h-5 text-white" />
+              <PawMark className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl font-bold font-heading text-gray-900 tracking-tight">
               OpenVPM
