@@ -11,7 +11,6 @@
     "db:migrate": "pnpm --filter @openpims/db db:migrate",
     "db:seed": "pnpm --filter @openpims/db db:seed",
     "db:reset": "pnpm --filter @openpims/db db:reset",
-    "db:seed-demo": "pnpm --filter @openpims/db seed-demo",
     "db:studio": "pnpm --filter @openpims/db db:studio",
     "clean": "turbo clean",
     "test:e2e": "playwright test",

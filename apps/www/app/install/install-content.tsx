@@ -61,10 +61,10 @@ const installSteps = [
 ];
 
 const demoCredentials = [
-  { role: "Admin / Owner", email: "sarah.chen@pawsitivecarevet.example.com", password: "demo123", note: "Full access to all settings and reports" },
-  { role: "Veterinarian", email: "james.rodriguez@pawsitivecarevet.example.com", password: "demo123", note: "Records, scheduling, prescriptions" },
-  { role: "Technician", email: "emily.chen@pawsitivecarevet.example.com", password: "demo123", note: "Records, whiteboard, inventory" },
-  { role: "Front Desk", email: "lisa.park@pawsitivecarevet.example.com", password: "demo123", note: "Scheduling, clients, communications" },
+  { role: "Admin / Owner", email: "admin@neighborhoodvet.example.com", password: "password123", note: "Full access to all settings and reports" },
+  { role: "Veterinarian", email: "sarah.chen@neighborhoodvet.example.com", password: "password123", note: "Records, scheduling, prescriptions" },
+  { role: "Technician", email: "jamie.torres@neighborhoodvet.example.com", password: "password123", note: "Records, whiteboard, inventory" },
+  { role: "Front Desk", email: "morgan.bailey@neighborhoodvet.example.com", password: "password123", note: "Scheduling, clients, communications" },
 ];
 
 const troubleshootingItems = [
@@ -201,7 +201,7 @@ export function InstallContent() {
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-4">Demo credentials</h3>
                 <CredentialsTable showAccess />
-                <p className="mt-3 text-xs text-gray-400">All accounts use password: <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">demo123</code></p>
+                <p className="mt-3 text-xs text-gray-400">All accounts use password: <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">password123</code></p>
               </div>
             </div>
           )}

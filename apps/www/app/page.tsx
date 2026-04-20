@@ -278,7 +278,7 @@ export default function LandingPage() {
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <div className="text-lg font-semibold text-gray-800 mb-1">Good morning, Dr. Chen</div>
-                        <div className="text-sm text-gray-400">Pawsitive Care Veterinary &middot; Wednesday, March 18</div>
+                        <div className="text-sm text-gray-400">Neighborhood Veterinary &middot; Monday, April 20</div>
                       </div>
                       <div className="h-9 w-28 bg-teal-600 rounded-lg flex items-center justify-center text-xs text-white font-medium">
                         + New Appt
