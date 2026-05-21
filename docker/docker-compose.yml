@@ -29,7 +29,10 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
 
+  # Optional: production web image. For local dev, use `pnpm dev` on the host.
+  # Start with: docker compose -f docker/docker-compose.yml --profile production up -d
   web:
+    profiles: ["production"]
     build:
       context: ..
       dockerfile: apps/web/Dockerfile

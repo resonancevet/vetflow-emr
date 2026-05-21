@@ -16,9 +16,8 @@ RUN pnpm install --frozen-lockfile
 # --- Build ---
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
-COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
+# Copy full install tree (all workspace node_modules), then overlay source.
+COPY --from=deps /app ./
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
