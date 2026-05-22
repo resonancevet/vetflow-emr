@@ -1,7 +1,7 @@
-import { config } from "dotenv";
+import { createRequire } from "node:module";
 import { defineConfig } from "drizzle-kit";
 
-config({ path: "../../.env" });
+createRequire(import.meta.url)("@openpims/config/load-env");
 
 export default defineConfig({
   schema: "./schema/index.ts",

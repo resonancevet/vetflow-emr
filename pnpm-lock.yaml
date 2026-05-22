@@ -222,6 +222,10 @@ importers:
         version: 5.9.3
 
   packages/config:
+    dependencies:
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
     devDependencies:
       tailwindcss:
         specifier: ^3.4.0

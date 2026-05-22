@@ -1,3 +1,5 @@
+require("@openpims/config/load-env");
+
 const path = require("path");
 
 /** @type {import('next').NextConfig} */

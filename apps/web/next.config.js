@@ -1,3 +1,5 @@
+require("@openpims/config/load-env");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",

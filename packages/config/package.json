@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "exports": {
+    "./load-env": "./load-env.cjs",
     "./tailwind": "./tailwind.config.ts",
     "./tsconfig.base.json": "./tsconfig.base.json",
     "./tsconfig.nextjs.json": "./tsconfig.nextjs.json"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0",

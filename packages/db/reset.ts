@@ -1,5 +1,7 @@
-import { config } from "dotenv";
-config({ path: "../../.env" });
+import { createRequire } from "node:module";
+
+createRequire(import.meta.url)("@openpims/config/load-env");
+
 import { sql } from "drizzle-orm";
 import { db } from "./client";
 

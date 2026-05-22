@@ -1,5 +1,7 @@
-import { config } from "dotenv";
-config({ path: "../../.env" });
+import { createRequire } from "node:module";
+
+createRequire(import.meta.url)("@openpims/config/load-env");
+
 import crypto from "crypto";
 import { db } from "./client";
 import {

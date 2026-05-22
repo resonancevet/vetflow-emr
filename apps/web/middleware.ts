@@ -16,8 +16,11 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Unauthenticated visitors at root get redirected to the marketing site
+  // Unauthenticated visitors at root get redirected to the marketing site (prod only)
   if (!token && request.nextUrl.pathname === "/") {
+    if (process.env.NODE_ENV === "development") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     const wwwUrl = process.env.NEXT_PUBLIC_WWW_URL || "https://openvpm.com";
     return NextResponse.redirect(wwwUrl);
   }
