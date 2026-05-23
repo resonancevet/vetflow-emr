@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import {
   PatientAlerts,
   PatientClinicalAdd,
 } from "@/components/patients/patient-clinical-add";
+import { recordPatientView } from "@/lib/recent-patients";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -81,6 +82,18 @@ export default function PatientDetailPage() {
     { id: params.id },
     { enabled: !!params.id }
   );
+
+  useEffect(() => {
+    if (!patient) return;
+    recordPatientView({
+      id: patient.id,
+      name: patient.name,
+      species: patient.species ?? null,
+      breed: patient.breed ?? null,
+      clientFirstName: patient.clientFirstName ?? null,
+      clientLastName: patient.clientLastName ?? null,
+    });
+  }, [patient]);
 
   const updatePhotoMutation = trpc.patients.update.useMutation({
     onSuccess: () => {

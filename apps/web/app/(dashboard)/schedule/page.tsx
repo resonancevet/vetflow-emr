@@ -110,6 +110,64 @@ function getBlockHeight(start: Date, end: Date): number {
   return Math.max(diffHours * HOUR_HEIGHT, 20); // min 20px
 }
 
+/**
+ * Assign each appointment a column index inside an overlap cluster so
+ * overlapping appointments stagger horizontally instead of stacking on top of
+ * each other. Appointments that don't overlap reuse columns.
+ */
+function layoutAppointments(
+  list: Appointment[]
+): Map<string, { column: number; columnCount: number }> {
+  const sorted = [...list].sort(
+    (a, b) =>
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+  );
+
+  const layout = new Map<string, { column: number; columnCount: number }>();
+
+  type Active = { id: string; end: number; column: number };
+  let cluster: { ids: string[]; active: Active[]; maxColumns: number } = {
+    ids: [],
+    active: [],
+    maxColumns: 0,
+  };
+
+  const flush = () => {
+    for (const id of cluster.ids) {
+      const existing = layout.get(id)!;
+      layout.set(id, {
+        column: existing.column,
+        columnCount: cluster.maxColumns,
+      });
+    }
+    cluster = { ids: [], active: [], maxColumns: 0 };
+  };
+
+  for (const appt of sorted) {
+    const startMs = new Date(appt.startTime).getTime();
+    const endMs = new Date(appt.endTime).getTime();
+
+    cluster.active = cluster.active.filter((a) => a.end > startMs);
+    if (cluster.active.length === 0 && cluster.ids.length > 0) flush();
+
+    const usedColumns = new Set(cluster.active.map((a) => a.column));
+    let column = 0;
+    while (usedColumns.has(column)) column += 1;
+
+    cluster.active.push({ id: appt.id, end: endMs, column });
+    cluster.ids.push(appt.id);
+    cluster.maxColumns = Math.max(
+      cluster.maxColumns,
+      cluster.active.length,
+      column + 1
+    );
+    layout.set(appt.id, { column, columnCount: cluster.maxColumns });
+  }
+
+  if (cluster.ids.length > 0) flush();
+  return layout;
+}
+
 // --- Types for appointment from API ---
 
 type Appointment = {
@@ -202,9 +260,13 @@ function GridLines() {
 function AppointmentBlock({
   appointment,
   onClick,
+  column,
+  columnCount,
 }: {
   appointment: Appointment;
   onClick: () => void;
+  column: number;
+  columnCount: number;
 }) {
   const start = new Date(appointment.startTime);
   const end = new Date(appointment.endTime);
@@ -214,14 +276,22 @@ function AppointmentBlock({
   // Use the type color or a default
   const bgColor = appointment.typeColor || "#3b82f6";
 
+  // Stagger overlapping appointments across columns so the bottom block stays
+  // reachable. Each cluster splits available width evenly.
+  const totalCols = Math.max(columnCount, 1);
+  const widthPct = 100 / totalCols;
+  const leftPct = column * widthPct;
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="absolute left-1 right-1 rounded-md px-2 py-1 text-left text-xs overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      className="absolute rounded-md px-2 py-1 text-left text-xs overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       style={{
         top,
         height: Math.max(height, 44),
+        left: `calc(${leftPct}% + 2px)`,
+        width: `calc(${widthPct}% - 4px)`,
         backgroundColor: `${bgColor}20`,
         borderLeft: `3px solid ${bgColor}`,
       }}
@@ -244,11 +314,13 @@ function AppointmentDetailPopover({
   appointment,
   onClose,
   onStatusChange,
+  onEdit,
   isUpdating,
 }: {
   appointment: Appointment;
   onClose: () => void;
   onStatusChange: (id: string, status: AppointmentStatus) => void;
+  onEdit: () => void;
   isUpdating: boolean;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -367,6 +439,9 @@ function AppointmentDetailPopover({
         {/* Actions */}
         {(statusActions.length > 0 || current === "scheduled" || current === "confirmed") && (
           <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
             {(current === "scheduled" || current === "confirmed") && (
               <SendReminderButton appointmentId={appointment.id} />
             )}
@@ -450,15 +525,40 @@ function BookingForm({
   onClose,
   defaultDate,
   defaultTime,
+  editingAppointment,
 }: {
   onClose: () => void;
   defaultDate: Date;
   defaultTime?: string;
+  editingAppointment?: Appointment | null;
 }) {
   const modalRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
+  const isEditing = Boolean(editingAppointment);
 
-  // Form state
+  // Compute defaults from the appointment we're editing (if any)
+  const initial = (() => {
+    if (!editingAppointment) {
+      return {
+        date: toISODate(defaultDate),
+        startTime: defaultTime || "09:00",
+        duration: 30,
+      };
+    }
+    const start = new Date(editingAppointment.startTime);
+    const end = new Date(editingAppointment.endTime);
+    const hh = String(start.getHours()).padStart(2, "0");
+    const mm = String(start.getMinutes()).padStart(2, "0");
+    return {
+      date: toISODate(start),
+      startTime: `${hh}:${mm}`,
+      duration: Math.max(
+        5,
+        Math.round((end.getTime() - start.getTime()) / 60000)
+      ),
+    };
+  })();
+
   const [patientSearch, setPatientSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<{
     id: string;
@@ -466,15 +566,25 @@ function BookingForm({
     species: string | null;
     clientFirstName: string | null;
     clientLastName: string | null;
-  } | null>(null);
+  } | null>(
+    editingAppointment && editingAppointment.patientId
+      ? {
+          id: editingAppointment.patientId,
+          name: editingAppointment.patientName ?? "Patient",
+          species: editingAppointment.patientSpecies ?? null,
+          clientFirstName: editingAppointment.clientFirstName ?? null,
+          clientLastName: editingAppointment.clientLastName ?? null,
+        }
+      : null
+  );
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [typeId, setTypeId] = useState("");
-  const [doctorId, setDoctorId] = useState("");
+  const [doctorId, setDoctorId] = useState(editingAppointment?.doctorId ?? "");
   const [roomId, setRoomId] = useState("");
-  const [date, setDate] = useState(toISODate(defaultDate));
-  const [startTime, setStartTime] = useState(defaultTime || "09:00");
-  const [duration, setDuration] = useState(30);
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(initial.date);
+  const [startTime, setStartTime] = useState(initial.startTime);
+  const [duration, setDuration] = useState(initial.duration);
+  const [notes, setNotes] = useState(editingAppointment?.notes ?? "");
 
   const debouncedSearch = useDebounce(patientSearch, 300);
 
@@ -487,6 +597,23 @@ function BookingForm({
   const { data: doctors } = trpc.appointments.listDoctors.useQuery();
   const { data: roomsList } = trpc.appointments.listRooms.useQuery();
 
+  // Match the editing appointment's type/room by name once their lists load
+  useEffect(() => {
+    if (!editingAppointment || !appointmentTypes || typeId) return;
+    const match = appointmentTypes.find(
+      (t) => t.name === editingAppointment.typeName
+    );
+    if (match) setTypeId(match.id);
+  }, [editingAppointment, appointmentTypes, typeId]);
+
+  useEffect(() => {
+    if (!editingAppointment || !roomsList || roomId) return;
+    const match = roomsList.find(
+      (r) => r.name === editingAppointment.roomName
+    );
+    if (match) setRoomId(match.id);
+  }, [editingAppointment, roomsList, roomId]);
+
   const createAppointment = trpc.appointments.create.useMutation({
     onSuccess: () => {
       toast.success("Appointment created");
@@ -498,15 +625,26 @@ function BookingForm({
     },
   });
 
-  // When appointment type changes, update duration
+  const updateAppointment = trpc.appointments.update.useMutation({
+    onSuccess: () => {
+      toast.success("Appointment updated");
+      utils.appointments.list.invalidate();
+      onClose();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  // When appointment type changes, update duration (skip on edit pre-fill)
   useEffect(() => {
     if (typeId && appointmentTypes) {
       const found = appointmentTypes.find((t) => t.id === typeId);
-      if (found?.durationMinutes) {
+      if (found?.durationMinutes && !isEditing) {
         setDuration(found.durationMinutes);
       }
     }
-  }, [typeId, appointmentTypes]);
+  }, [typeId, appointmentTypes, isEditing]);
 
   // Close on escape / click outside
   useEffect(() => {
@@ -526,9 +664,25 @@ function BookingForm({
     };
   }, [onClose]);
 
+  const isPending =
+    createAppointment.isPending || updateAppointment.isPending;
+
   const handleSave = () => {
     const startDt = new Date(`${date}T${startTime}:00`);
     const endDt = new Date(startDt.getTime() + duration * 60 * 1000);
+
+    if (isEditing && editingAppointment) {
+      updateAppointment.mutate({
+        id: editingAppointment.id,
+        startTime: startDt.toISOString(),
+        endTime: endDt.toISOString(),
+        typeId: typeId || null,
+        doctorId: doctorId || null,
+        roomId: roomId || null,
+        notes: notes || null,
+      });
+      return;
+    }
 
     createAppointment.mutate({
       startTime: startDt.toISOString(),
@@ -555,7 +709,9 @@ function BookingForm({
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold">New Appointment</h3>
+          <h3 className="text-sm font-semibold">
+            {isEditing ? "Edit Appointment" : "New Appointment"}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -578,16 +734,18 @@ function BookingForm({
                     <span className="text-muted-foreground"> ({selectedPatient.species})</span>
                   )}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedPatient(null);
-                    setPatientSearch("");
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPatient(null);
+                      setPatientSearch("");
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             ) : (
               <div className="relative mt-1">
@@ -741,15 +899,9 @@ function BookingForm({
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={createAppointment.isPending}
-          >
-            {createAppointment.isPending && (
-              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-            )}
-            Save
+          <Button size="sm" onClick={handleSave} disabled={isPending}>
+            {isPending && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+            {isEditing ? "Save changes" : "Save"}
           </Button>
         </div>
       </div>
@@ -761,11 +913,11 @@ function BookingForm({
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(() => startOfDay(new Date()));
-  const [view, setView] = useState<"day" | "week">("day");
   const [doctorFilter, setDoctorFilter] = useState<string>("all");
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingDefaultTime, setBookingDefaultTime] = useState<string | undefined>(undefined);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
   const { data: appointments, isLoading, error } = trpc.appointments.list.useQuery({
     startDate: startOfDay(currentDate).toISOString(),
@@ -843,34 +995,6 @@ export default function SchedulePage() {
         <h3 className="text-sm font-medium">{formatDate(currentDate)}</h3>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex rounded-md border border-border">
-            <button
-              type="button"
-              onClick={() => setView("day")}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium transition-colors rounded-l-md",
-                view === "day"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted text-muted-foreground"
-              )}
-            >
-              Day
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("week")}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium transition-colors rounded-r-md border-l border-border",
-                view === "week"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted text-muted-foreground"
-              )}
-            >
-              Week
-            </button>
-          </div>
-
           {/* Doctor filter */}
           <div className="relative">
             <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -910,12 +1034,7 @@ export default function SchedulePage() {
       )}
 
       {/* Calendar body */}
-      {view === "week" ? (
-        <div className="mt-4 rounded-lg border border-dashed border-border bg-card p-12 text-center">
-          <Calendar className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-2 text-muted-foreground">Week view coming soon</p>
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="mt-6 flex items-center justify-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading appointments...
@@ -962,13 +1081,24 @@ export default function SchedulePage() {
 
               {/* Appointment blocks */}
               {appointments && appointments.length > 0 ? (
-                appointments.map((appt) => (
-                  <AppointmentBlock
-                    key={appt.id}
-                    appointment={appt}
-                    onClick={() => setSelectedAppointment(appt)}
-                  />
-                ))
+                (() => {
+                  const layout = layoutAppointments(appointments);
+                  return appointments.map((appt) => {
+                    const slot = layout.get(appt.id) ?? {
+                      column: 0,
+                      columnCount: 1,
+                    };
+                    return (
+                      <AppointmentBlock
+                        key={appt.id}
+                        appointment={appt}
+                        onClick={() => setSelectedAppointment(appt)}
+                        column={slot.column}
+                        columnCount={slot.columnCount}
+                      />
+                    );
+                  });
+                })()
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
@@ -997,16 +1127,24 @@ export default function SchedulePage() {
           appointment={selectedAppointment}
           onClose={() => setSelectedAppointment(null)}
           onStatusChange={handleStatusChange}
+          onEdit={() => {
+            setEditingAppointment(selectedAppointment);
+            setSelectedAppointment(null);
+          }}
           isUpdating={updateStatus.isPending}
         />
       )}
 
-      {/* Booking form */}
-      {showBookingForm && (
+      {/* Booking form (create or edit) */}
+      {(showBookingForm || editingAppointment) && (
         <BookingForm
-          onClose={() => setShowBookingForm(false)}
+          onClose={() => {
+            setShowBookingForm(false);
+            setEditingAppointment(null);
+          }}
           defaultDate={currentDate}
           defaultTime={bookingDefaultTime}
+          editingAppointment={editingAppointment}
         />
       )}
     </div>

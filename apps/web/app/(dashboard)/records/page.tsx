@@ -15,6 +15,7 @@ import {
   FlaskConical,
   Scissors,
   Tag,
+  Clock,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,11 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { generatePrescriptionLabelPdf } from "@/lib/pdf";
+import {
+  recordPatientView,
+  useRecentPatients,
+  type RecentPatient,
+} from "@/lib/recent-patients";
 
 type Tab = "soap" | "vaccinations" | "prescriptions" | "problems" | "labResults" | "procedures";
 
@@ -135,7 +141,34 @@ export default function RecordsPage() {
     { enabled: searchQuery.length >= 1 }
   );
 
+  const recentPatients = useRecentPatients();
+
   const patientId = selectedPatient?.id ?? "";
+
+  const selectPatient = (
+    p:
+      | {
+          id: string;
+          name: string;
+          species: string | null;
+          breed: string | null;
+          clientFirstName: string | null;
+          clientLastName: string | null;
+        }
+      | RecentPatient
+  ) => {
+    const next = {
+      id: p.id,
+      name: p.name,
+      species: p.species,
+      breed: p.breed,
+      clientFirstName: p.clientFirstName,
+      clientLastName: p.clientLastName,
+    };
+    setSelectedPatient(next);
+    setSearchQuery(p.name);
+    recordPatientView(next);
+  };
 
   const { data: soapNotes } = trpc.records.listSoapNotes.useQuery(
     { patientId },
@@ -233,6 +266,43 @@ export default function RecordsPage() {
           />
         </div>
 
+        {/* Recent patients (no active search, no selection) */}
+        {!selectedPatient && searchQuery.length === 0 && recentPatients.length > 0 && (
+          <div className="mt-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              Recently viewed
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recentPatients.map((p) => {
+                const owner = [p.clientFirstName, p.clientLastName]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => selectPatient(p)}
+                    className="group flex min-h-[2.5rem] items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
+                  >
+                    <span className="font-medium text-foreground">{p.name}</span>
+                    {p.species && (
+                      <span className="text-muted-foreground capitalize">
+                        {p.species}
+                      </span>
+                    )}
+                    {owner && (
+                      <span className="hidden text-muted-foreground sm:inline">
+                        &middot; {owner}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Search Dropdown */}
         {searchQuery.length >= 1 && !selectedPatient && searchResults && (
           <div className="absolute z-10 mt-1 w-full rounded-lg border border-border bg-card shadow-lg">
@@ -244,10 +314,7 @@ export default function RecordsPage() {
               searchResults.map((patient) => (
                 <button
                   key={patient.id}
-                  onClick={() => {
-                    setSelectedPatient(patient);
-                    setSearchQuery(patient.name);
-                  }}
+                  onClick={() => selectPatient(patient)}
                   className="flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-muted/50 first:rounded-t-lg last:rounded-b-lg transition-colors"
                 >
                   <div>

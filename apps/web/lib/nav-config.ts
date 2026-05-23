@@ -3,6 +3,7 @@ import {
   FileText,
   PawPrint,
   Settings,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,10 +17,15 @@ export type NavItem = {
   mobilePrimary?: boolean;
 };
 
-/** v0 field-vet navigation (back-office routes hidden, not deleted) */
+/**
+ * v0 field-vet navigation (back-office routes hidden, not deleted).
+ * Mobile bottom nav surfaces only the four most common destinations to keep
+ * tap targets large; Clients lives in the sidebar / drawer instead.
+ */
 export const v0NavItems: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: Calendar, mobilePrimary: true },
   { href: "/patients", label: "Patients", icon: PawPrint, mobilePrimary: true },
+  { href: "/clients", label: "Clients", icon: Users },
   { href: "/records", label: "Records", icon: FileText, mobilePrimary: true },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];

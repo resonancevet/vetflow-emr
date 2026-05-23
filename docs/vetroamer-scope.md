@@ -20,19 +20,19 @@ Solo / full-access vet with internet connectivity:
 
 | Route | Purpose |
 |-------|---------|
-| `/schedule` | Day view, book and check in appointments |
+| `/schedule` | Day view, book / check in / edit appointments |
 | `/patients` | Patient search and records entry |
-| `/records` | SOAP-centric clinical records |
+| `/clients` | Client list and contact info (sidebar only; not in mobile bottom nav) |
+| `/records` | SOAP-centric clinical records, recent patients |
 | `/settings` | Profile, preferences, dark mode |
 
-Clients are reachable via patient detail, Cmd+K search, and New Patient flows.
+Mobile bottom nav surfaces Schedule, Patients, Records, Settings. Clients is reachable from the sidebar, Cmd+K search, and patient detail.
 
 ## Hidden in v0 (code retained, nav removed)
 
 | Module | Route | Re-enable in |
 |--------|-------|--------------|
 | Dashboard | `/` | Optional later |
-| Clients (nav) | `/clients` | v0 via search only |
 | Billing | `/billing` | v2 |
 | Inventory | `/inventory` | v2 |
 | Inbox | `/inbox` | v1 |

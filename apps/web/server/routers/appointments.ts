@@ -160,6 +160,80 @@ export const appointmentsRouter = createRouter({
       return appt!;
     }),
 
+  update: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "front_desk"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        typeId: z.string().uuid().nullable().optional(),
+        doctorId: z.string().uuid().nullable().optional(),
+        roomId: z.string().uuid().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+
+      // If time/doctor changed, re-check conflicts
+      const newStart = rest.startTime ? new Date(rest.startTime) : undefined;
+      const newEnd = rest.endTime ? new Date(rest.endTime) : undefined;
+
+      if (newStart && newEnd && rest.doctorId) {
+        const conflicts = await ctx.db
+          .select({ id: appointments.id })
+          .from(appointments)
+          .where(
+            and(
+              eq(appointments.practiceId, ctx.practiceId),
+              eq(appointments.doctorId, rest.doctorId),
+              isNull(appointments.deletedAt),
+              not(eq(appointments.id, id)),
+              lte(appointments.startTime, newEnd),
+              gte(appointments.endTime, newStart),
+              not(inArray(appointments.status, ["cancelled", "no_show"]))
+            )
+          )
+          .limit(1);
+
+        if (conflicts.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This time slot conflicts with another appointment for this doctor.",
+          });
+        }
+      }
+
+      const updateValues: Record<string, unknown> = {};
+      if (newStart) updateValues.startTime = newStart;
+      if (newEnd) updateValues.endTime = newEnd;
+      if (rest.typeId !== undefined) updateValues.typeId = rest.typeId;
+      if (rest.doctorId !== undefined) updateValues.doctorId = rest.doctorId;
+      if (rest.roomId !== undefined) updateValues.roomId = rest.roomId;
+      if (rest.notes !== undefined) updateValues.notes = rest.notes;
+
+      const [appt] = await ctx.db
+        .update(appointments)
+        .set(updateValues)
+        .where(
+          and(
+            eq(appointments.id, id),
+            eq(appointments.practiceId, ctx.practiceId)
+          )
+        )
+        .returning();
+
+      if (!appt) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Appointment not found.",
+        });
+      }
+      return appt;
+    }),
+
   updateStatus: protectedProcedure
     .use(requireRole("admin", "veterinarian", "technician", "front_desk"))
     .input(
