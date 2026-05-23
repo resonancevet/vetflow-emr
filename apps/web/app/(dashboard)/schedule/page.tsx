@@ -221,7 +221,7 @@ function AppointmentBlock({
       className="absolute left-1 right-1 rounded-md px-2 py-1 text-left text-xs overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
       style={{
         top,
-        height,
+        height: Math.max(height, 44),
         backgroundColor: `${bgColor}20`,
         borderLeft: `3px solid ${bgColor}`,
       }}

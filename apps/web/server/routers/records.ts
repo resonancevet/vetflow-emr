@@ -10,6 +10,7 @@ import {
   prescriptions,
   patients,
   users,
+  files,
 } from "@openpims/db";
 
 export const recordsRouter = createRouter({
@@ -61,6 +62,34 @@ export const recordsRouter = createRouter({
         })
         .returning();
       return note!;
+    }),
+
+  listFilesForEntity: protectedProcedure
+    .input(
+      z.object({
+        entityType: z.string().min(1),
+        entityId: z.string().uuid(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: files.id,
+          fileName: files.fileName,
+          fileUrl: files.fileUrl,
+          mimeType: files.mimeType,
+          createdAt: files.createdAt,
+        })
+        .from(files)
+        .where(
+          and(
+            eq(files.practiceId, ctx.practiceId),
+            eq(files.entityType, input.entityType),
+            eq(files.entityId, input.entityId),
+            isNull(files.deletedAt)
+          )
+        )
+        .orderBy(desc(files.createdAt));
     }),
 
   // Vaccinations

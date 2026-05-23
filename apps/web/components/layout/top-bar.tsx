@@ -3,29 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Search, Plus, Users, PawPrint, Calendar, Receipt } from "lucide-react";
+import { Search, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const routeLabels: Record<string, string> = {
-  "/": "Dashboard",
-  "/patients": "Patients",
-  "/clients": "Clients",
-  "/schedule": "Schedule",
-  "/records": "Records",
-  "/billing": "Billing",
-  "/inventory": "Inventory",
-  "/inbox": "Inbox",
-  "/whiteboard": "Whiteboard",
-  "/reports": "Reports",
-  "/settings": "Settings",
-};
-
-const NEW_ACTIONS = [
-  { label: "New Client", href: "/clients/new", Icon: Users },
-  { label: "New Patient", href: "/patients/new", Icon: PawPrint },
-  { label: "New Appointment", href: "/schedule", Icon: Calendar },
-  { label: "New Invoice", href: "/billing/new", Icon: Receipt },
-];
+import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { APP_NAME, routeLabels, v0NewActions } from "@/lib/nav-config";
 
 export function TopBar({
   onSearchOpen,
@@ -34,7 +15,7 @@ export function TopBar({
 }) {
   const pathname = usePathname();
   const basePath = "/" + (pathname.split("/")[1] ?? "");
-  const label = routeLabels[basePath] ?? "OpenVPM";
+  const label = routeLabels[basePath] ?? APP_NAME;
 
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const newMenuRef = useRef<HTMLDivElement>(null);
@@ -58,17 +39,22 @@ export function TopBar({
   }, [newMenuOpen]);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-background px-6">
-      <h1 className="font-heading text-lg font-semibold">{label}</h1>
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4 md:px-6">
+      <h1 className="truncate font-heading text-base font-semibold md:text-lg">
+        {label}
+      </h1>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 md:gap-2">
+        <ThemeToggle />
+
         <button
+          type="button"
           onClick={onSearchOpen}
-          className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+          className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent md:px-3"
         >
-          <Search className="h-4 w-4" />
-          <span>Search...</span>
-          <kbd className="ml-2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="hidden sm:inline">Search...</span>
+          <kbd className="ml-1 hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium md:inline">
             ⌘K
           </kbd>
         </button>
@@ -82,14 +68,14 @@ export function TopBar({
             aria-expanded={newMenuOpen}
           >
             <Plus className="h-4 w-4" />
-            New
+            <span className="hidden sm:inline">New</span>
           </Button>
           {newMenuOpen && (
             <div
               role="menu"
               className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-md"
             >
-              {NEW_ACTIONS.map(({ label: actionLabel, href, Icon }) => (
+              {v0NewActions.map(({ label: actionLabel, href, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}

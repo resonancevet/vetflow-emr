@@ -16,6 +16,10 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { generateMedicalSummaryPdf } from "@/lib/pdf";
+import {
+  PatientAlerts,
+  PatientClinicalAdd,
+} from "@/components/patients/patient-clinical-add";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -56,12 +60,13 @@ function calculateAge(dob: string | null): string {
   return `${adjustedYears}y ${adjustedMonths}m`;
 }
 
-type Tab = "overview" | "weight" | "vaccinations";
+type Tab = "overview" | "weight" | "vaccinations" | "medications";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "weight", label: "Weight History" },
   { id: "vaccinations", label: "Vaccinations" },
+  { id: "medications", label: "Medications" },
 ];
 
 export default function PatientDetailPage() {
@@ -362,6 +367,15 @@ export default function PatientDetailPage() {
         </div>
       )}
 
+      <PatientAlerts
+        patientId={patient.id}
+        allergyCount={patient.allergies?.length ?? 0}
+      />
+
+      <div className="mt-4">
+        <PatientClinicalAdd patientId={patient.id} />
+      </div>
+
       {/* Tab Navigation */}
       <div className="mt-6 border-b border-border">
         <div className="flex gap-0">
@@ -467,8 +481,8 @@ export default function PatientDetailPage() {
         {activeTab === "weight" && (
           <div>
             {patient.weights && patient.weights.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full min-w-[320px] text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50">
                       <th className="px-4 py-3 text-left font-medium text-muted-foreground">
@@ -518,6 +532,10 @@ export default function PatientDetailPage() {
         {activeTab === "vaccinations" && (
           <VaccinationsTab patientId={patient.id} />
         )}
+
+        {activeTab === "medications" && (
+          <MedicationsTab patientId={patient.id} />
+        )}
       </div>
     </div>
   );
@@ -545,8 +563,8 @@ function VaccinationsTab({ patientId }: { patientId: string }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[480px] text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/50">
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
@@ -587,6 +605,58 @@ function VaccinationsTab({ patientId }: { patientId: string }) {
               <td className="px-4 py-3 text-muted-foreground">
                 {vax.administeredByName ?? "\u2014"}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MedicationsTab({ patientId }: { patientId: string }) {
+  const { data: prescriptions, isLoading } =
+    trpc.records.listPrescriptions.useQuery({ patientId });
+
+  if (isLoading) {
+    return (
+      <div className="text-center text-muted-foreground py-8">Loading...</div>
+    );
+  }
+
+  if (!prescriptions || prescriptions.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">No medications on file</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[480px] text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/50">
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Medication
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Dosage
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Frequency
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Status
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {prescriptions.map((rx) => (
+            <tr key={rx.id} className="border-b border-border last:border-0">
+              <td className="px-4 py-3 font-medium">{rx.medicationName}</td>
+              <td className="px-4 py-3">{rx.dosage}</td>
+              <td className="px-4 py-3">{rx.frequency}</td>
+              <td className="px-4 py-3 capitalize">{rx.status ?? "active"}</td>
             </tr>
           ))}
         </tbody>

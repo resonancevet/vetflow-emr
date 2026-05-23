@@ -4,33 +4,11 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-
-const DEMO_ROLES = [
-  {
-    label: "Admin",
-    description: "Full access — everything a practice owner sees",
-    email: "admin@neighborhoodvet.example.com",
-    password: "password123",
-  },
-  {
-    label: "Veterinarian",
-    description: "Exam room, SOAP notes, prescriptions",
-    email: "sarah.chen@neighborhoodvet.example.com",
-    password: "password123",
-  },
-  {
-    label: "Technician",
-    description: "Treatments, lab workflow, whiteboard",
-    email: "jamie.torres@neighborhoodvet.example.com",
-    password: "password123",
-  },
-  {
-    label: "Front Desk",
-    description: "Scheduling, check-in, billing",
-    email: "morgan.bailey@neighborhoodvet.example.com",
-    password: "password123",
-  },
-];
+import {
+  APP_NAME,
+  DEMO_LOGIN,
+  POST_LOGIN_PATH,
+} from "@/lib/nav-config";
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -58,7 +36,7 @@ export default function LoginPage() {
     if (result?.error) {
       setError("Invalid email or password");
     } else {
-      router.push("/");
+      router.push(POST_LOGIN_PATH);
       router.refresh();
     }
   }
@@ -73,52 +51,39 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-8">
         <div className="mb-6 text-center">
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            OpenVPM
+            {APP_NAME}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sign in to your practice
+            Mobile veterinary records for the field
           </p>
         </div>
 
         {DEMO_MODE && (
           <div className="mb-6 rounded-md border border-primary/20 bg-primary/5 p-4">
             <p className="mb-1 text-sm font-semibold text-foreground">
-              Try the demo — one click to log in
+              Demo login
             </p>
             <p className="mb-3 text-xs text-muted-foreground">
-              You&apos;re in the live OpenVPM demo. Pick a role to sign in instantly.
+              Full access with a single account. Multi-role logins can be added
+              later.
             </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {DEMO_ROLES.map((role) => (
-                <button
-                  key={role.email}
-                  type="button"
-                  onClick={() => signInWith(role.email, role.password)}
-                  disabled={loading}
-                  className="group flex flex-col rounded-md border border-border bg-background p-2.5 text-left transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
-                >
-                  <span className="text-sm font-medium text-foreground group-hover:text-primary">
-                    Log in as {role.label}
-                  </span>
-                  <span className="mt-0.5 text-xs text-muted-foreground">
-                    {role.description}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() =>
+                signInWith(DEMO_LOGIN.email, DEMO_LOGIN.password)
+              }
+              disabled={loading}
+              className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-left text-sm font-medium transition-colors hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+            >
+              Continue as demo veterinarian
+            </button>
             <details className="mt-3 text-xs text-muted-foreground">
               <summary className="cursor-pointer select-none hover:text-foreground">
-                View raw credentials
+                View credentials
               </summary>
-              <div className="mt-2 space-y-1 rounded border border-border bg-background p-2 font-mono">
-                {DEMO_ROLES.map((role) => (
-                  <div key={role.email} className="flex justify-between gap-2">
-                    <span className="truncate">{role.email}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {role.password}
-                    </span>
-                  </div>
-                ))}
+              <div className="mt-2 rounded border border-border bg-background p-2 font-mono">
+                <div>{DEMO_LOGIN.email}</div>
+                <div>{DEMO_LOGIN.password}</div>
               </div>
             </details>
           </div>

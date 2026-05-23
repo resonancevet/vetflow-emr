@@ -10,6 +10,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 const ALLOWED_CATEGORIES = [
   "patient-photos",
+  "soap-attachments",
   "documents",
   "lab-results",
 ] as const;
@@ -41,6 +42,8 @@ export async function POST(req: NextRequest) {
 
   const file = formData.get("file");
   const category = formData.get("category") as string | null;
+  const entityType = formData.get("entityType") as string | null;
+  const entityId = formData.get("entityId") as string | null;
 
   if (!file || !(file instanceof File)) {
     return NextResponse.json(
@@ -102,9 +105,14 @@ export async function POST(req: NextRequest) {
       mimeType,
       fileSizeBytes: file.size,
       category,
+      entityType: entityType ?? null,
+      entityId: entityId ?? null,
     });
 
-    return NextResponse.json({ url, key }, { status: 201 });
+    return NextResponse.json(
+      { url, key, entityType, entityId },
+      { status: 201 },
+    );
   } catch (err) {
     console.error("Upload failed:", err);
     return NextResponse.json(

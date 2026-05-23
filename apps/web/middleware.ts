@@ -30,6 +30,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Field app: land on schedule, not clinic dashboard or marketing site
+  if (token && request.nextUrl.pathname === "/") {
+    return NextResponse.redirect(new URL("/schedule", request.url));
+  }
+
   const response = NextResponse.next();
   return setSecurityHeaders(response);
 }
