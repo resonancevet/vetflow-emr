@@ -38,6 +38,10 @@ pnpm-debug.log*
 
 # Testing
 coverage/
+playwright-report/
+
+# Personal dev notes (not for repo)
+My-Dev.md
 
 # Internal build/launch docs (not for public repo)
 PIMS-CLAUDE-CODE-PROMPT.md
