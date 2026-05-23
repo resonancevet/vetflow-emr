@@ -51,12 +51,17 @@ Mobile bottom nav surfaces Schedule, Patients, Records, Settings. Clients is rea
 
 - Client communication (email, SMS, portal)
 - SOAP and treatment templates (Settings)
+- Additional staff roles (e.g. trainer, assistant) added to the role enum
+- Navigation simplification: fold `/records` tabs (SOAP, vaccinations, prescriptions, problems, lab results, procedures) into the patient detail page so Records is reachable through Patients
+- Real schedule week view (toggle currently removed; see schedule page)
+- Schedule appointment drag/resize (today: edit via the popover form)
 
 ## v2 — back office
 
 - Billing and invoicing
 - Inventory and vendors
 - Reports
+- Per-role permissions UI: editable permission matrix in Settings, persisted alongside the role enum so admins can toggle access without code changes
 
 ## v3 — hard problems
 

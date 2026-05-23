@@ -233,7 +233,7 @@ function GridLines() {
     lines.push(
       <div
         key={`h-${hour}`}
-        className="absolute left-0 right-0 border-t border-border"
+        className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
         style={{ top: (hour - START_HOUR) * HOUR_HEIGHT }}
       />
     );
@@ -241,7 +241,7 @@ function GridLines() {
     lines.push(
       <div
         key={`hh-${hour}`}
-        className="absolute left-0 right-0 border-t border-border/40 border-dashed"
+        className="absolute left-0 right-0 border-t border-dashed border-foreground/10 dark:border-foreground/15"
         style={{ top: (hour - START_HOUR) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
       />
     );
@@ -250,7 +250,7 @@ function GridLines() {
   lines.push(
     <div
       key="bottom"
-      className="absolute left-0 right-0 border-t border-border"
+      className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
       style={{ top: TOTAL_HOURS * HOUR_HEIGHT }}
     />
   );
@@ -298,7 +298,16 @@ function AppointmentBlock({
     >
       <div className="flex items-center gap-1.5 font-medium text-foreground truncate">
         <StatusDot status={appointment.status} />
-        <span className="truncate">{appointment.patientName || "Unknown Patient"}</span>
+        <span className="truncate">
+          {appointment.patientName || "Unknown Patient"}
+          {(appointment.clientFirstName || appointment.clientLastName) && (
+            <span className="ml-1 italic font-normal text-muted-foreground">
+              {[appointment.clientFirstName, appointment.clientLastName]
+                .filter(Boolean)
+                .join(" ")}
+            </span>
+          )}
+        </span>
       </div>
       {height >= 36 && (
         <div className="text-muted-foreground truncate mt-0.5">
