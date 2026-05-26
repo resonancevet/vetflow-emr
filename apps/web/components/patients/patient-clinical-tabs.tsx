@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileText,
   FlaskConical,
+  Pencil,
   Pill,
   Plus,
   Scissors,
@@ -89,10 +90,57 @@ export function SoapNotesTab({
   canCreate: boolean;
 }) {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const { data: soapNotes } = trpc.records.listSoapNotes.useQuery({
     patientId: patient.id,
   });
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    subjective: "",
+    objective: "",
+    assessment: "",
+    plan: "",
+  });
+
+  const updateNote = trpc.records.updateSoapNote.useMutation({
+    onSuccess: () => {
+      toast.success("SOAP note updated");
+      utils.records.listSoapNotes.invalidate({ patientId: patient.id });
+      setEditingNoteId(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEdit = (note: {
+    id: string;
+    subjective: string | null;
+    objective: string | null;
+    assessment: string | null;
+    plan: string | null;
+  }) => {
+    setEditingNoteId(note.id);
+    setExpandedNoteId(note.id);
+    setEditForm({
+      subjective: note.subjective ?? "",
+      objective: note.objective ?? "",
+      assessment: note.assessment ?? "",
+      plan: note.plan ?? "",
+    });
+  };
+
+  const cancelEdit = () => setEditingNoteId(null);
+
+  const saveEdit = () => {
+    if (!editingNoteId) return;
+    updateNote.mutate({
+      id: editingNoteId,
+      subjective: editForm.subjective,
+      objective: editForm.objective,
+      assessment: editForm.assessment,
+      plan: editForm.plan,
+    });
+  };
 
   return (
     <div>
@@ -112,6 +160,7 @@ export function SoapNotesTab({
         <div className="space-y-3">
           {soapNotes.map((note) => {
             const isExpanded = expandedNoteId === note.id;
+            const isEditing = editingNoteId === note.id;
             return (
               <div
                 key={note.id}
@@ -119,9 +168,12 @@ export function SoapNotesTab({
               >
                 <button
                   type="button"
-                  onClick={() =>
-                    setExpandedNoteId(isExpanded ? null : note.id)
-                  }
+                  onClick={() => {
+                    // Don't collapse while editing — clicking the header should
+                    // stay benign if the user is mid-edit.
+                    if (isEditing) return;
+                    setExpandedNoteId(isExpanded ? null : note.id);
+                  }}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
                   <div className="flex items-center gap-4">
@@ -148,10 +200,77 @@ export function SoapNotesTab({
                 </button>
                 {isExpanded && (
                   <div className="space-y-4 border-t border-border px-4 py-4">
-                    <SoapField label="Subjective" value={note.subjective} />
-                    <SoapField label="Objective" value={note.objective} />
-                    <SoapField label="Assessment" value={note.assessment} />
-                    <SoapField label="Plan" value={note.plan} />
+                    {isEditing ? (
+                      <>
+                        <SoapEditField
+                          label="Subjective"
+                          value={editForm.subjective}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, subjective: v }))
+                          }
+                        />
+                        <SoapEditField
+                          label="Objective"
+                          value={editForm.objective}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, objective: v }))
+                          }
+                        />
+                        <SoapEditField
+                          label="Assessment"
+                          value={editForm.assessment}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, assessment: v }))
+                          }
+                        />
+                        <SoapEditField
+                          label="Plan"
+                          value={editForm.plan}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, plan: v }))
+                          }
+                        />
+                        <div className="flex justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={cancelEdit}
+                            disabled={updateNote.isPending}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={saveEdit}
+                            disabled={updateNote.isPending}
+                          >
+                            {updateNote.isPending ? "Saving..." : "Save changes"}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {canCreate && (
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startEdit(note)}
+                            >
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                          </div>
+                        )}
+                        <SoapField label="Subjective" value={note.subjective} />
+                        <SoapField label="Objective" value={note.objective} />
+                        <SoapField label="Assessment" value={note.assessment} />
+                        <SoapField label="Plan" value={note.plan} />
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -194,6 +313,30 @@ function SoapField({
         {label}
       </h4>
       <p className="whitespace-pre-wrap text-sm">{value || "--"}</p>
+    </div>
+  );
+}
+
+function SoapEditField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <textarea
+        rows={3}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-h-[4rem] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      />
     </div>
   );
 }

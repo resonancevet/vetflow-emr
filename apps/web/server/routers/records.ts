@@ -64,6 +64,41 @@ export const recordsRouter = createRouter({
       return note!;
     }),
 
+  updateSoapNote: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        subjective: z.string().optional(),
+        objective: z.string().optional(),
+        assessment: z.string().optional(),
+        plan: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      // Empty string is a valid "clear this section" value, so we let it
+      // through; only undefined fields are skipped.
+      const updateValues: Record<string, string> = {};
+      for (const key of ["subjective", "objective", "assessment", "plan"] as const) {
+        const value = fields[key];
+        if (value !== undefined) updateValues[key] = value;
+      }
+      const [note] = await ctx.db
+        .update(soapNotes)
+        .set(updateValues)
+        .where(
+          and(
+            eq(soapNotes.id, id),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .returning();
+      if (!note) throw new Error("SOAP note not found");
+      return note;
+    }),
+
   listFilesForEntity: protectedProcedure
     .input(
       z.object({
