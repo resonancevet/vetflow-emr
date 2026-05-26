@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 type FormKind = "vaccination" | "prescription" | "problem" | null;
 
 export function PatientClinicalAdd({ patientId }: { patientId: string }) {
+  const router = useRouter();
   const [openForm, setOpenForm] = useState<FormKind>(null);
   const utils = trpc.useUtils();
 
@@ -52,6 +54,15 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Add clinical record</h3>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => router.push(`/records/new-soap/${patientId}`)}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            SOAP
+          </Button>
           <Button
             type="button"
             size="sm"
