@@ -13,6 +13,7 @@ import {
   Plus,
   Scissors,
   Tag,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -343,12 +344,79 @@ function SoapEditField({
 
 export function PrescriptionsTab({
   patient,
+  canManage,
 }: {
   patient: SelectedPatient;
+  canManage: boolean;
 }) {
+  const utils = trpc.useUtils();
   const { data: prescriptions } = trpc.records.listPrescriptions.useQuery({
     patientId: patient.id,
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    medicationName: "",
+    dosage: "",
+    frequency: "",
+    quantity: "",
+    refillsRemaining: "0",
+    startDate: "",
+    endDate: "",
+    status: "active" as "active" | "completed" | "cancelled" | "expired",
+    instructions: "",
+  });
+
+  const invalidate = () =>
+    utils.records.listPrescriptions.invalidate({ patientId: patient.id });
+
+  const updatePrescription = trpc.records.updatePrescription.useMutation({
+    onSuccess: () => {
+      toast.success("Prescription updated");
+      setEditingId(null);
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deletePrescription = trpc.records.deletePrescription.useMutation({
+    onSuccess: () => {
+      toast.success("Prescription removed");
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEditPrescription = (rx: NonNullable<typeof prescriptions>[number]) => {
+    setEditingId(rx.id);
+    setForm({
+      medicationName: rx.medicationName,
+      dosage: rx.dosage ?? "",
+      frequency: rx.frequency ?? "",
+      quantity: rx.quantity != null ? String(rx.quantity) : "",
+      refillsRemaining: String(rx.refillsRemaining ?? 0),
+      startDate: rx.startDate ?? new Date().toISOString().slice(0, 10),
+      endDate: rx.endDate ?? "",
+      status: (rx.status ?? "active") as typeof form.status,
+      instructions: rx.instructions ?? "",
+    });
+  };
+
+  const savePrescription = () => {
+    if (!editingId) return;
+    const quantity = form.quantity ? Number(form.quantity) : undefined;
+    updatePrescription.mutate({
+      id: editingId,
+      medicationName: form.medicationName.trim(),
+      dosage: form.dosage.trim(),
+      frequency: form.frequency.trim(),
+      quantity: Number.isFinite(quantity) ? quantity : undefined,
+      refillsRemaining: Number(form.refillsRemaining) || 0,
+      startDate: form.startDate,
+      endDate: form.endDate || undefined,
+      status: form.status,
+      instructions: form.instructions || undefined,
+    });
+  };
 
   if (!prescriptions || prescriptions.length === 0) {
     return (
@@ -387,76 +455,271 @@ export function PrescriptionsTab({
           </tr>
         </thead>
         <tbody>
-          {prescriptions.map((rx) => (
-            <tr
-              key={rx.id}
-              className="border-b border-border last:border-0"
-            >
-              <td className="px-4 py-3 font-medium">{rx.medicationName}</td>
-              <td className="px-4 py-3">{rx.dosage ?? "--"}</td>
-              <td className="px-4 py-3">{rx.frequency ?? "--"}</td>
-              <td className="px-4 py-3">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                    getPrescriptionStatusBadge(rx.status)
+          {prescriptions.map((rx) => {
+            const isEditing = editingId === rx.id;
+            return (
+              <tr
+                key={rx.id}
+                className="border-b border-border align-top last:border-0"
+              >
+                <td className="px-4 py-3 font-medium">
+                  {isEditing ? (
+                    <Input
+                      value={form.medicationName}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, medicationName: e.target.value }))
+                      }
+                      required
+                    />
+                  ) : (
+                    rx.medicationName
                   )}
-                >
-                  {rx.status ?? "unknown"}
-                </span>
-              </td>
-              <td className="px-4 py-3">{rx.refillsRemaining ?? 0}</td>
-              <td className="px-4 py-3 text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Print Label"
-                  onClick={() => {
-                    const clientName = [
-                      patient.clientFirstName,
-                      patient.clientLastName,
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-                    generatePrescriptionLabelPdf({
-                      practiceName: "",
-                      patientName: patient.name,
-                      clientName,
-                      species: patient.species ?? "",
-                      medicationName: rx.medicationName,
-                      dosage: rx.dosage ?? "",
-                      frequency: rx.frequency ?? "",
-                      instructions: rx.instructions ?? undefined,
-                      prescribedBy: rx.prescriberName ?? "",
-                      startDate: rx.startDate
-                        ? new Date(rx.startDate).toLocaleDateString()
-                        : new Date().toLocaleDateString(),
-                      quantity:
-                        rx.quantity != null ? String(rx.quantity) : undefined,
-                      refillsRemaining: rx.refillsRemaining ?? undefined,
-                    }).save(
-                      `label-${rx.medicationName
-                        .replace(/\s+/g, "-")
-                        .toLowerCase()}.pdf`
-                    );
-                  }}
-                >
-                  <Tag className="mr-1 h-3.5 w-3.5" />
-                  Print Label
-                </Button>
-              </td>
-            </tr>
-          ))}
+                  {isEditing && (
+                    <Input
+                      className="mt-2"
+                      value={form.instructions}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, instructions: e.target.value }))
+                      }
+                      placeholder="Instructions"
+                    />
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <Input
+                      value={form.dosage}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, dosage: e.target.value }))
+                      }
+                      required
+                    />
+                  ) : (
+                    rx.dosage ?? "--"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <Input
+                      value={form.frequency}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, frequency: e.target.value }))
+                      }
+                      required
+                    />
+                  ) : (
+                    rx.frequency ?? "--"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <select
+                      value={form.status}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          status: e.target.value as typeof form.status,
+                        }))
+                      }
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="active">Active</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="expired">Expired</option>
+                    </select>
+                  ) : (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                        getPrescriptionStatusBadge(rx.status)
+                      )}
+                    >
+                      {rx.status ?? "unknown"}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <div className="grid min-w-[11rem] gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.refillsRemaining}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            refillsRemaining: e.target.value,
+                          }))
+                        }
+                        placeholder="Refills"
+                      />
+                      <Input
+                        type="date"
+                        value={form.startDate}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, startDate: e.target.value }))
+                        }
+                        required
+                      />
+                    </div>
+                  ) : (
+                    rx.refillsRemaining ?? 0
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {isEditing ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={updatePrescription.isPending}
+                          onClick={() => setEditingId(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={updatePrescription.isPending}
+                          onClick={savePrescription}
+                        >
+                          {updatePrescription.isPending ? "Saving..." : "Save"}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Print Label"
+                          onClick={() => {
+                            const clientName = [
+                              patient.clientFirstName,
+                              patient.clientLastName,
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
+                            generatePrescriptionLabelPdf({
+                              practiceName: "",
+                              patientName: patient.name,
+                              clientName,
+                              species: patient.species ?? "",
+                              medicationName: rx.medicationName,
+                              dosage: rx.dosage ?? "",
+                              frequency: rx.frequency ?? "",
+                              instructions: rx.instructions ?? undefined,
+                              prescribedBy: rx.prescriberName ?? "",
+                              startDate: rx.startDate
+                                ? new Date(rx.startDate).toLocaleDateString()
+                                : new Date().toLocaleDateString(),
+                              quantity:
+                                rx.quantity != null ? String(rx.quantity) : undefined,
+                              refillsRemaining: rx.refillsRemaining ?? undefined,
+                            }).save(
+                              `label-${rx.medicationName
+                                .replace(/\s+/g, "-")
+                                .toLowerCase()}.pdf`
+                            );
+                          }}
+                        >
+                          <Tag className="mr-1 h-3.5 w-3.5" />
+                          Print Label
+                        </Button>
+                        {canManage && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => startEditPrescription(rx)}
+                            >
+                              <Pencil className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={deletePrescription.isPending}
+                              onClick={() => {
+                                if (confirm("Remove this prescription?")) {
+                                  deletePrescription.mutate({ id: rx.id });
+                                }
+                              }}
+                            >
+                              <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-export function ProblemsTab({ patient }: { patient: SelectedPatient }) {
+export function ProblemsTab({
+  patient,
+  canManage,
+}: {
+  patient: SelectedPatient;
+  canManage: boolean;
+}) {
+  const utils = trpc.useUtils();
   const { data: problems } = trpc.records.listProblems.useQuery({
     patientId: patient.id,
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    description: "",
+    status: "active" as "active" | "resolved" | "chronic",
+    onsetDate: "",
+  });
+
+  const invalidate = () =>
+    utils.records.listProblems.invalidate({ patientId: patient.id });
+
+  const updateProblem = trpc.records.updateProblem.useMutation({
+    onSuccess: () => {
+      toast.success("Problem updated");
+      setEditingId(null);
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteProblem = trpc.records.deleteProblem.useMutation({
+    onSuccess: () => {
+      toast.success("Problem removed");
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEditProblem = (problem: NonNullable<typeof problems>[number]) => {
+    setEditingId(problem.id);
+    setForm({
+      description: problem.description,
+      status: (problem.status ?? "active") as typeof form.status,
+      onsetDate: problem.onsetDate ?? "",
+    });
+  };
+
+  const saveProblem = () => {
+    if (!editingId) return;
+    updateProblem.mutate({
+      id: editingId,
+      description: form.description.trim(),
+      status: form.status,
+      onsetDate: form.onsetDate || undefined,
+    });
+  };
 
   if (!problems || problems.length === 0) {
     return (
@@ -471,40 +734,133 @@ export function ProblemsTab({ patient }: { patient: SelectedPatient }) {
 
   return (
     <div className="space-y-2">
-      {problems.map((problem) => (
-        <div
-          key={problem.id}
-          className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
-        >
-          <div>
-            <p
-              className={cn(
-                "text-sm",
-                problem.status === "active" ? "font-semibold" : "font-normal"
-              )}
-            >
-              {problem.description}
-            </p>
-            {problem.onsetDate && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Onset: {new Date(problem.onsetDate).toLocaleDateString()}
-              </p>
+      {problems.map((problem) => {
+        const isEditing = editingId === problem.id;
+        return (
+          <div
+            key={problem.id}
+            className="rounded-lg border border-border bg-card px-4 py-3"
+          >
+            {isEditing ? (
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                <div>
+                  <label className="mb-1 block text-xs font-medium">
+                    Description
+                  </label>
+                  <Input
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, description: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Status</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        status: e.target.value as typeof form.status,
+                      }))
+                    }
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="active">Active</option>
+                    <option value="chronic">Chronic</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Onset</label>
+                  <Input
+                    type="date"
+                    value={form.onsetDate}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, onsetDate: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="flex gap-2 sm:col-span-3">
+                  <Button
+                    size="sm"
+                    disabled={updateProblem.isPending}
+                    onClick={saveProblem}
+                  >
+                    {updateProblem.isPending ? "Saving..." : "Save"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={updateProblem.isPending}
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p
+                    className={cn(
+                      "text-sm",
+                      problem.status === "active" ? "font-semibold" : "font-normal"
+                    )}
+                  >
+                    {problem.description}
+                  </p>
+                  {problem.onsetDate && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Onset: {new Date(problem.onsetDate).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                      problem.status === "active"
+                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                        : problem.status === "chronic"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    )}
+                  >
+                    {problem.status ?? "active"}
+                  </span>
+                  {canManage && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEditProblem(problem)}
+                      >
+                        <Pencil className="mr-1 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={deleteProblem.isPending}
+                        onClick={() => {
+                          if (confirm("Remove this problem?")) {
+                            deleteProblem.mutate({ id: problem.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
           </div>
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-              problem.status === "active"
-                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                : problem.status === "chronic"
-                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
-            )}
-          >
-            {problem.status ?? "active"}
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

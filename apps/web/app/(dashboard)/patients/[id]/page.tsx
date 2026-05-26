@@ -11,10 +11,13 @@ import {
   Shield,
   Camera,
   FileDown,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { generateMedicalSummaryPdf } from "@/lib/pdf";
 import {
@@ -110,6 +113,9 @@ export default function PatientDetailPage() {
   );
   const canCreateSoap =
     userRole !== "front_desk" && userRole !== "technician";
+  const canManageClinicalRecords = userRole !== "front_desk";
+  const canManagePrescriptions =
+    userRole === "admin" || userRole === "veterinarian";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [weightUnit, setWeightUnit] = useWeightUnit();
 
@@ -595,7 +601,10 @@ export default function PatientDetailPage() {
         )}
 
         {activeTab === "vaccinations" && (
-          <VaccinationsTab patientId={patient.id} />
+          <VaccinationsTab
+            patientId={patient.id}
+            canManage={canManageClinicalRecords}
+          />
         )}
 
         {activeTab === "soap" && (
@@ -620,6 +629,7 @@ export default function PatientDetailPage() {
               clientFirstName: patient.clientFirstName ?? null,
               clientLastName: patient.clientLastName ?? null,
             }}
+            canManage={canManagePrescriptions}
           />
         )}
 
@@ -632,6 +642,7 @@ export default function PatientDetailPage() {
               clientFirstName: patient.clientFirstName ?? null,
               clientLastName: patient.clientLastName ?? null,
             }}
+            canManage={canManageClinicalRecords}
           />
         )}
 
@@ -663,9 +674,66 @@ export default function PatientDetailPage() {
   );
 }
 
-function VaccinationsTab({ patientId }: { patientId: string }) {
+function VaccinationsTab({
+  patientId,
+  canManage,
+}: {
+  patientId: string;
+  canManage: boolean;
+}) {
+  const utils = trpc.useUtils();
   const { data: vaccinations, isLoading } =
     trpc.records.listVaccinations.useQuery({ patientId });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    vaccineName: "",
+    lotNumber: "",
+    manufacturer: "",
+    nextDueDate: "",
+  });
+
+  const invalidate = () =>
+    utils.records.listVaccinations.invalidate({ patientId });
+
+  const updateVaccination = trpc.records.updateVaccination.useMutation({
+    onSuccess: () => {
+      toast.success("Vaccination updated");
+      setEditingId(null);
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteVaccination = trpc.records.deleteVaccination.useMutation({
+    onSuccess: () => {
+      toast.success("Vaccination removed");
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEditVaccination = (
+    vax: NonNullable<typeof vaccinations>[number]
+  ) => {
+    setEditingId(vax.id);
+    setForm({
+      vaccineName: vax.vaccineName,
+      lotNumber: vax.lotNumber ?? "",
+      manufacturer: vax.manufacturer ?? "",
+      nextDueDate: vax.nextDueDate ?? "",
+    });
+  };
+
+  const saveVaccination = () => {
+    if (!editingId) return;
+    updateVaccination.mutate({
+      id: editingId,
+      vaccineName: form.vaccineName.trim(),
+      lotNumber: form.lotNumber || undefined,
+      manufacturer: form.manufacturer || undefined,
+      nextDueDate: form.nextDueDate || undefined,
+    });
+  };
 
   if (isLoading) {
     return (
@@ -704,31 +772,132 @@ function VaccinationsTab({ patientId }: { patientId: string }) {
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Administered By
             </th>
+            <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody>
-          {vaccinations.map((vax) => (
-            <tr
-              key={vax.id}
-              className="border-b border-border last:border-0"
-            >
-              <td className="px-4 py-3 font-medium">{vax.vaccineName}</td>
-              <td className="px-4 py-3">
-                {vax.administeredAt
-                  ? new Date(vax.administeredAt).toLocaleDateString()
-                  : "\u2014"}
-              </td>
-              <td className="px-4 py-3">
-                {vax.nextDueDate
-                  ? new Date(vax.nextDueDate).toLocaleDateString()
-                  : "\u2014"}
-              </td>
-              <td className="px-4 py-3">{vax.lotNumber ?? "\u2014"}</td>
-              <td className="px-4 py-3 text-muted-foreground">
-                {vax.administeredByName ?? "\u2014"}
-              </td>
-            </tr>
-          ))}
+          {vaccinations.map((vax) => {
+            const isEditing = editingId === vax.id;
+            return (
+              <tr
+                key={vax.id}
+                className="border-b border-border align-top last:border-0"
+              >
+                <td className="px-4 py-3 font-medium">
+                  {isEditing ? (
+                    <Input
+                      value={form.vaccineName}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, vaccineName: e.target.value }))
+                      }
+                      required
+                    />
+                  ) : (
+                    vax.vaccineName
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {vax.administeredAt
+                    ? new Date(vax.administeredAt).toLocaleDateString()
+                    : "\u2014"}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <Input
+                      type="date"
+                      value={form.nextDueDate}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, nextDueDate: e.target.value }))
+                      }
+                    />
+                  ) : vax.nextDueDate ? (
+                    new Date(vax.nextDueDate).toLocaleDateString()
+                  ) : (
+                    "\u2014"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <div className="grid min-w-[10rem] gap-2">
+                      <Input
+                        value={form.lotNumber}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, lotNumber: e.target.value }))
+                        }
+                        placeholder="Lot"
+                      />
+                      <Input
+                        value={form.manufacturer}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            manufacturer: e.target.value,
+                          }))
+                        }
+                        placeholder="Manufacturer"
+                      />
+                    </div>
+                  ) : (
+                    vax.lotNumber ?? "\u2014"
+                  )}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {vax.administeredByName ?? "\u2014"}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {canManage && (
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {isEditing ? (
+                        <>
+                          <Button
+                            size="sm"
+                            disabled={updateVaccination.isPending}
+                            onClick={saveVaccination}
+                          >
+                            {updateVaccination.isPending ? "Saving..." : "Save"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={updateVaccination.isPending}
+                            onClick={() => setEditingId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => startEditVaccination(vax)}
+                          >
+                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={deleteVaccination.isPending}
+                            onClick={() => {
+                              if (confirm("Remove this vaccination record?")) {
+                                deleteVaccination.mutate({ id: vax.id });
+                              }
+                            }}
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

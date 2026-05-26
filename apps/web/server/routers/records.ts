@@ -176,6 +176,58 @@ export const recordsRouter = createRouter({
       return record!;
     }),
 
+  updateVaccination: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        vaccineName: z.string().min(1),
+        lotNumber: z.string().optional(),
+        manufacturer: z.string().optional(),
+        nextDueDate: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const [record] = await ctx.db
+        .update(vaccinationRecords)
+        .set({
+          ...fields,
+          lotNumber: fields.lotNumber || null,
+          manufacturer: fields.manufacturer || null,
+          nextDueDate: fields.nextDueDate || null,
+        })
+        .where(
+          and(
+            eq(vaccinationRecords.id, id),
+            eq(vaccinationRecords.practiceId, ctx.practiceId),
+            isNull(vaccinationRecords.deletedAt)
+          )
+        )
+        .returning();
+      if (!record) throw new Error("Vaccination not found");
+      return record;
+    }),
+
+  deleteVaccination: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [record] = await ctx.db
+        .update(vaccinationRecords)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(vaccinationRecords.id, input.id),
+            eq(vaccinationRecords.practiceId, ctx.practiceId),
+            isNull(vaccinationRecords.deletedAt)
+          )
+        )
+        .returning();
+      if (!record) throw new Error("Vaccination not found");
+      return record;
+    }),
+
   // Problem List
   listProblems: protectedProcedure
     .input(z.object({ patientId: z.string().uuid() }))
@@ -215,6 +267,7 @@ export const recordsRouter = createRouter({
     }),
 
   updateProblemStatus: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
     .input(
       z.object({
         id: z.string().uuid(),
@@ -231,8 +284,69 @@ export const recordsRouter = createRouter({
               ? new Date().toISOString().slice(0, 10)
               : null,
         })
+        .where(
+          and(
+            eq(problemList.id, input.id),
+            eq(problemList.practiceId, ctx.practiceId),
+            isNull(problemList.deletedAt)
+          )
+        )
         .returning();
+      if (!problem) throw new Error("Problem not found");
       return problem!;
+    }),
+
+  updateProblem: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        description: z.string().min(1),
+        status: z.enum(["active", "resolved", "chronic"]),
+        onsetDate: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [problem] = await ctx.db
+        .update(problemList)
+        .set({
+          description: input.description,
+          status: input.status,
+          onsetDate: input.onsetDate || null,
+          resolvedDate:
+            input.status === "resolved"
+              ? new Date().toISOString().slice(0, 10)
+              : null,
+        })
+        .where(
+          and(
+            eq(problemList.id, input.id),
+            eq(problemList.practiceId, ctx.practiceId),
+            isNull(problemList.deletedAt)
+          )
+        )
+        .returning();
+      if (!problem) throw new Error("Problem not found");
+      return problem;
+    }),
+
+  deleteProblem: protectedProcedure
+    .use(requireRole("admin", "veterinarian", "technician"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [problem] = await ctx.db
+        .update(problemList)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(problemList.id, input.id),
+            eq(problemList.practiceId, ctx.practiceId),
+            isNull(problemList.deletedAt)
+          )
+        )
+        .returning();
+      if (!problem) throw new Error("Problem not found");
+      return problem;
     }),
 
   // Prescriptions
@@ -291,6 +405,63 @@ export const recordsRouter = createRouter({
         })
         .returning();
       return rx!;
+    }),
+
+  updatePrescription: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        medicationName: z.string().min(1),
+        dosage: z.string().min(1),
+        frequency: z.string().min(1),
+        quantity: z.number().int().optional(),
+        refillsRemaining: z.number().int().default(0),
+        startDate: z.string(),
+        endDate: z.string().optional(),
+        status: z.enum(["active", "completed", "cancelled", "expired"]),
+        instructions: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const [rx] = await ctx.db
+        .update(prescriptions)
+        .set({
+          ...fields,
+          quantity: fields.quantity ?? null,
+          endDate: fields.endDate || null,
+          instructions: fields.instructions || null,
+        })
+        .where(
+          and(
+            eq(prescriptions.id, id),
+            eq(prescriptions.practiceId, ctx.practiceId),
+            isNull(prescriptions.deletedAt)
+          )
+        )
+        .returning();
+      if (!rx) throw new Error("Prescription not found");
+      return rx;
+    }),
+
+  deletePrescription: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [rx] = await ctx.db
+        .update(prescriptions)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(prescriptions.id, input.id),
+            eq(prescriptions.practiceId, ctx.practiceId),
+            isNull(prescriptions.deletedAt)
+          )
+        )
+        .returning();
+      if (!rx) throw new Error("Prescription not found");
+      return rx;
     }),
 
   // Lab Results
