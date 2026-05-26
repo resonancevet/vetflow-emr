@@ -5,18 +5,24 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Save, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { uploadFileToApi } from "@/lib/upload";
+import { UnitToggle } from "@/components/patients/patient-clinical-add";
+import { toKgString, useWeightUnit } from "@/lib/weight-units";
 
 export default function NewSoapNotePage() {
   const params = useParams<{ patientId: string }>();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
 
   const [subjective, setSubjective] = useState("");
   const [objective, setObjective] = useState("");
   const [assessment, setAssessment] = useState("");
   const [plan, setPlan] = useState("");
+  const [weight, setWeight] = useState("");
+  const [weightUnit, setWeightUnit] = useWeightUnit();
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
 
   const { data: patient, isLoading: patientLoading } =
@@ -26,6 +32,7 @@ export default function NewSoapNotePage() {
     );
 
   const createNote = trpc.records.createSoapNote.useMutation();
+  const addWeight = trpc.patients.addWeight.useMutation();
 
   async function handleSave() {
     if (!params.patientId) return;
@@ -49,6 +56,25 @@ export default function NewSoapNotePage() {
             })
           )
         );
+      }
+
+      // Save weight as a separate vital so the Weight tab stays accurate.
+      const weightKg = toKgString(weight, weightUnit);
+      if (weightKg) {
+        try {
+          await addWeight.mutateAsync({
+            patientId: params.patientId,
+            weightKg,
+          });
+          utils.patients.getById.invalidate({ id: params.patientId });
+        } catch (weightErr) {
+          // Don't fail the whole save — the SOAP note already exists.
+          toast.error(
+            weightErr instanceof Error
+              ? `Weight not saved: ${weightErr.message}`
+              : "Weight not saved"
+          );
+        }
       }
 
       toast.success("SOAP note created");
@@ -97,6 +123,32 @@ export default function NewSoapNotePage() {
 
       <div className="mt-6 space-y-6">
         <div className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-6">
+          <div>
+            <label
+              htmlFor="weight-input"
+              className="block text-sm font-medium mb-1.5"
+            >
+              Weight ({weightUnit})
+            </label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Optional. Saved to this patient&apos;s weight history in
+              kilograms.
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                id="weight-input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+                placeholder={weightUnit === "lb" ? "e.g. 31.3" : "e.g. 14.2"}
+                className="max-w-[12rem]"
+              />
+              <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+            </div>
+          </div>
+
           {(
             [
               ["subjective", "Subjective", "Owner complaint, history, symptoms", subjective, setSubjective],
@@ -170,9 +222,14 @@ export default function NewSoapNotePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSave} disabled={createNote.isPending}>
+          <Button
+            onClick={handleSave}
+            disabled={createNote.isPending || addWeight.isPending}
+          >
             <Save className="mr-2 h-4 w-4" />
-            {createNote.isPending ? "Saving..." : "Save Note"}
+            {createNote.isPending || addWeight.isPending
+              ? "Saving..."
+              : "Save Note"}
           </Button>
           <Button
             variant="outline"

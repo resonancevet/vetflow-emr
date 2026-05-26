@@ -7,8 +7,10 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { toKgString, useWeightUnit, type WeightUnit } from "@/lib/weight-units";
 
-type FormKind = "vaccination" | "prescription" | "problem" | null;
+type FormKind = "weight" | "vaccination" | "prescription" | "problem" | null;
 
 export function PatientClinicalAdd({ patientId }: { patientId: string }) {
   const router = useRouter();
@@ -21,6 +23,15 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
     utils.records.listProblems.invalidate({ patientId });
     utils.patients.getById.invalidate({ id: patientId });
   };
+
+  const addWeight = trpc.patients.addWeight.useMutation({
+    onSuccess: () => {
+      toast.success("Weight recorded");
+      setOpenForm(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createVaccination = trpc.records.createVaccination.useMutation({
     onSuccess: () => {
@@ -66,6 +77,17 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
           <Button
             type="button"
             size="sm"
+            variant={openForm === "weight" ? "default" : "outline"}
+            onClick={() =>
+              setOpenForm(openForm === "weight" ? null : "weight")
+            }
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Weight
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant={openForm === "vaccination" ? "default" : "outline"}
             onClick={() =>
               setOpenForm(openForm === "vaccination" ? null : "vaccination")
@@ -97,6 +119,12 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
         </div>
       </div>
 
+      {openForm === "weight" && (
+        <WeightForm
+          onSubmit={(weightKg) => addWeight.mutate({ patientId, weightKg })}
+          loading={addWeight.isPending}
+        />
+      )}
       {openForm === "vaccination" && (
         <VaccinationForm
           onSubmit={(data) => createVaccination.mutate({ patientId, ...data })}
@@ -115,6 +143,91 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
           loading={createProblem.isPending}
         />
       )}
+    </div>
+  );
+}
+
+function WeightForm({
+  onSubmit,
+  loading,
+}: {
+  onSubmit: (weightKg: string) => void;
+  loading: boolean;
+}) {
+  const [weight, setWeight] = useState("");
+  const [unit, setUnit] = useWeightUnit();
+
+  return (
+    <form
+      className="mt-4 flex flex-wrap items-end gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const kg = toKgString(weight, unit);
+        if (!kg) return;
+        onSubmit(kg);
+      }}
+    >
+      <div className="min-w-[12rem] flex-1">
+        <label className="mb-1 block text-xs font-medium">
+          Weight ({unit})
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder={unit === "lb" ? "e.g. 31.3" : "e.g. 14.2"}
+            required
+          />
+          <UnitToggle unit={unit} onChange={setUnit} />
+        </div>
+      </div>
+      <Button type="submit" size="sm" disabled={loading}>
+        {loading ? "Saving..." : "Save weight"}
+      </Button>
+    </form>
+  );
+}
+
+export function UnitToggle({
+  unit,
+  onChange,
+  className,
+}: {
+  unit: WeightUnit;
+  onChange: (next: WeightUnit) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Weight unit"
+      className={cn(
+        "inline-flex h-9 shrink-0 overflow-hidden rounded-md border border-input bg-background text-xs font-medium",
+        className
+      )}
+    >
+      {(["kg", "lb"] as const).map((value) => {
+        const active = unit === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onChange(value)}
+            aria-pressed={active}
+            className={cn(
+              "px-3 transition-colors",
+              active
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {value}
+          </button>
+        );
+      })}
     </div>
   );
 }

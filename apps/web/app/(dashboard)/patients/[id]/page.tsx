@@ -20,6 +20,7 @@ import { generateMedicalSummaryPdf } from "@/lib/pdf";
 import {
   PatientAlerts,
   PatientClinicalAdd,
+  UnitToggle,
 } from "@/components/patients/patient-clinical-add";
 import {
   SoapNotesTab,
@@ -29,6 +30,7 @@ import {
   ProceduresTab,
 } from "@/components/patients/patient-clinical-tabs";
 import { recordPatientView } from "@/lib/recent-patients";
+import { kgToLb, useWeightUnit } from "@/lib/weight-units";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -109,6 +111,15 @@ export default function PatientDetailPage() {
   const canCreateSoap =
     userRole !== "front_desk" && userRole !== "technician";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [weightUnit, setWeightUnit] = useWeightUnit();
+
+  const formatWeight = (kgString: string | null) => {
+    if (!kgString) return "\u2014";
+    const kg = parseFloat(kgString);
+    if (!Number.isFinite(kg)) return kgString;
+    if (weightUnit === "lb") return `${kgToLb(kg).toFixed(2)} lb`;
+    return `${kg.toFixed(2)} kg`;
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -528,6 +539,12 @@ export default function PatientDetailPage() {
 
         {activeTab === "weight" && (
           <div>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                Stored in kilograms; toggle to display in pounds.
+              </p>
+              <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+            </div>
             {patient.weights && patient.weights.length > 0 ? (
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full min-w-[320px] text-sm">
@@ -537,7 +554,7 @@ export default function PatientDetailPage() {
                         Date
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                        Weight (kg)
+                        Weight ({weightUnit})
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                         Recorded By
@@ -556,7 +573,7 @@ export default function PatientDetailPage() {
                             : "\u2014"}
                         </td>
                         <td className="px-4 py-3 font-medium">
-                          {weight.weightKg} kg
+                          {formatWeight(weight.weightKg)}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {weight.recordedBy ?? "\u2014"}
