@@ -148,10 +148,28 @@ export const appointmentsRouter = createRouter({
         }
       }
 
+      // Backfill clientId from the patient when the caller didn't supply one,
+      // so the schedule view can always show the owner alongside the patient.
+      let clientId = input.clientId;
+      if (!clientId && input.patientId) {
+        const [pat] = await ctx.db
+          .select({ clientId: patients.clientId })
+          .from(patients)
+          .where(
+            and(
+              eq(patients.id, input.patientId),
+              eq(patients.practiceId, ctx.practiceId)
+            )
+          )
+          .limit(1);
+        clientId = pat?.clientId ?? undefined;
+      }
+
       const [appt] = await ctx.db
         .insert(appointments)
         .values({
           ...input,
+          clientId,
           startTime: new Date(input.startTime),
           endTime: new Date(input.endTime),
           practiceId: ctx.practiceId,

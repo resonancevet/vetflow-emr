@@ -1,6 +1,5 @@
 import {
   Calendar,
-  FileText,
   PawPrint,
   Settings,
   Users,
@@ -18,22 +17,20 @@ export type NavItem = {
 };
 
 /**
- * v0 field-vet navigation (back-office routes hidden, not deleted).
- * Mobile bottom nav surfaces only the four most common destinations to keep
- * tap targets large; Clients lives in the sidebar / drawer instead.
+ * v0 field-vet navigation. Records was folded into the patient detail page,
+ * so the four mobile bottom-nav slots are Schedule, Patients, Clients,
+ * Settings.
  */
 export const v0NavItems: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: Calendar, mobilePrimary: true },
   { href: "/patients", label: "Patients", icon: PawPrint, mobilePrimary: true },
-  { href: "/clients", label: "Clients", icon: Users },
-  { href: "/records", label: "Records", icon: FileText, mobilePrimary: true },
+  { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];
 
 export const routeLabels: Record<string, string> = {
   "/schedule": "Schedule",
   "/patients": "Patients",
-  "/records": "Records",
   "/settings": "Settings",
   "/clients": "Clients",
 };

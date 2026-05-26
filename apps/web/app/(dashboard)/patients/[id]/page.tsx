@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -20,6 +21,13 @@ import {
   PatientAlerts,
   PatientClinicalAdd,
 } from "@/components/patients/patient-clinical-add";
+import {
+  SoapNotesTab,
+  PrescriptionsTab,
+  ProblemsTab,
+  LabResultsTab,
+  ProceduresTab,
+} from "@/components/patients/patient-clinical-tabs";
 import { recordPatientView } from "@/lib/recent-patients";
 
 const speciesEmoji: Record<string, string> = {
@@ -61,18 +69,45 @@ function calculateAge(dob: string | null): string {
   return `${adjustedYears}y ${adjustedMonths}m`;
 }
 
-type Tab = "overview" | "weight" | "vaccinations" | "medications";
+type Tab =
+  | "overview"
+  | "weight"
+  | "soap"
+  | "vaccinations"
+  | "prescriptions"
+  | "problems"
+  | "labResults"
+  | "procedures";
 
-const tabs: { id: Tab; label: string }[] = [
+const allTabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
-  { id: "weight", label: "Weight History" },
+  { id: "weight", label: "Weight" },
+  { id: "soap", label: "SOAP Notes" },
   { id: "vaccinations", label: "Vaccinations" },
-  { id: "medications", label: "Medications" },
+  { id: "prescriptions", label: "Prescriptions" },
+  { id: "problems", label: "Problems" },
+  { id: "labResults", label: "Lab Results" },
+  { id: "procedures", label: "Procedures" },
+];
+
+// Tabs hidden from front desk staff (clinical-only content)
+const frontDeskRestrictedTabs: Tab[] = [
+  "soap",
+  "prescriptions",
+  "labResults",
+  "procedures",
 ];
 
 export default function PatientDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { data: session } = useSession();
+  const userRole = session?.user?.role;
+  const tabs = allTabs.filter(
+    (t) => userRole !== "front_desk" || !frontDeskRestrictedTabs.includes(t.id)
+  );
+  const canCreateSoap =
+    userRole !== "front_desk" && userRole !== "technician";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -390,14 +425,14 @@ export default function PatientDetailPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="mt-6 border-b border-border">
-        <div className="flex gap-0">
+      <div className="mt-6 overflow-x-auto border-b border-border">
+        <div className="flex min-w-max gap-0">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "relative px-4 py-2.5 text-sm font-medium transition-colors",
+                "relative whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors",
                 activeTab === tab.id
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -546,8 +581,65 @@ export default function PatientDetailPage() {
           <VaccinationsTab patientId={patient.id} />
         )}
 
-        {activeTab === "medications" && (
-          <MedicationsTab patientId={patient.id} />
+        {activeTab === "soap" && (
+          <SoapNotesTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+            canCreate={canCreateSoap}
+          />
+        )}
+
+        {activeTab === "prescriptions" && (
+          <PrescriptionsTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+          />
+        )}
+
+        {activeTab === "problems" && (
+          <ProblemsTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+          />
+        )}
+
+        {activeTab === "labResults" && (
+          <LabResultsTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+          />
+        )}
+
+        {activeTab === "procedures" && (
+          <ProceduresTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+          />
         )}
       </div>
     </div>
@@ -626,54 +718,3 @@ function VaccinationsTab({ patientId }: { patientId: string }) {
   );
 }
 
-function MedicationsTab({ patientId }: { patientId: string }) {
-  const { data: prescriptions, isLoading } =
-    trpc.records.listPrescriptions.useQuery({ patientId });
-
-  if (isLoading) {
-    return (
-      <div className="text-center text-muted-foreground py-8">Loading...</div>
-    );
-  }
-
-  if (!prescriptions || prescriptions.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
-        <p className="text-sm text-muted-foreground">No medications on file</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full min-w-[480px] text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/50">
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Medication
-            </th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Dosage
-            </th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Frequency
-            </th>
-            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Status
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {prescriptions.map((rx) => (
-            <tr key={rx.id} className="border-b border-border last:border-0">
-              <td className="px-4 py-3 font-medium">{rx.medicationName}</td>
-              <td className="px-4 py-3">{rx.dosage}</td>
-              <td className="px-4 py-3">{rx.frequency}</td>
-              <td className="px-4 py-3 capitalize">{rx.status ?? "active"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}

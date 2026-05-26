@@ -52,7 +52,7 @@ export default function NewSoapNotePage() {
       }
 
       toast.success("SOAP note created");
-      router.push(`/records?patient=${params.patientId}`);
+      router.push(`/patients/${params.patientId}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save note");
     }
@@ -75,11 +75,11 @@ export default function NewSoapNotePage() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => router.push("/records")}
+        onClick={() => router.push(`/patients/${params.patientId}`)}
         className="mb-4"
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Records
+        Back to Patient
       </Button>
 
       <div>
@@ -174,7 +174,10 @@ export default function NewSoapNotePage() {
             <Save className="mr-2 h-4 w-4" />
             {createNote.isPending ? "Saving..." : "Save Note"}
           </Button>
-          <Button variant="outline" onClick={() => router.push("/records")}>
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/patients/${params.patientId}`)}
+          >
             Cancel
           </Button>
         </div>

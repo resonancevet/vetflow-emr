@@ -21,18 +21,18 @@ Solo / full-access vet with internet connectivity:
 | Route | Purpose |
 |-------|---------|
 | `/schedule` | Day view, book / check in / edit appointments |
-| `/patients` | Patient search and records entry |
-| `/clients` | Client list and contact info (sidebar only; not in mobile bottom nav) |
-| `/records` | SOAP-centric clinical records, recent patients |
+| `/patients` | Patient list, recent patients, full clinical record per patient (SOAP, vaccinations, prescriptions, problems, lab results, procedures) |
+| `/clients` | Client list and contact info |
 | `/settings` | Profile, preferences, dark mode |
 
-Mobile bottom nav surfaces Schedule, Patients, Records, Settings. Clients is reachable from the sidebar, Cmd+K search, and patient detail.
+Mobile bottom nav surfaces Schedule, Patients, Clients, Settings. Records was consolidated into the patient detail page; `/records` redirects to `/patients`.
 
 ## Hidden in v0 (code retained, nav removed)
 
 | Module | Route | Re-enable in |
 |--------|-------|--------------|
 | Dashboard | `/` | Optional later |
+| Records (standalone hub) | `/records` | Folded into patient detail in v0; redirects retained |
 | Billing | `/billing` | v2 |
 | Inventory | `/inventory` | v2 |
 | Inbox | `/inbox` | v1 |
@@ -52,7 +52,6 @@ Mobile bottom nav surfaces Schedule, Patients, Records, Settings. Clients is rea
 - Client communication (email, SMS, portal)
 - SOAP and treatment templates (Settings)
 - Additional staff roles (e.g. trainer, assistant) added to the role enum
-- Navigation simplification: fold `/records` tabs (SOAP, vaccinations, prescriptions, problems, lab results, procedures) into the patient detail page so Records is reachable through Patients
 - Real schedule week view (toggle currently removed; see schedule page)
 - Schedule appointment drag/resize (today: edit via the popover form)
 

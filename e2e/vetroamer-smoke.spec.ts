@@ -16,7 +16,7 @@ test.describe("VetRoamer v0 smoke", () => {
     await expect(page.getByRole("heading", { name: "Schedule", level: 2 })).toBeVisible();
   });
 
-  test("can reach patients and records from v0 shell", async ({ page }) => {
+  test("can reach patients and clients from v0 shell", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/email/i).fill(DEMO_EMAIL);
     await page.getByLabel(/password/i).fill(DEMO_PASSWORD);
@@ -26,8 +26,12 @@ test.describe("VetRoamer v0 smoke", () => {
     await page.goto("/patients");
     await expect(page.getByRole("heading", { name: "Patients", level: 2 })).toBeVisible();
 
+    await page.goto("/clients");
+    await expect(page.getByRole("heading", { name: "Clients", level: 2 })).toBeVisible();
+
+    // Legacy /records redirects to the patient list
     await page.goto("/records");
-    await expect(page.getByRole("heading", { name: /medical records/i })).toBeVisible();
+    await expect(page).toHaveURL(/\/patients/);
   });
 
   test("dark mode toggle is present when logged in", async ({ page }) => {

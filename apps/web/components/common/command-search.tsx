@@ -7,7 +7,6 @@ import {
   PawPrint,
   Users,
   Calendar,
-  FileText,
   X,
   Search,
   Package,
@@ -196,13 +195,6 @@ export function CommandSearch({
                 >
                   <Clipboard className="h-4 w-4" />
                   Whiteboard
-                </Command.Item>
-                <Command.Item
-                  onSelect={() => navigate("/records")}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm aria-selected:bg-accent"
-                >
-                  <FileText className="h-4 w-4" />
-                  Records
                 </Command.Item>
                 <Command.Item
                   onSelect={() => navigate("/billing")}

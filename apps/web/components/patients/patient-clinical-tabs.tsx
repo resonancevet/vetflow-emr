@@ -1,0 +1,748 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  FileText,
+  FlaskConical,
+  Pill,
+  Plus,
+  Scissors,
+  Tag,
+} from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { generatePrescriptionLabelPdf } from "@/lib/pdf";
+
+/**
+ * Patient-scoped clinical tab bodies.
+ *
+ * These were previously housed on the Records page; consolidating them onto
+ * the patient detail page is part of the v0 nav simplification (one fewer
+ * destination, one less concept).
+ */
+
+type SelectedPatient = {
+  id: string;
+  name: string;
+  species: string | null;
+  clientFirstName: string | null;
+  clientLastName: string | null;
+};
+
+function getPrescriptionStatusBadge(status: string | null) {
+  switch (status) {
+    case "active":
+      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
+    case "completed":
+      return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+    case "discontinued":
+      return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    default:
+      return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+  }
+}
+
+function getLabStatusBadge(status: string | null) {
+  switch (status) {
+    case "pending":
+      return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+    case "completed":
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
+    case "reviewed":
+      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
+    default:
+      return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+  }
+}
+
+function isOutOfRange(
+  resultValue: string | null,
+  low: string | null,
+  high: string | null
+): boolean {
+  if (!resultValue) return false;
+  const val = parseFloat(resultValue);
+  if (isNaN(val)) return false;
+  if (low !== null && low !== undefined) {
+    const lowVal = parseFloat(low);
+    if (!isNaN(lowVal) && val < lowVal) return true;
+  }
+  if (high !== null && high !== undefined) {
+    const highVal = parseFloat(high);
+    if (!isNaN(highVal) && val > highVal) return true;
+  }
+  return false;
+}
+
+export function SoapNotesTab({
+  patient,
+  canCreate,
+}: {
+  patient: SelectedPatient;
+  canCreate: boolean;
+}) {
+  const router = useRouter();
+  const { data: soapNotes } = trpc.records.listSoapNotes.useQuery({
+    patientId: patient.id,
+  });
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+
+  return (
+    <div>
+      {canCreate && (
+        <div className="mb-4 flex justify-end">
+          <Button
+            size="sm"
+            onClick={() => router.push(`/records/new-soap/${patient.id}`)}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New SOAP Note
+          </Button>
+        </div>
+      )}
+
+      {soapNotes && soapNotes.length > 0 ? (
+        <div className="space-y-3">
+          {soapNotes.map((note) => {
+            const isExpanded = expandedNoteId === note.id;
+            return (
+              <div
+                key={note.id}
+                className="rounded-lg border border-border bg-card"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedNoteId(isExpanded ? null : note.id)
+                  }
+                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                >
+                  <div className="flex items-center gap-4">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">
+                        {note.createdAt
+                          ? new Date(note.createdAt).toLocaleDateString()
+                          : "No date"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {note.authorName ?? "Unknown author"}
+                      </p>
+                    </div>
+                    <p className="line-clamp-1 max-w-md text-sm text-muted-foreground">
+                      {note.assessment || "No assessment recorded"}
+                    </p>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+                {isExpanded && (
+                  <div className="space-y-4 border-t border-border px-4 py-4">
+                    <SoapField label="Subjective" value={note.subjective} />
+                    <SoapField label="Objective" value={note.objective} />
+                    <SoapField label="Assessment" value={note.assessment} />
+                    <SoapField label="Plan" value={note.plan} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+          <FileText className="mx-auto h-8 w-8 text-muted-foreground/50" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            No SOAP notes yet
+          </p>
+          {canCreate && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => router.push(`/records/new-soap/${patient.id}`)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create First Note
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SoapField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div>
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </h4>
+      <p className="whitespace-pre-wrap text-sm">{value || "--"}</p>
+    </div>
+  );
+}
+
+export function PrescriptionsTab({
+  patient,
+}: {
+  patient: SelectedPatient;
+}) {
+  const { data: prescriptions } = trpc.records.listPrescriptions.useQuery({
+    patientId: patient.id,
+  });
+
+  if (!prescriptions || prescriptions.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+        <Pill className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          No prescriptions yet
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/50">
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Medication
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Dosage
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Frequency
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Status
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Refills
+            </th>
+            <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {prescriptions.map((rx) => (
+            <tr
+              key={rx.id}
+              className="border-b border-border last:border-0"
+            >
+              <td className="px-4 py-3 font-medium">{rx.medicationName}</td>
+              <td className="px-4 py-3">{rx.dosage ?? "--"}</td>
+              <td className="px-4 py-3">{rx.frequency ?? "--"}</td>
+              <td className="px-4 py-3">
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                    getPrescriptionStatusBadge(rx.status)
+                  )}
+                >
+                  {rx.status ?? "unknown"}
+                </span>
+              </td>
+              <td className="px-4 py-3">{rx.refillsRemaining ?? 0}</td>
+              <td className="px-4 py-3 text-right">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Print Label"
+                  onClick={() => {
+                    const clientName = [
+                      patient.clientFirstName,
+                      patient.clientLastName,
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
+                    generatePrescriptionLabelPdf({
+                      practiceName: "",
+                      patientName: patient.name,
+                      clientName,
+                      species: patient.species ?? "",
+                      medicationName: rx.medicationName,
+                      dosage: rx.dosage ?? "",
+                      frequency: rx.frequency ?? "",
+                      instructions: rx.instructions ?? undefined,
+                      prescribedBy: rx.prescriberName ?? "",
+                      startDate: rx.startDate
+                        ? new Date(rx.startDate).toLocaleDateString()
+                        : new Date().toLocaleDateString(),
+                      quantity:
+                        rx.quantity != null ? String(rx.quantity) : undefined,
+                      refillsRemaining: rx.refillsRemaining ?? undefined,
+                    }).save(
+                      `label-${rx.medicationName
+                        .replace(/\s+/g, "-")
+                        .toLowerCase()}.pdf`
+                    );
+                  }}
+                >
+                  <Tag className="mr-1 h-3.5 w-3.5" />
+                  Print Label
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ProblemsTab({ patient }: { patient: SelectedPatient }) {
+  const { data: problems } = trpc.records.listProblems.useQuery({
+    patientId: patient.id,
+  });
+
+  if (!problems || problems.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+        <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          No problems recorded
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {problems.map((problem) => (
+        <div
+          key={problem.id}
+          className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+        >
+          <div>
+            <p
+              className={cn(
+                "text-sm",
+                problem.status === "active" ? "font-semibold" : "font-normal"
+              )}
+            >
+              {problem.description}
+            </p>
+            {problem.onsetDate && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Onset: {new Date(problem.onsetDate).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+              problem.status === "active"
+                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                : problem.status === "chronic"
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+            )}
+          >
+            {problem.status ?? "active"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
+  const [showLabForm, setShowLabForm] = useState(false);
+  const { data: labResultsList, refetch } = trpc.records.listLabResults.useQuery({
+    patientId: patient.id,
+  });
+
+  const createLabResult = trpc.records.createLabResult.useMutation({
+    onSuccess: () => {
+      toast.success("Lab result created");
+      refetch();
+      setShowLabForm(false);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const updateLabResultStatus =
+    trpc.records.updateLabResultStatus.useMutation({
+      onSuccess: () => {
+        toast.success("Lab result status updated");
+        refetch();
+      },
+      onError: (err) => {
+        toast.error(err.message);
+      },
+    });
+
+  return (
+    <div>
+      <div className="mb-4 flex justify-end">
+        <Button size="sm" onClick={() => setShowLabForm((v) => !v)}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          {showLabForm ? "Cancel" : "Add Lab Result"}
+        </Button>
+      </div>
+
+      {showLabForm && (
+        <form
+          className="mb-6 space-y-4 rounded-lg border border-border bg-card p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const formData = new FormData(form);
+            createLabResult.mutate({
+              patientId: patient.id,
+              testName: formData.get("testName") as string,
+              resultValue:
+                (formData.get("resultValue") as string) || undefined,
+              unit: (formData.get("unit") as string) || undefined,
+              referenceRangeLow:
+                (formData.get("referenceRangeLow") as string) || undefined,
+              referenceRangeHigh:
+                (formData.get("referenceRangeHigh") as string) || undefined,
+            });
+          }}
+        >
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Test Name *
+              </label>
+              <Input name="testName" required placeholder="e.g. CBC" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Result Value
+              </label>
+              <Input name="resultValue" placeholder="e.g. 12.5" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Unit
+              </label>
+              <Input name="unit" placeholder="e.g. mg/dL" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Ref. Range Low
+              </label>
+              <Input name="referenceRangeLow" placeholder="e.g. 7.0" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Ref. Range High
+              </label>
+              <Input name="referenceRangeHigh" placeholder="e.g. 27.0" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={createLabResult.isPending}>
+              {createLabResult.isPending ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {labResultsList && labResultsList.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[840px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Test
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Result
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Unit
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Reference
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Ordered By
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Date
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {labResultsList.map((lab) => {
+                const outOfRange = isOutOfRange(
+                  lab.resultValue,
+                  lab.referenceRangeLow,
+                  lab.referenceRangeHigh
+                );
+                return (
+                  <tr
+                    key={lab.id}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="px-4 py-3 font-medium">{lab.testName}</td>
+                    <td
+                      className={cn(
+                        "px-4 py-3",
+                        outOfRange
+                          ? "font-semibold text-red-600 dark:text-red-400"
+                          : ""
+                      )}
+                    >
+                      {lab.resultValue ?? "--"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {lab.unit ?? "--"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {lab.referenceRangeLow != null &&
+                      lab.referenceRangeHigh != null
+                        ? `${lab.referenceRangeLow} - ${lab.referenceRangeHigh}`
+                        : "--"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                          getLabStatusBadge(lab.status)
+                        )}
+                      >
+                        {lab.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {lab.orderedByName ?? "--"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {lab.createdAt
+                        ? new Date(lab.createdAt).toLocaleDateString()
+                        : "--"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {lab.status === "completed" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={updateLabResultStatus.isPending}
+                          onClick={() =>
+                            updateLabResultStatus.mutate({
+                              id: lab.id,
+                              status: "reviewed",
+                            })
+                          }
+                        >
+                          Mark Reviewed
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+          <FlaskConical className="mx-auto h-8 w-8 text-muted-foreground/50" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            No lab results yet
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ProceduresTab({ patient }: { patient: SelectedPatient }) {
+  const [showProcedureForm, setShowProcedureForm] = useState(false);
+  const { data: proceduresList, refetch } = trpc.records.listProcedures.useQuery({
+    patientId: patient.id,
+  });
+
+  const createProcedure = trpc.records.createProcedure.useMutation({
+    onSuccess: () => {
+      toast.success("Procedure recorded");
+      refetch();
+      setShowProcedureForm(false);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  return (
+    <div>
+      <div className="mb-4 flex justify-end">
+        <Button size="sm" onClick={() => setShowProcedureForm((v) => !v)}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          {showProcedureForm ? "Cancel" : "Add Procedure"}
+        </Button>
+      </div>
+
+      {showProcedureForm && (
+        <form
+          className="mb-6 space-y-4 rounded-lg border border-border bg-card p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const formData = new FormData(form);
+            const durationStr = formData.get("durationMinutes") as string;
+            createProcedure.mutate({
+              patientId: patient.id,
+              name: formData.get("name") as string,
+              description:
+                (formData.get("description") as string) || undefined,
+              anesthesiaUsed:
+                (formData.get("anesthesiaUsed") as string) || undefined,
+              durationMinutes: durationStr
+                ? parseInt(durationStr, 10)
+                : undefined,
+              notes: (formData.get("notes") as string) || undefined,
+            });
+          }}
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Name *
+              </label>
+              <Input
+                name="name"
+                required
+                placeholder="e.g. Dental Prophylaxis"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Duration (minutes)
+              </label>
+              <Input
+                name="durationMinutes"
+                type="number"
+                placeholder="e.g. 45"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Description
+              </label>
+              <Input
+                name="description"
+                placeholder="Brief description of the procedure"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Anesthesia Used
+              </label>
+              <Input name="anesthesiaUsed" placeholder="e.g. Isoflurane" />
+            </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Notes
+              </label>
+              <Input name="notes" placeholder="Additional notes" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={createProcedure.isPending}>
+              {createProcedure.isPending ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {proceduresList && proceduresList.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Name
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Performed By
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Duration
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Anesthesia
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Date
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {proceduresList.map((proc) => (
+                <tr
+                  key={proc.id}
+                  className="border-b border-border last:border-0"
+                >
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{proc.name}</p>
+                    {proc.description && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {proc.description}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {proc.performedByName ?? "--"}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {proc.durationMinutes
+                      ? `${proc.durationMinutes} min`
+                      : "--"}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {proc.anesthesiaUsed ?? "--"}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {proc.createdAt
+                      ? new Date(proc.createdAt).toLocaleDateString()
+                      : "--"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+          <Scissors className="mx-auto h-8 w-8 text-muted-foreground/50" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            No procedures recorded
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
