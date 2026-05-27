@@ -101,6 +101,21 @@ export async function getSignedUrl(
 }
 
 /**
+ * Fetch an object from S3/MinIO. Used by the file proxy route so we never
+ * expose the underlying storage endpoint to the browser (the presigned URL
+ * would otherwise contain `localhost` in dev and break on phones/other LAN
+ * devices).
+ */
+export async function getObject(key: string) {
+  return s3.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }),
+  );
+}
+
+/**
  * Delete an object from S3/MinIO.
  *
  * @param key Object key to delete

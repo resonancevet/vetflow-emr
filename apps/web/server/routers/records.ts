@@ -12,7 +12,7 @@ import {
   users,
   files,
 } from "@openpims/db";
-import { deleteFile as deleteFileFromS3, getSignedUrl } from "@/lib/s3";
+import { deleteFile as deleteFileFromS3 } from "@/lib/s3";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -127,17 +127,15 @@ export const recordsRouter = createRouter({
         )
         .orderBy(desc(files.createdAt));
 
-      // Files are stored in a private bucket, so we hand back short-lived
-      // presigned URLs instead of the raw object URL we wrote at upload time.
-      return Promise.all(
-        rows.map(async (row) => ({
-          id: row.id,
-          fileName: row.fileName,
-          mimeType: row.mimeType,
-          createdAt: row.createdAt,
-          fileUrl: await getSignedUrl(row.fileKey, 3600),
-        }))
-      );
+      // Hand back a path to our own proxy route instead of a presigned S3
+      // URL — see apps/web/app/api/files/[id]/route.ts for why.
+      return rows.map((row) => ({
+        id: row.id,
+        fileName: row.fileName,
+        mimeType: row.mimeType,
+        createdAt: row.createdAt,
+        fileUrl: `/api/files/${row.id}`,
+      }));
     }),
 
   renameFile: protectedProcedure
