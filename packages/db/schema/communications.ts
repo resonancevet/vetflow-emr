@@ -14,6 +14,7 @@ import { baseColumns } from "./common";
 import { practices } from "./practices";
 import { users } from "./users";
 import { clients } from "./clients";
+import { patients } from "./patients";
 
 export const channelEnum = pgEnum("comm_channel", [
   "phone",
@@ -35,19 +36,33 @@ export const commStatusEnum = pgEnum("comm_status", [
   "failed",
 ]);
 
-export const communications = pgTable("communications", {
-  ...baseColumns(),
-  practiceId: uuid("practice_id")
-    .notNull()
-    .references(() => practices.id),
-  clientId: uuid("client_id").references(() => clients.id),
-  channel: channelEnum("channel").notNull(),
-  direction: directionEnum("direction").notNull(),
-  subject: varchar("subject", { length: 255 }),
-  content: text("content"),
-  status: commStatusEnum("status").notNull().default("pending"),
-  assignedTo: uuid("assigned_to").references(() => users.id),
-});
+export const communications = pgTable(
+  "communications",
+  {
+    ...baseColumns(),
+    practiceId: uuid("practice_id")
+      .notNull()
+      .references(() => practices.id),
+    clientId: uuid("client_id").references(() => clients.id),
+    patientId: uuid("patient_id").references(() => patients.id),
+    channel: channelEnum("channel").notNull(),
+    direction: directionEnum("direction").notNull(),
+    subject: varchar("subject", { length: 255 }),
+    content: text("content"),
+    status: commStatusEnum("status").notNull().default("pending"),
+    assignedTo: uuid("assigned_to").references(() => users.id),
+  },
+  (table) => ({
+    patientIdx: index("communications_patient_idx").on(
+      table.patientId,
+      table.createdAt
+    ),
+    clientIdx: index("communications_client_idx").on(
+      table.clientId,
+      table.createdAt
+    ),
+  })
+);
 
 export const webhooks = pgTable("webhooks", {
   ...baseColumns(),
@@ -100,6 +115,10 @@ export const communicationsRelations = relations(
     client: one(clients, {
       fields: [communications.clientId],
       references: [clients.id],
+    }),
+    patient: one(patients, {
+      fields: [communications.patientId],
+      references: [patients.id],
     }),
     assignedToUser: one(users, {
       fields: [communications.assignedTo],

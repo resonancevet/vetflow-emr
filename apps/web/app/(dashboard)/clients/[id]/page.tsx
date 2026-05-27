@@ -1,9 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Mail, Phone, MapPin } from "lucide-react";
+import { ArrowLeft, Mail, MessageSquarePlus, Phone, MapPin } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import {
+  CommunicationList,
+  LogCommunicationModal,
+  type CommunicationListItem,
+} from "@/components/communications/log-communication-modal";
+import { ClientAlertsBanner } from "@/components/clients/client-alerts-banner";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -18,11 +25,20 @@ const speciesEmoji: Record<string, string> = {
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const [commModalOpen, setCommModalOpen] = useState(false);
+  const [editingComm, setEditingComm] =
+    useState<CommunicationListItem | null>(null);
 
   const { data: client, isLoading, error } = trpc.clients.getById.useQuery(
     { id: params.id },
     { enabled: !!params.id }
   );
+
+  const { data: communications, isLoading: commLoading } =
+    trpc.communications.getByClient.useQuery(
+      { clientId: params.id },
+      { enabled: !!params.id }
+    );
 
   if (isLoading) {
     return (
@@ -44,13 +60,15 @@ export default function ClientDetailPage() {
     .filter(Boolean)
     .join(", ");
 
+  const clientLabel = `${client.firstName} ${client.lastName}`;
+
   return (
     <div>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => router.push("/clients")}
-        className="mb-4"
+        className="mb-4 min-h-11"
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Clients
@@ -86,11 +104,45 @@ export default function ClientDetailPage() {
           <Button
             variant="outline"
             size="sm"
+            className="min-h-11"
             onClick={() => router.push(`/clients/${client.id}/edit`)}
           >
             Edit
           </Button>
         </div>
+      </div>
+
+      <ClientAlertsBanner clientId={client.id} canManage />
+
+      <div className="mt-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-heading text-lg font-semibold">Communications</h3>
+          <Button
+            type="button"
+            size="sm"
+            className="min-h-11"
+            onClick={() => {
+              setEditingComm(null);
+              setCommModalOpen(true);
+            }}
+          >
+            <MessageSquarePlus className="mr-2 h-4 w-4" />
+            Log call / message
+          </Button>
+        </div>
+        {commLoading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : (
+          <CommunicationList
+            items={communications ?? []}
+            emptyMessage="No communications logged for this client yet."
+            clientId={client.id}
+            onEdit={(item) => {
+              setEditingComm(item);
+              setCommModalOpen(true);
+            }}
+          />
+        )}
       </div>
 
       <div className="mt-6">
@@ -103,7 +155,7 @@ export default function ClientDetailPage() {
               <div
                 key={patient.id}
                 onClick={() => router.push(`/patients/${patient.id}`)}
-                className="cursor-pointer rounded-lg border border-border bg-card p-4 hover:bg-muted/30 transition-colors"
+                className="cursor-pointer rounded-lg border border-border bg-card p-4 hover:bg-muted/30 transition-colors min-h-[4.5rem]"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-lg">
@@ -140,7 +192,7 @@ export default function ClientDetailPage() {
             </p>
             <Button
               variant="outline"
-              className="mt-3"
+              className="mt-3 min-h-11"
               onClick={() => router.push("/patients/new")}
             >
               Add Patient
@@ -148,6 +200,29 @@ export default function ClientDetailPage() {
           </div>
         )}
       </div>
+
+      <LogCommunicationModal
+        open={commModalOpen}
+        onClose={() => {
+          setCommModalOpen(false);
+          setEditingComm(null);
+        }}
+        clientId={client.id}
+        clientLabel={clientLabel}
+        editingItem={
+          editingComm
+            ? {
+                id: editingComm.id,
+                channel: editingComm.channel,
+                direction: editingComm.direction,
+                subject: editingComm.subject,
+                content: editingComm.content,
+                patientId: editingComm.patientId ?? null,
+                updatedAt: editingComm.updatedAt,
+              }
+            : null
+        }
+      />
     </div>
   );
 }

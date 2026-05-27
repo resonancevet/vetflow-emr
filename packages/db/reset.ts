@@ -29,6 +29,8 @@ const TABLES = [
   "appointment_types",
   "patient_weights",
   "patient_allergies",
+  "patient_alerts",
+  "client_alerts",
   "patients",
   "clients",
   "products",

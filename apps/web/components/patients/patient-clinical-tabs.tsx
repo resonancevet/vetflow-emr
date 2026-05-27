@@ -109,6 +109,7 @@ export function SoapNotesTab({
     assessment: "",
     plan: "",
   });
+  const [editUpdatedAt, setEditUpdatedAt] = useState<Date | undefined>();
 
   const updateNote = trpc.records.updateSoapNote.useMutation({
     onSuccess: () => {
@@ -125,6 +126,7 @@ export function SoapNotesTab({
     objective: string | null;
     assessment: string | null;
     plan: string | null;
+    updatedAt?: Date | string | null;
   }) => {
     setEditingNoteId(note.id);
     setExpandedNoteId(note.id);
@@ -134,6 +136,9 @@ export function SoapNotesTab({
       assessment: note.assessment ?? "",
       plan: note.plan ?? "",
     });
+    setEditUpdatedAt(
+      note.updatedAt ? new Date(note.updatedAt) : undefined
+    );
   };
 
   const cancelEdit = () => setEditingNoteId(null);
@@ -146,6 +151,7 @@ export function SoapNotesTab({
       objective: editForm.objective,
       assessment: editForm.assessment,
       plan: editForm.plan,
+      clientUpdatedAt: editUpdatedAt,
     });
   };
 

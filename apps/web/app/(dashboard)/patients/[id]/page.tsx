@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
-  AlertTriangle,
   User,
   Activity,
   Shield,
@@ -32,6 +31,10 @@ import {
   LabResultsTab,
   ProceduresTab,
 } from "@/components/patients/patient-clinical-tabs";
+import { PatientCommunicationsTab } from "@/components/patients/patient-communications-tab";
+import { PatientAllergiesSection } from "@/components/patients/patient-allergies-section";
+import { PatientAlertsBanner } from "@/components/patients/patient-alerts-banner";
+import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
 import { recordPatientView } from "@/lib/recent-patients";
 import { kgToLb, useWeightUnit } from "@/lib/weight-units";
 
@@ -77,6 +80,7 @@ function calculateAge(dob: string | null): string {
 type Tab =
   | "overview"
   | "weight"
+  | "communication"
   | "soap"
   | "vaccinations"
   | "prescriptions"
@@ -87,6 +91,7 @@ type Tab =
 const allTabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "weight", label: "Weight" },
+  { id: "communication", label: "Communication" },
   { id: "soap", label: "SOAP Notes" },
   { id: "vaccinations", label: "Vaccinations" },
   { id: "prescriptions", label: "Prescriptions" },
@@ -371,14 +376,17 @@ export default function PatientDetailPage() {
                   <span>Microchip: {patient.microchipNumber}</span>
                 )}
               </div>
-              {patient.clientFirstName && (
-                <button
-                  onClick={() => router.push(`/clients/${patient.clientId}`)}
-                  className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                >
-                  <User className="h-3.5 w-3.5" />
-                  {patient.clientFirstName} {patient.clientLastName}
-                </button>
+              {patient.clientFirstName && patient.clientId && (
+                <div className="mt-2 inline-flex items-center gap-1.5">
+                  <button
+                    onClick={() => router.push(`/clients/${patient.clientId}`)}
+                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                  >
+                    <User className="h-3.5 w-3.5" />
+                    {patient.clientFirstName} {patient.clientLastName}
+                  </button>
+                  <ClientAlertIcon clientId={patient.clientId} />
+                </div>
               )}
             </div>
           </div>
@@ -402,71 +410,52 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
-      {/* Allergy Alert Bar */}
-      {patient.allergies && patient.allergies.length > 0 && (
-        <div className="mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
-          <div>
-            <p className="text-sm font-semibold text-red-800 dark:text-red-300">
-              Allergies
-            </p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {patient.allergies.map((allergy) => (
-                <span
-                  key={allergy.id}
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                    allergy.severity === "severe"
-                      ? "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200"
-                      : allergy.severity === "moderate"
-                        ? "bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                  )}
-                >
-                  {allergy.allergen}
-                  {allergy.severity === "severe" ? " (!)" : ""}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <PatientAlertsBanner
+        patientId={patient.id}
+        canManage={canManageClinicalRecords}
+      />
 
       <PatientAlerts
         patientId={patient.id}
-        allergyCount={patient.allergies?.length ?? 0}
+        allergies={patient.allergies ?? []}
       />
 
       <div className="mt-4">
         <PatientClinicalAdd patientId={patient.id} />
       </div>
 
-      {/* Tab Navigation */}
-      <div className="mt-6 overflow-x-auto border-b border-border">
-        <div className="flex min-w-max gap-0">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "relative whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors",
-                activeTab === tab.id
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {tab.label}
-              {activeTab === tab.id && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Tab navigation: vertical rail on lg+, horizontal scroll on smaller */}
+      <div className="mt-6 lg:flex lg:gap-6">
+        <nav
+          className="mb-4 shrink-0 overflow-x-auto border-b border-border lg:mb-0 lg:w-44 lg:border-b-0 lg:border-r lg:pr-4"
+          aria-label="Patient sections"
+        >
+          <ul className="flex min-w-max gap-0 lg:flex-col lg:min-w-0">
+            {tabs.map((tab) => (
+              <li key={tab.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "relative w-full whitespace-nowrap px-4 py-3 text-left text-sm font-medium transition-colors min-h-11 lg:rounded-md",
+                    activeTab === tab.id
+                      ? "text-primary lg:bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground lg:hover:bg-muted/50"
+                  )}
+                >
+                  {tab.label}
+                  {activeTab === tab.id && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary lg:bottom-auto lg:left-0 lg:top-2 lg:bottom-2 lg:w-0.5 lg:h-auto lg:right-auto" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-      {/* Tab Content */}
-      <div className="mt-6">
+        <div className="min-w-0 flex-1">
         {activeTab === "overview" && (
+          <div className="space-y-6">
           <div className="rounded-lg border border-border bg-card p-6">
             <h3 className="font-heading text-base font-semibold mb-4">
               Basic Information
@@ -541,6 +530,20 @@ export default function PatientDetailPage() {
               </div>
             </dl>
           </div>
+          <PatientAllergiesSection
+            patientId={patient.id}
+            allergies={patient.allergies ?? []}
+            canManage={canManageClinicalRecords}
+          />
+          </div>
+        )}
+
+        {activeTab === "communication" && patient.clientId && (
+          <PatientCommunicationsTab
+            patientId={patient.id}
+            clientId={patient.clientId}
+            clientLabel={`${patient.clientFirstName ?? ""} ${patient.clientLastName ?? ""}`.trim()}
+          />
         )}
 
         {activeTab === "weight" && (
@@ -671,6 +674,7 @@ export default function PatientDetailPage() {
             canManage={canManagePrescriptions}
           />
         )}
+        </div>
       </div>
     </div>
   );

@@ -420,10 +420,15 @@ function ProblemForm({
 
 function PatientAlerts({
   patientId,
-  allergyCount,
+  allergies = [],
 }: {
   patientId: string;
-  allergyCount: number;
+  allergies?: Array<{
+    id: string;
+    allergen: string;
+    reaction: string | null;
+    severity: "mild" | "moderate" | "severe";
+  }>;
 }) {
   const { data: vaccinations } = trpc.records.listVaccinations.useQuery({
     patientId,
@@ -439,10 +444,38 @@ function PatientAlerts({
     return due < today;
   });
 
-  if (allergyCount === 0 && overdue.length === 0) return null;
+  const severityClass: Record<string, string> = {
+    severe: "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200",
+    moderate: "bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    mild: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  };
+
+  if (allergies.length === 0 && overdue.length === 0) return null;
 
   return (
     <div className="mt-4 space-y-2">
+      {allergies.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
+          <p className="font-medium text-red-900 dark:text-red-200">
+            Allergies ({allergies.length})
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {allergies.map((a) => (
+              <span
+                key={a.id}
+                className={cn(
+                  "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+                  severityClass[a.severity]
+                )}
+                title={a.reaction ?? undefined}
+              >
+                {a.allergen}
+                {a.severity === "severe" ? " (!)" : ""}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {overdue.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
           <p className="font-medium text-amber-900 dark:text-amber-200">

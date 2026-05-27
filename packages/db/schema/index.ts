@@ -2,6 +2,8 @@ export * from "./practices";
 export * from "./users";
 export * from "./clients";
 export * from "./patients";
+export * from "./patient-alerts";
+export * from "./client-alerts";
 export * from "./scheduling";
 export * from "./clinical";
 export * from "./prescriptions";

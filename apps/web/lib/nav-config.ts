@@ -1,5 +1,6 @@
 import {
   Calendar,
+  MessageSquare,
   PawPrint,
   Settings,
   Users,
@@ -33,12 +34,14 @@ export const routeLabels: Record<string, string> = {
   "/patients": "Patients",
   "/settings": "Settings",
   "/clients": "Clients",
+  "/communications": "Communications",
 };
 
 export const v0NewActions = [
   { label: "New Patient", href: "/patients/new", icon: PawPrint },
   { label: "New Client", href: "/clients/new", icon: Users },
   { label: "New Appointment", href: "/schedule", icon: Calendar },
+  { label: "Log Communication", href: "/communications/log", icon: MessageSquare },
 ] as const;
 
 export const DEMO_LOGIN = {

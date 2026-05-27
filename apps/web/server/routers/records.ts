@@ -13,6 +13,10 @@ import {
   files,
 } from "@openpims/db";
 import { deleteFile as deleteFileFromS3 } from "@/lib/s3";
+import {
+  assertNotStale,
+  clientUpdatedAtSchema,
+} from "../lib/optimistic-update";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -28,6 +32,7 @@ export const recordsRouter = createRouter({
           plan: soapNotes.plan,
           authorName: users.name,
           createdAt: soapNotes.createdAt,
+          updatedAt: soapNotes.updatedAt,
         })
         .from(soapNotes)
         .leftJoin(users, eq(soapNotes.authorId, users.id))
@@ -74,10 +79,27 @@ export const recordsRouter = createRouter({
         objective: z.string().optional(),
         assessment: z.string().optional(),
         plan: z.string().optional(),
+        clientUpdatedAt: clientUpdatedAtSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...fields } = input;
+      const { id, clientUpdatedAt, ...fields } = input;
+
+      const [existing] = await ctx.db
+        .select({ updatedAt: soapNotes.updatedAt })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.id, id),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) throw new Error("SOAP note not found");
+      assertNotStale(existing.updatedAt, clientUpdatedAt);
+
       // Empty string is a valid "clear this section" value, so we let it
       // through; only undefined fields are skipped.
       const updateValues: Record<string, string> = {};

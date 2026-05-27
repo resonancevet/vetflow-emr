@@ -145,34 +145,58 @@ export default function NewSoapNotePage() {
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 placeholder={weightUnit === "lb" ? "e.g. 31.3" : "e.g. 14.2"}
-                className="max-w-[12rem]"
+                className="max-w-[12rem] min-h-11"
               />
               <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
             </div>
           </div>
 
-          {(
-            [
-              ["subjective", "Subjective", "Owner complaint, history, symptoms", subjective, setSubjective],
-              ["objective", "Objective", "Exam findings, vitals, test results", objective, setObjective],
-              ["assessment", "Assessment", "Diagnosis or differentials", assessment, setAssessment],
-              ["plan", "Plan", "Treatment, medications, follow-up", plan, setPlan],
-            ] as const
-          ).map(([id, label, hint, value, setter]) => (
-            <div key={id}>
-              <label htmlFor={id} className="block text-sm font-medium mb-1.5">
-                {label}
-              </label>
-              <p className="text-xs text-muted-foreground mb-2">{hint}</p>
-              <textarea
-                id={id}
-                rows={4}
-                value={value}
-                onChange={(e) => setter(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y min-h-[5rem]"
-              />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-6">
+              {(
+                [
+                  ["subjective", "Subjective", "Owner complaint, history, symptoms", subjective, setSubjective],
+                  ["objective", "Objective", "Exam findings, vitals, test results", objective, setObjective],
+                ] as const
+              ).map(([id, label, hint, value, setter]) => (
+                <div key={id}>
+                  <label htmlFor={id} className="block text-sm font-medium mb-1.5">
+                    {label}
+                  </label>
+                  <p className="text-xs text-muted-foreground mb-2">{hint}</p>
+                  <textarea
+                    id={id}
+                    rows={6}
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y min-h-[8rem] lg:min-h-[12rem]"
+                  />
+                </div>
+              ))}
             </div>
-          ))}
+            <div className="space-y-6">
+              {(
+                [
+                  ["assessment", "Assessment", "Diagnosis or differentials", assessment, setAssessment],
+                  ["plan", "Plan", "Treatment, medications, follow-up", plan, setPlan],
+                ] as const
+              ).map(([id, label, hint, value, setter]) => (
+                <div key={id}>
+                  <label htmlFor={id} className="block text-sm font-medium mb-1.5">
+                    {label}
+                  </label>
+                  <p className="text-xs text-muted-foreground mb-2">{hint}</p>
+                  <textarea
+                    id={id}
+                    rows={6}
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y min-h-[8rem] lg:min-h-[12rem]"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
@@ -246,6 +270,7 @@ export default function NewSoapNotePage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <Button
+            className="min-h-11"
             onClick={handleSave}
             disabled={createNote.isPending || addWeight.isPending}
           >

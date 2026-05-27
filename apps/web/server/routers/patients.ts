@@ -3,6 +3,10 @@ import { eq, and, isNull, ilike, or, sql, desc, ne } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
+  assertNotStale,
+  clientUpdatedAtSchema,
+} from "../lib/optimistic-update";
+import {
   patients,
   patientWeights,
   patientAllergies,
@@ -292,6 +296,78 @@ export const patientsRouter = createRouter({
         })
         .returning();
       return allergy!;
+    }),
+
+  updateAllergy: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        allergen: z.string().min(1),
+        reaction: z.string().optional(),
+        severity: z.enum(["mild", "moderate", "severe"]),
+        clientUpdatedAt: clientUpdatedAtSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, clientUpdatedAt, ...fields } = input;
+
+      const [existing] = await ctx.db
+        .select({
+          id: patientAllergies.id,
+          updatedAt: patientAllergies.updatedAt,
+          patientId: patientAllergies.patientId,
+        })
+        .from(patientAllergies)
+        .innerJoin(patients, eq(patientAllergies.patientId, patients.id))
+        .where(
+          and(
+            eq(patientAllergies.id, id),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patientAllergies.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Allergy not found" });
+      }
+
+      assertNotStale(existing.updatedAt, clientUpdatedAt);
+
+      const [allergy] = await ctx.db
+        .update(patientAllergies)
+        .set(fields)
+        .where(eq(patientAllergies.id, id))
+        .returning();
+      return allergy!;
+    }),
+
+  deleteAllergy: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({ id: patientAllergies.id })
+        .from(patientAllergies)
+        .innerJoin(patients, eq(patientAllergies.patientId, patients.id))
+        .where(
+          and(
+            eq(patientAllergies.id, input.id),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patientAllergies.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Allergy not found" });
+      }
+
+      await ctx.db
+        .update(patientAllergies)
+        .set({ deletedAt: new Date() })
+        .where(eq(patientAllergies.id, input.id));
+
+      return { success: true };
     }),
 
   merge: protectedProcedure

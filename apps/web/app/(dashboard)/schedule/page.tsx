@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils";
 
 const START_HOUR = 8;
 const END_HOUR = 18;
-const HOUR_HEIGHT = 60; // px per hour
+const HOUR_HEIGHT_DEFAULT = 60;
+const HOUR_HEIGHT_LG = 72;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 type AppointmentStatus =
@@ -99,15 +100,15 @@ function endOfDay(date: Date): Date {
   return d;
 }
 
-function getTopOffset(time: Date): number {
+function getTopOffset(time: Date, hourHeight: number): number {
   const hours = time.getHours() + time.getMinutes() / 60;
-  return (hours - START_HOUR) * HOUR_HEIGHT;
+  return (hours - START_HOUR) * hourHeight;
 }
 
-function getBlockHeight(start: Date, end: Date): number {
+function getBlockHeight(start: Date, end: Date, hourHeight: number): number {
   const diffMs = end.getTime() - start.getTime();
   const diffHours = diffMs / (1000 * 60 * 60);
-  return Math.max(diffHours * HOUR_HEIGHT, 20); // min 20px
+  return Math.max(diffHours * hourHeight, 28);
 }
 
 /**
@@ -201,7 +202,7 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function TimeSlots() {
+function TimeSlots({ hourHeight }: { hourHeight: number }) {
   const slots = [];
   for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
     const label =
@@ -216,9 +217,9 @@ function TimeSlots() {
       <div
         key={hour}
         className="relative"
-        style={{ height: hour < END_HOUR ? HOUR_HEIGHT : 0 }}
+        style={{ height: hour < END_HOUR ? hourHeight : 0 }}
       >
-        <span className="absolute -top-3 right-3 text-xs text-muted-foreground select-none">
+        <span className="absolute -top-3 right-3 text-xs lg:text-sm text-muted-foreground select-none">
           {label}
         </span>
       </div>
@@ -227,14 +228,14 @@ function TimeSlots() {
   return <div className="w-16 shrink-0 pt-0">{slots}</div>;
 }
 
-function GridLines() {
+function GridLines({ hourHeight }: { hourHeight: number }) {
   const lines = [];
   for (let hour = START_HOUR; hour < END_HOUR; hour++) {
     lines.push(
       <div
         key={`h-${hour}`}
         className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
-        style={{ top: (hour - START_HOUR) * HOUR_HEIGHT }}
+        style={{ top: (hour - START_HOUR) * hourHeight }}
       />
     );
     // Half-hour dashed line
@@ -242,7 +243,7 @@ function GridLines() {
       <div
         key={`hh-${hour}`}
         className="absolute left-0 right-0 border-t border-dashed border-foreground/10 dark:border-foreground/15"
-        style={{ top: (hour - START_HOUR) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
+        style={{ top: (hour - START_HOUR) * hourHeight + hourHeight / 2 }}
       />
     );
   }
@@ -251,7 +252,7 @@ function GridLines() {
     <div
       key="bottom"
       className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
-      style={{ top: TOTAL_HOURS * HOUR_HEIGHT }}
+      style={{ top: TOTAL_HOURS * hourHeight }}
     />
   );
   return <>{lines}</>;
@@ -262,16 +263,18 @@ function AppointmentBlock({
   onClick,
   column,
   columnCount,
+  hourHeight,
 }: {
   appointment: Appointment;
   onClick: () => void;
   column: number;
   columnCount: number;
+  hourHeight: number;
 }) {
   const start = new Date(appointment.startTime);
   const end = new Date(appointment.endTime);
-  const top = getTopOffset(start);
-  const height = getBlockHeight(start, end);
+  const top = getTopOffset(start, hourHeight);
+  const height = getBlockHeight(start, end, hourHeight);
 
   // Use the type color or a default
   const bgColor = appointment.typeColor || "#3b82f6";
@@ -286,7 +289,7 @@ function AppointmentBlock({
     <button
       type="button"
       onClick={onClick}
-      className="absolute rounded-md px-2 py-1 text-left text-xs overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+      className="absolute rounded-md px-2 py-1.5 text-left text-xs lg:text-sm overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 min-h-11"
       style={{
         top,
         height: Math.max(height, 44),
@@ -921,6 +924,17 @@ function BookingForm({
 // --- Main Page ---
 
 export default function SchedulePage() {
+  const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT_DEFAULT);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () =>
+      setHourHeight(mq.matches ? HOUR_HEIGHT_LG : HOUR_HEIGHT_DEFAULT);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   const [currentDate, setCurrentDate] = useState(() => startOfDay(new Date()));
   const [doctorFilter, setDoctorFilter] = useState<string>("all");
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
@@ -970,7 +984,7 @@ export default function SchedulePage() {
   const now = new Date();
   const showNowLine =
     isToday && now.getHours() >= START_HOUR && now.getHours() < END_HOUR;
-  const nowTop = getTopOffset(now);
+  const nowTop = getTopOffset(now, hourHeight);
 
   return (
     <div>
@@ -1053,18 +1067,18 @@ export default function SchedulePage() {
           {/* Day grid */}
           <div className="flex overflow-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
             {/* Time labels */}
-            <TimeSlots />
+            <TimeSlots hourHeight={hourHeight} />
 
             {/* Appointment area */}
             <div
               className="relative flex-1 border-l border-border cursor-pointer"
-              style={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
+              style={{ height: TOTAL_HOURS * hourHeight }}
               onClick={(e) => {
                 // Only handle clicks on the background, not on appointment blocks
                 if ((e.target as HTMLElement).closest("button")) return;
                 const rect = e.currentTarget.getBoundingClientRect();
                 const y = e.clientY - rect.top;
-                const hoursFromTop = y / HOUR_HEIGHT;
+                const hoursFromTop = y / hourHeight;
                 const totalMinutes = Math.round((START_HOUR + hoursFromTop) * 60);
                 // Snap to nearest 30 min
                 const snapped = Math.round(totalMinutes / 30) * 30;
@@ -1075,7 +1089,7 @@ export default function SchedulePage() {
                 setShowBookingForm(true);
               }}
             >
-              <GridLines />
+              <GridLines hourHeight={hourHeight} />
 
               {/* Current time indicator */}
               {showNowLine && (
@@ -1104,6 +1118,7 @@ export default function SchedulePage() {
                         onClick={() => setSelectedAppointment(appt)}
                         column={slot.column}
                         columnCount={slot.columnCount}
+                        hourHeight={hourHeight}
                       />
                     );
                   });
