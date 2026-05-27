@@ -1213,8 +1213,23 @@ export function ProblemsTab({
   );
 }
 
-export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
+export function LabResultsTab({
+  patient,
+  canManage,
+}: {
+  patient: SelectedPatient;
+  canManage: boolean;
+}) {
   const [showLabForm, setShowLabForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    testName: "",
+    resultValue: "",
+    unit: "",
+    referenceRangeLow: "",
+    referenceRangeHigh: "",
+    status: "pending" as "pending" | "completed" | "reviewed",
+  });
   const { data: labResultsList, refetch } = trpc.records.listLabResults.useQuery({
     patientId: patient.id,
   });
@@ -1240,6 +1255,50 @@ export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
         toast.error(err.message);
       },
     });
+
+  const updateLabResult = trpc.records.updateLabResult.useMutation({
+    onSuccess: () => {
+      toast.success("Lab result updated");
+      setEditingId(null);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteLabResult = trpc.records.deleteLabResult.useMutation({
+    onSuccess: () => {
+      toast.success("Lab result removed");
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEditLab = (
+    lab: NonNullable<typeof labResultsList>[number]
+  ) => {
+    setEditingId(lab.id);
+    setEditForm({
+      testName: lab.testName,
+      resultValue: lab.resultValue ?? "",
+      unit: lab.unit ?? "",
+      referenceRangeLow: lab.referenceRangeLow ?? "",
+      referenceRangeHigh: lab.referenceRangeHigh ?? "",
+      status: (lab.status ?? "pending") as typeof editForm.status,
+    });
+  };
+
+  const saveLab = () => {
+    if (!editingId) return;
+    updateLabResult.mutate({
+      id: editingId,
+      testName: editForm.testName.trim(),
+      resultValue: editForm.resultValue || undefined,
+      unit: editForm.unit || undefined,
+      referenceRangeLow: editForm.referenceRangeLow || undefined,
+      referenceRangeHigh: editForm.referenceRangeHigh || undefined,
+      status: editForm.status,
+    });
+  };
 
   return (
     <div>
@@ -1343,6 +1402,7 @@ export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
             </thead>
             <tbody>
               {labResultsList.map((lab) => {
+                const isEditing = editingId === lab.id;
                 const outOfRange = isOutOfRange(
                   lab.resultValue,
                   lab.referenceRangeLow,
@@ -1351,37 +1411,115 @@ export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
                 return (
                   <tr
                     key={lab.id}
-                    className="border-b border-border last:border-0"
+                    className="border-b border-border align-top last:border-0"
                   >
-                    <td className="px-4 py-3 font-medium">{lab.testName}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {isEditing ? (
+                        <Input
+                          value={editForm.testName}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              testName: e.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      ) : (
+                        lab.testName
+                      )}
+                    </td>
                     <td
                       className={cn(
                         "px-4 py-3",
-                        outOfRange
+                        !isEditing && outOfRange
                           ? "font-semibold text-red-600 dark:text-red-400"
                           : ""
                       )}
                     >
-                      {lab.resultValue ?? "--"}
+                      {isEditing ? (
+                        <Input
+                          value={editForm.resultValue}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              resultValue: e.target.value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        lab.resultValue ?? "--"
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {lab.unit ?? "--"}
+                      {isEditing ? (
+                        <Input
+                          value={editForm.unit}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, unit: e.target.value }))
+                          }
+                        />
+                      ) : (
+                        lab.unit ?? "--"
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {lab.referenceRangeLow != null &&
-                      lab.referenceRangeHigh != null
-                        ? `${lab.referenceRangeLow} - ${lab.referenceRangeHigh}`
-                        : "--"}
+                      {isEditing ? (
+                        <div className="grid min-w-[10rem] gap-2">
+                          <Input
+                            value={editForm.referenceRangeLow}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                referenceRangeLow: e.target.value,
+                              }))
+                            }
+                            placeholder="Low"
+                          />
+                          <Input
+                            value={editForm.referenceRangeHigh}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                referenceRangeHigh: e.target.value,
+                              }))
+                            }
+                            placeholder="High"
+                          />
+                        </div>
+                      ) : lab.referenceRangeLow != null &&
+                        lab.referenceRangeHigh != null ? (
+                        `${lab.referenceRangeLow} - ${lab.referenceRangeHigh}`
+                      ) : (
+                        "--"
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                          getLabStatusBadge(lab.status)
-                        )}
-                      >
-                        {lab.status}
-                      </span>
+                      {isEditing ? (
+                        <select
+                          value={editForm.status}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              status: e.target.value as typeof editForm.status,
+                            }))
+                          }
+                          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="completed">Completed</option>
+                          <option value="reviewed">Reviewed</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                            getLabStatusBadge(lab.status)
+                          )}
+                        >
+                          {lab.status}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {lab.orderedByName ?? "--"}
@@ -1392,21 +1530,70 @@ export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
                         : "--"}
                     </td>
                     <td className="px-4 py-3">
-                      {lab.status === "completed" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={updateLabResultStatus.isPending}
-                          onClick={() =>
-                            updateLabResultStatus.mutate({
-                              id: lab.id,
-                              status: "reviewed",
-                            })
-                          }
-                        >
-                          Mark Reviewed
-                        </Button>
-                      )}
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={updateLabResult.isPending}
+                              onClick={() => setEditingId(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={updateLabResult.isPending}
+                              onClick={saveLab}
+                            >
+                              {updateLabResult.isPending ? "Saving..." : "Save"}
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            {lab.status === "completed" && canManage && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={updateLabResultStatus.isPending}
+                                onClick={() =>
+                                  updateLabResultStatus.mutate({
+                                    id: lab.id,
+                                    status: "reviewed",
+                                  })
+                                }
+                              >
+                                Mark Reviewed
+                              </Button>
+                            )}
+                            {canManage && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => startEditLab(lab)}
+                                >
+                                  <Pencil className="mr-1 h-3.5 w-3.5" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={deleteLabResult.isPending}
+                                  onClick={() => {
+                                    if (confirm("Remove this lab result?")) {
+                                      deleteLabResult.mutate({ id: lab.id });
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1426,8 +1613,22 @@ export function LabResultsTab({ patient }: { patient: SelectedPatient }) {
   );
 }
 
-export function ProceduresTab({ patient }: { patient: SelectedPatient }) {
+export function ProceduresTab({
+  patient,
+  canManage,
+}: {
+  patient: SelectedPatient;
+  canManage: boolean;
+}) {
   const [showProcedureForm, setShowProcedureForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    description: "",
+    anesthesiaUsed: "",
+    durationMinutes: "",
+    notes: "",
+  });
   const { data: proceduresList, refetch } = trpc.records.listProcedures.useQuery({
     patientId: patient.id,
   });
@@ -1442,6 +1643,55 @@ export function ProceduresTab({ patient }: { patient: SelectedPatient }) {
       toast.error(err.message);
     },
   });
+
+  const updateProcedure = trpc.records.updateProcedure.useMutation({
+    onSuccess: () => {
+      toast.success("Procedure updated");
+      setEditingId(null);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteProcedure = trpc.records.deleteProcedure.useMutation({
+    onSuccess: () => {
+      toast.success("Procedure removed");
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const startEditProcedure = (
+    proc: NonNullable<typeof proceduresList>[number]
+  ) => {
+    setEditingId(proc.id);
+    setEditForm({
+      name: proc.name,
+      description: proc.description ?? "",
+      anesthesiaUsed: proc.anesthesiaUsed ?? "",
+      durationMinutes:
+        proc.durationMinutes != null ? String(proc.durationMinutes) : "",
+      notes: proc.notes ?? "",
+    });
+  };
+
+  const saveProcedure = () => {
+    if (!editingId) return;
+    const duration = editForm.durationMinutes
+      ? parseInt(editForm.durationMinutes, 10)
+      : undefined;
+    updateProcedure.mutate({
+      id: editingId,
+      name: editForm.name.trim(),
+      description: editForm.description || undefined,
+      anesthesiaUsed: editForm.anesthesiaUsed || undefined,
+      durationMinutes:
+        duration && Number.isFinite(duration) && duration > 0
+          ? duration
+          : undefined,
+      notes: editForm.notes || undefined,
+    });
+  };
 
   return (
     <div>
@@ -1545,40 +1795,167 @@ export function ProceduresTab({ patient }: { patient: SelectedPatient }) {
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                   Date
                 </th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              {proceduresList.map((proc) => (
-                <tr
-                  key={proc.id}
-                  className="border-b border-border last:border-0"
-                >
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{proc.name}</p>
-                    {proc.description && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {proc.description}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {proc.performedByName ?? "--"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {proc.durationMinutes
-                      ? `${proc.durationMinutes} min`
-                      : "--"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {proc.anesthesiaUsed ?? "--"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {proc.createdAt
-                      ? new Date(proc.createdAt).toLocaleDateString()
-                      : "--"}
-                  </td>
-                </tr>
-              ))}
+              {proceduresList.map((proc) => {
+                const isEditing = editingId === proc.id;
+                return (
+                  <tr
+                    key={proc.id}
+                    className="border-b border-border align-top last:border-0"
+                  >
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <div className="grid gap-2 min-w-[14rem]">
+                          <Input
+                            value={editForm.name}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                name: e.target.value,
+                              }))
+                            }
+                            required
+                          />
+                          <Input
+                            value={editForm.description}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                description: e.target.value,
+                              }))
+                            }
+                            placeholder="Description"
+                          />
+                          <Input
+                            value={editForm.notes}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                notes: e.target.value,
+                              }))
+                            }
+                            placeholder="Notes"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <p className="font-medium">{proc.name}</p>
+                          {proc.description && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {proc.description}
+                            </p>
+                          )}
+                          {proc.notes && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {proc.notes}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {proc.performedByName ?? "--"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          value={editForm.durationMinutes}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              durationMinutes: e.target.value,
+                            }))
+                          }
+                          placeholder="min"
+                        />
+                      ) : proc.durationMinutes ? (
+                        `${proc.durationMinutes} min`
+                      ) : (
+                        "--"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {isEditing ? (
+                        <Input
+                          value={editForm.anesthesiaUsed}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              anesthesiaUsed: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g. Isoflurane"
+                        />
+                      ) : (
+                        proc.anesthesiaUsed ?? "--"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {proc.createdAt
+                        ? new Date(proc.createdAt).toLocaleDateString()
+                        : "--"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {canManage && (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {isEditing ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={updateProcedure.isPending}
+                                onClick={() => setEditingId(null)}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                disabled={updateProcedure.isPending}
+                                onClick={saveProcedure}
+                              >
+                                {updateProcedure.isPending
+                                  ? "Saving..."
+                                  : "Save"}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => startEditProcedure(proc)}
+                              >
+                                <Pencil className="mr-1 h-3.5 w-3.5" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={deleteProcedure.isPending}
+                                onClick={() => {
+                                  if (confirm("Remove this procedure?")) {
+                                    deleteProcedure.mutate({ id: proc.id });
+                                  }
+                                }}
+                              >
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                Delete
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

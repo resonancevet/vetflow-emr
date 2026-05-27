@@ -598,11 +598,72 @@ export const recordsRouter = createRouter({
         .where(
           and(
             eq(labResults.id, input.id),
-            eq(labResults.practiceId, ctx.practiceId)
+            eq(labResults.practiceId, ctx.practiceId),
+            isNull(labResults.deletedAt)
           )
         )
         .returning();
-      return result!;
+      if (!result) throw new Error("Lab result not found");
+      return result;
+    }),
+
+  updateLabResult: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        testName: z.string().min(1),
+        resultValue: z.string().optional(),
+        unit: z.string().optional(),
+        referenceRangeLow: z.string().optional(),
+        referenceRangeHigh: z.string().optional(),
+        status: z.enum(["pending", "completed", "reviewed"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const [result] = await ctx.db
+        .update(labResults)
+        .set({
+          testName: fields.testName,
+          resultValue: fields.resultValue || null,
+          unit: fields.unit || null,
+          referenceRangeLow: fields.referenceRangeLow || null,
+          referenceRangeHigh: fields.referenceRangeHigh || null,
+          status: fields.status,
+          ...(fields.status === "reviewed"
+            ? { reviewedBy: ctx.user.id }
+            : {}),
+        })
+        .where(
+          and(
+            eq(labResults.id, id),
+            eq(labResults.practiceId, ctx.practiceId),
+            isNull(labResults.deletedAt)
+          )
+        )
+        .returning();
+      if (!result) throw new Error("Lab result not found");
+      return result;
+    }),
+
+  deleteLabResult: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [result] = await ctx.db
+        .update(labResults)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(labResults.id, input.id),
+            eq(labResults.practiceId, ctx.practiceId),
+            isNull(labResults.deletedAt)
+          )
+        )
+        .returning();
+      if (!result) throw new Error("Lab result not found");
+      return result;
     }),
 
   // Procedures
@@ -655,5 +716,59 @@ export const recordsRouter = createRouter({
         })
         .returning();
       return procedure!;
+    }),
+
+  updateProcedure: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1),
+        description: z.string().optional(),
+        anesthesiaUsed: z.string().optional(),
+        durationMinutes: z.number().int().positive().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const [procedure] = await ctx.db
+        .update(procedures)
+        .set({
+          name: fields.name,
+          description: fields.description || null,
+          anesthesiaUsed: fields.anesthesiaUsed || null,
+          durationMinutes: fields.durationMinutes ?? null,
+          notes: fields.notes || null,
+        })
+        .where(
+          and(
+            eq(procedures.id, id),
+            eq(procedures.practiceId, ctx.practiceId),
+            isNull(procedures.deletedAt)
+          )
+        )
+        .returning();
+      if (!procedure) throw new Error("Procedure not found");
+      return procedure;
+    }),
+
+  deleteProcedure: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [procedure] = await ctx.db
+        .update(procedures)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(procedures.id, input.id),
+            eq(procedures.practiceId, ctx.practiceId),
+            isNull(procedures.deletedAt)
+          )
+        )
+        .returning();
+      if (!procedure) throw new Error("Procedure not found");
+      return procedure;
     }),
 });

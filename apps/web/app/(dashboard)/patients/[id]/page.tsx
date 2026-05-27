@@ -655,6 +655,7 @@ export default function PatientDetailPage() {
               clientFirstName: patient.clientFirstName ?? null,
               clientLastName: patient.clientLastName ?? null,
             }}
+            canManage={canManagePrescriptions}
           />
         )}
 
@@ -667,6 +668,7 @@ export default function PatientDetailPage() {
               clientFirstName: patient.clientFirstName ?? null,
               clientLastName: patient.clientLastName ?? null,
             }}
+            canManage={canManagePrescriptions}
           />
         )}
       </div>
