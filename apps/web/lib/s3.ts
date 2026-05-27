@@ -3,6 +3,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -18,6 +20,39 @@ const s3 = new S3Client({
 
 const bucket = process.env.S3_BUCKET ?? "openpims";
 
+// In dev, an empty MinIO volume won't have the bucket yet. Create it on first
+// upload so devs don't hit a confusing "NoSuchBucket" error after a volume
+// reset. In production we leave bucket creation to infra so we don't silently
+// mask misconfigured credentials.
+let bucketReadyPromise: Promise<void> | null = null;
+
+async function ensureBucket(): Promise<void> {
+  if (process.env.NODE_ENV === "production") return;
+  if (!bucketReadyPromise) {
+    bucketReadyPromise = (async () => {
+      try {
+        await s3.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch {
+        try {
+          await s3.send(new CreateBucketCommand({ Bucket: bucket }));
+        } catch (err: unknown) {
+          const code =
+            (err as { name?: string; Code?: string }).name ??
+            (err as { Code?: string }).Code;
+          if (
+            code !== "BucketAlreadyOwnedByYou" &&
+            code !== "BucketAlreadyExists"
+          ) {
+            bucketReadyPromise = null;
+            throw err;
+          }
+        }
+      }
+    })();
+  }
+  return bucketReadyPromise;
+}
+
 /**
  * Upload a file to S3/MinIO.
  *
@@ -31,6 +66,7 @@ export async function uploadFile(
   body: Buffer,
   contentType: string,
 ): Promise<string> {
+  await ensureBucket();
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,

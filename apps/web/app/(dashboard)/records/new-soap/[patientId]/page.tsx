@@ -23,7 +23,7 @@ export default function NewSoapNotePage() {
   const [plan, setPlan] = useState("");
   const [weight, setWeight] = useState("");
   const [weightUnit, setWeightUnit] = useWeightUnit();
-  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
 
   const { data: patient, isLoading: patientLoading } =
     trpc.patients.getById.useQuery(
@@ -46,9 +46,9 @@ export default function NewSoapNotePage() {
         plan: plan || undefined,
       });
 
-      if (pendingPhotos.length > 0) {
+      if (pendingAttachments.length > 0) {
         await Promise.all(
-          pendingPhotos.map((file) =>
+          pendingAttachments.map((file) =>
             uploadFileToApi(file, {
               category: "soap-attachments",
               entityType: "soap_note",
@@ -84,9 +84,9 @@ export default function NewSoapNotePage() {
     }
   }
 
-  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleAttachmentSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []);
-    setPendingPhotos((prev) => [...prev, ...selected]);
+    setPendingAttachments((prev) => [...prev, ...selected]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -173,17 +173,19 @@ export default function NewSoapNotePage() {
           ))}
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Photos</label>
+            <label className="block text-sm font-medium mb-1.5">
+              Attachments
+            </label>
             <p className="text-xs text-muted-foreground mb-2">
-              Attach exam or wound photos to this note
+              Attach exam photos, wound photos, or PDFs to this note.
             </p>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               multiple
               className="hidden"
-              onChange={handlePhotoSelect}
+              onChange={handleAttachmentSelect}
             />
             <Button
               type="button"
@@ -192,11 +194,11 @@ export default function NewSoapNotePage() {
               onClick={() => fileInputRef.current?.click()}
             >
               <Camera className="mr-2 h-4 w-4" />
-              Add photos
+              Add photos/files
             </Button>
-            {pendingPhotos.length > 0 && (
+            {pendingAttachments.length > 0 && (
               <ul className="mt-3 flex flex-wrap gap-2">
-                {pendingPhotos.map((file, i) => (
+                {pendingAttachments.map((file, i) => (
                   <li
                     key={`${file.name}-${i}`}
                     className="flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs"
@@ -206,7 +208,7 @@ export default function NewSoapNotePage() {
                       type="button"
                       aria-label="Remove photo"
                       onClick={() =>
-                        setPendingPhotos((prev) =>
+                        setPendingAttachments((prev) =>
                           prev.filter((_, idx) => idx !== i)
                         )
                       }

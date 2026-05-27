@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Camera,
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  ExternalLink,
   FileText,
   FlaskConical,
   Pencil,
@@ -14,6 +16,7 @@ import {
   Scissors,
   Tag,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -21,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { generatePrescriptionLabelPdf } from "@/lib/pdf";
+import { uploadFileToApi } from "@/lib/upload";
 
 /**
  * Patient-scoped clinical tab bodies.
@@ -272,6 +276,7 @@ export function SoapNotesTab({
                         <SoapField label="Plan" value={note.plan} />
                       </>
                     )}
+                    <SoapAttachments noteId={note.id} canUpload={canCreate} />
                   </div>
                 )}
               </div>
@@ -297,6 +302,216 @@ export function SoapNotesTab({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+type SoapAttachment = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string | null;
+  createdAt: Date | string | null;
+};
+
+function SoapAttachments({
+  noteId,
+  canUpload,
+}: {
+  noteId: string;
+  canUpload: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+  const [uploading, setUploading] = useState(false);
+  const [viewing, setViewing] = useState<SoapAttachment | null>(null);
+  const { data: files, isLoading } = trpc.records.listFilesForEntity.useQuery({
+    entityType: "soap_note",
+    entityId: noteId,
+  });
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? []);
+    if (selected.length === 0) return;
+
+    setUploading(true);
+    try {
+      await Promise.all(
+        selected.map((file) =>
+          uploadFileToApi(file, {
+            category: "soap-attachments",
+            entityType: "soap_note",
+            entityId: noteId,
+          })
+        )
+      );
+      toast.success(
+        selected.length === 1 ? "Attachment added" : "Attachments added"
+      );
+      utils.records.listFilesForEntity.invalidate({
+        entityType: "soap_note",
+        entityId: noteId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="border-t border-border pt-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Attachments
+        </h4>
+        {canUpload && (
+          <>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              <Camera className="mr-1.5 h-3.5 w-3.5" />
+              {uploading ? "Uploading..." : "Add photos/files"}
+            </Button>
+          </>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading attachments...</p>
+      ) : files && files.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {files.map((file) => {
+            const isImage = file.mimeType?.startsWith("image/");
+            return (
+              <button
+                key={file.id}
+                type="button"
+                onClick={() => setViewing(file)}
+                className="group overflow-hidden rounded-lg border border-border bg-muted/30 text-left hover:bg-muted/50"
+              >
+                {isImage ? (
+                  <img
+                    src={file.fileUrl}
+                    alt={file.fileName}
+                    className="h-32 w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-32 items-center justify-center bg-muted">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="px-3 py-2">
+                  <p className="truncate text-xs font-medium group-hover:underline">
+                    {file.fileName}
+                  </p>
+                  {file.createdAt && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {new Date(file.createdAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No attachments yet.</p>
+      )}
+
+      {viewing && (
+        <AttachmentViewer file={viewing} onClose={() => setViewing(null)} />
+      )}
+    </div>
+  );
+}
+
+function AttachmentViewer({
+  file,
+  onClose,
+}: {
+  file: SoapAttachment;
+  onClose: () => void;
+}) {
+  // Close on Escape so it feels like a normal modal/lightbox.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const isImage = file.mimeType?.startsWith("image/");
+  const isPdf = file.mimeType === "application/pdf";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={file.fileName}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative flex h-full max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card"
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <p className="truncate text-sm font-medium">{file.fileName}</p>
+          <div className="flex items-center gap-2">
+            <a
+              href={file.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-1 items-center justify-center overflow-auto bg-black/40 p-4">
+          {isImage ? (
+            <img
+              src={file.fileUrl}
+              alt={file.fileName}
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : isPdf ? (
+            <iframe
+              src={file.fileUrl}
+              title={file.fileName}
+              className="h-full w-full rounded-md bg-background"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Preview not available. Use &quot;Open in new tab&quot; to view.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   users,
   files,
 } from "@openpims/db";
+import { getSignedUrl } from "@/lib/s3";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -107,11 +108,11 @@ export const recordsRouter = createRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      return ctx.db
+      const rows = await ctx.db
         .select({
           id: files.id,
           fileName: files.fileName,
-          fileUrl: files.fileUrl,
+          fileKey: files.fileKey,
           mimeType: files.mimeType,
           createdAt: files.createdAt,
         })
@@ -125,6 +126,18 @@ export const recordsRouter = createRouter({
           )
         )
         .orderBy(desc(files.createdAt));
+
+      // Files are stored in a private bucket, so we hand back short-lived
+      // presigned URLs instead of the raw object URL we wrote at upload time.
+      return Promise.all(
+        rows.map(async (row) => ({
+          id: row.id,
+          fileName: row.fileName,
+          mimeType: row.mimeType,
+          createdAt: row.createdAt,
+          fileUrl: await getSignedUrl(row.fileKey, 3600),
+        }))
+      );
     }),
 
   // Vaccinations
