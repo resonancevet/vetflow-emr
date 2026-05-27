@@ -12,7 +12,7 @@ import {
   users,
   files,
 } from "@openpims/db";
-import { getSignedUrl } from "@/lib/s3";
+import { deleteFile as deleteFileFromS3, getSignedUrl } from "@/lib/s3";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -138,6 +138,55 @@ export const recordsRouter = createRouter({
           fileUrl: await getSignedUrl(row.fileKey, 3600),
         }))
       );
+    }),
+
+  renameFile: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        fileName: z.string().trim().min(1).max(255),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [row] = await ctx.db
+        .update(files)
+        .set({ fileName: input.fileName })
+        .where(
+          and(
+            eq(files.id, input.id),
+            eq(files.practiceId, ctx.practiceId),
+            isNull(files.deletedAt)
+          )
+        )
+        .returning({ id: files.id, fileName: files.fileName });
+      if (!row) throw new Error("File not found");
+      return row;
+    }),
+
+  deleteFile: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      // Soft-delete the metadata first so the UI hides it immediately even if
+      // the S3 object delete races or fails.
+      const [row] = await ctx.db
+        .update(files)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(files.id, input.id),
+            eq(files.practiceId, ctx.practiceId),
+            isNull(files.deletedAt)
+          )
+        )
+        .returning({ id: files.id, fileKey: files.fileKey });
+      if (!row) throw new Error("File not found");
+
+      try {
+        await deleteFileFromS3(row.fileKey);
+      } catch (err) {
+        console.error("Failed to delete object from S3:", err);
+      }
+      return { id: row.id };
     }),
 
   // Vaccinations

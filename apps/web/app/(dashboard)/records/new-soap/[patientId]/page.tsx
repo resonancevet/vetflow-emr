@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Camera, Save, X } from "lucide-react";
+import { ArrowLeft, Camera, Paperclip, Save, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ export default function NewSoapNotePage() {
   const params = useParams<{ patientId: string }>();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
   const [subjective, setSubjective] = useState("");
@@ -88,6 +89,7 @@ export default function NewSoapNotePage() {
     const selected = Array.from(e.target.files ?? []);
     setPendingAttachments((prev) => [...prev, ...selected]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
   if (patientLoading) {
@@ -180,6 +182,14 @@ export default function NewSoapNotePage() {
               Attach exam photos, wound photos, or PDFs to this note.
             </p>
             <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleAttachmentSelect}
+            />
+            <input
               ref={fileInputRef}
               type="file"
               accept="image/*,application/pdf"
@@ -187,15 +197,26 @@ export default function NewSoapNotePage() {
               className="hidden"
               onChange={handleAttachmentSelect}
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              Add photos/files
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera className="mr-2 h-4 w-4" />
+                Take photo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="mr-2 h-4 w-4" />
+                Add files
+              </Button>
+            </div>
             {pendingAttachments.length > 0 && (
               <ul className="mt-3 flex flex-wrap gap-2">
                 {pendingAttachments.map((file, i) => (

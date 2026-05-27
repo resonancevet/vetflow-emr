@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  Check,
   ChevronDown,
   ChevronUp,
   ClipboardList,
   ExternalLink,
   FileText,
   FlaskConical,
+  Paperclip,
   Pencil,
   Pill,
   Plus,
@@ -321,13 +323,39 @@ function SoapAttachments({
   noteId: string;
   canUpload: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing] = useState<SoapAttachment | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const { data: files, isLoading } = trpc.records.listFilesForEntity.useQuery({
     entityType: "soap_note",
     entityId: noteId,
+  });
+
+  const renameFile = trpc.records.renameFile.useMutation({
+    onSuccess: () => {
+      toast.success("Attachment renamed");
+      setRenamingId(null);
+      utils.records.listFilesForEntity.invalidate({
+        entityType: "soap_note",
+        entityId: noteId,
+      });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteFile = trpc.records.deleteFile.useMutation({
+    onSuccess: () => {
+      toast.success("Attachment removed");
+      utils.records.listFilesForEntity.invalidate({
+        entityType: "soap_note",
+        entityId: noteId,
+      });
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -356,9 +384,25 @@ function SoapAttachments({
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
     }
   }
+
+  const startRename = (file: SoapAttachment) => {
+    setRenamingId(file.id);
+    setRenameValue(file.fileName);
+  };
+
+  const submitRename = () => {
+    if (!renamingId) return;
+    const next = renameValue.trim();
+    if (!next) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+    renameFile.mutate({ id: renamingId, fileName: next });
+  };
 
   return (
     <div className="border-t border-border pt-4">
@@ -367,9 +411,17 @@ function SoapAttachments({
           Attachments
         </h4>
         {canUpload && (
-          <>
+          <div className="flex flex-wrap gap-2">
             <input
-              ref={inputRef}
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <input
+              ref={fileInputRef}
               type="file"
               accept="image/*,application/pdf"
               multiple
@@ -381,12 +433,22 @@ function SoapAttachments({
               size="sm"
               variant="outline"
               disabled={uploading}
-              onClick={() => inputRef.current?.click()}
+              onClick={() => cameraInputRef.current?.click()}
             >
               <Camera className="mr-1.5 h-3.5 w-3.5" />
-              {uploading ? "Uploading..." : "Add photos/files"}
+              {uploading ? "Uploading..." : "Take photo"}
             </Button>
-          </>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="mr-1.5 h-3.5 w-3.5" />
+              Add files
+            </Button>
+          </div>
         )}
       </div>
 
@@ -396,35 +458,106 @@ function SoapAttachments({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {files.map((file) => {
             const isImage = file.mimeType?.startsWith("image/");
+            const isRenaming = renamingId === file.id;
             return (
-              <button
+              <div
                 key={file.id}
-                type="button"
-                onClick={() => setViewing(file)}
-                className="group overflow-hidden rounded-lg border border-border bg-muted/30 text-left hover:bg-muted/50"
+                className="group overflow-hidden rounded-lg border border-border bg-muted/30"
               >
-                {isImage ? (
-                  <img
-                    src={file.fileUrl}
-                    alt={file.fileName}
-                    className="h-32 w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-32 items-center justify-center bg-muted">
-                    <FileText className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="px-3 py-2">
-                  <p className="truncate text-xs font-medium group-hover:underline">
-                    {file.fileName}
-                  </p>
-                  {file.createdAt && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {new Date(file.createdAt).toLocaleDateString()}
+                <button
+                  type="button"
+                  onClick={() => setViewing(file)}
+                  className="block w-full text-left hover:bg-muted/50"
+                >
+                  {isImage ? (
+                    <img
+                      src={file.fileUrl}
+                      alt={file.fileName}
+                      className="h-32 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-32 items-center justify-center bg-muted">
+                      <FileText className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                  )}
+                </button>
+                <div className="space-y-2 px-3 py-2">
+                  {isRenaming ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            submitRename();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setRenamingId(null);
+                          }
+                        }}
+                        autoFocus
+                        className="h-7 text-xs"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Save name"
+                        onClick={submitRename}
+                        disabled={renameFile.isPending}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Cancel rename"
+                        onClick={() => setRenamingId(null)}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="truncate text-xs font-medium">
+                      {file.fileName}
                     </p>
                   )}
+                  <div className="flex items-center justify-between gap-2">
+                    {file.createdAt ? (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(file.createdAt).toLocaleDateString()}
+                      </p>
+                    ) : (
+                      <span />
+                    )}
+                    {canUpload && !isRenaming && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label="Rename"
+                          onClick={() => startRename(file)}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Delete"
+                          disabled={deleteFile.isPending}
+                          onClick={() => {
+                            if (confirm(`Delete "${file.fileName}"?`)) {
+                              deleteFile.mutate({ id: file.id });
+                            }
+                          }}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
