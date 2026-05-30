@@ -10,6 +10,14 @@ function setSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+function isLocalAppHost(host: string): boolean {
+  return (
+    host.startsWith("localhost") ||
+    host.startsWith("127.0.0.1") ||
+    host.endsWith(".trycloudflare.com")
+  );
+}
+
 export async function middleware(request: NextRequest) {
   const token = await getToken({
     req: request,
@@ -18,7 +26,10 @@ export async function middleware(request: NextRequest) {
 
   // Unauthenticated visitors at root get redirected to the marketing site (prod only)
   if (!token && request.nextUrl.pathname === "/") {
-    if (process.env.NODE_ENV === "development") {
+    if (
+      process.env.NODE_ENV === "development" ||
+      isLocalAppHost(request.nextUrl.host)
+    ) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     const wwwUrl = process.env.NEXT_PUBLIC_WWW_URL || "https://openvpm.com";

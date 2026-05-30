@@ -7,6 +7,8 @@ import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import superjson from "superjson";
+import { OfflineOutboxDrain } from "@/components/common/offline-outbox-drain";
+import { ServiceWorkerRegister } from "@/components/common/service-worker-register";
 import { trpc } from "./trpc";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -27,6 +29,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+            <ServiceWorkerRegister />
+            <OfflineOutboxDrain />
             {children}
             <Toaster richColors position="bottom-right" />
           </ThemeProvider>

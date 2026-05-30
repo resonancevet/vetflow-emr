@@ -15,11 +15,19 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "OpenVPM — Open-Source Veterinary Practice Management",
+  title: "VetRoamer",
   description:
-    "The first modern, open-source, API-first practice management system built for the veterinary community. Beautiful, fast, and free.",
+    "Field-ready veterinary practice management for appointments, notes, and patient records.",
+  applicationName: "VetRoamer",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "VetRoamer",
+  },
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/logo.svg", type: "image/svg+xml" }],
   },
 };
 

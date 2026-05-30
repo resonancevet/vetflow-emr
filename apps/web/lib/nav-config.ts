@@ -1,6 +1,7 @@
 import {
   Calendar,
   MessageSquare,
+  NotebookPen,
   PawPrint,
   Settings,
   Users,
@@ -26,6 +27,7 @@ export const v0NavItems: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: Calendar, mobilePrimary: true },
   { href: "/patients", label: "Patients", icon: PawPrint, mobilePrimary: true },
   { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
+  { href: "/offline-notes", label: "Offline Notes", icon: NotebookPen },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];
 
@@ -35,6 +37,7 @@ export const routeLabels: Record<string, string> = {
   "/settings": "Settings",
   "/clients": "Clients",
   "/communications": "Communications",
+  "/offline-notes": "Offline Notes",
 };
 
 export const v0NewActions = [
@@ -42,6 +45,7 @@ export const v0NewActions = [
   { label: "New Client", href: "/clients/new", icon: Users },
   { label: "New Appointment", href: "/schedule", icon: Calendar },
   { label: "Log Communication", href: "/communications/log", icon: MessageSquare },
+  { label: "Offline Note", href: "/offline-notes", icon: NotebookPen },
 ] as const;
 
 export const DEMO_LOGIN = {

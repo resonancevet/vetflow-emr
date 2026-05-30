@@ -21,6 +21,7 @@ COPY --from=deps /app ./
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_OUTPUT_STANDALONE=1
 RUN pnpm build --filter=@openpims/web
 
 # --- Runner ---
