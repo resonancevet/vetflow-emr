@@ -67,7 +67,7 @@ export default function OfflineNotesPage() {
   const { data: patientResults } = trpc.patients.search.useQuery(
     { query: patientQuery },
     {
-      enabled: online && patientQuery.trim().length >= 2,
+      enabled: patientQuery.trim().length >= 2,
     }
   );
 
@@ -169,10 +169,6 @@ export default function OfflineNotesPage() {
   };
 
   const attachNote = async () => {
-    if (!online) {
-      toast.error("Reconnect before attaching to a patient.");
-      return;
-    }
     if (!selectedAttachNote || !selectedPatient) {
       toast.error("Select a note and patient first.");
       return;
@@ -317,7 +313,6 @@ export default function OfflineNotesPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={!online}
                         onClick={() => {
                           setAttachingId(note.id);
                           setPatientQuery(note.title || "");
@@ -328,7 +323,9 @@ export default function OfflineNotesPage() {
                         Attach to patient
                       </Button>
                       {!online && (
-                        <span className="text-xs text-muted-foreground">Reconnect to attach.</span>
+                        <span className="text-xs text-amber-700 dark:text-amber-400">
+                          Browser reports offline. Attach will fail until reconnected.
+                        </span>
                       )}
                     </div>
                   )}
@@ -358,7 +355,6 @@ export default function OfflineNotesPage() {
                 }}
                 placeholder="Search patients by name or breed..."
                 className="pl-9 min-h-11"
-                disabled={!online}
               />
             </div>
 

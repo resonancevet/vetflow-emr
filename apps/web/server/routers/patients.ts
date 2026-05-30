@@ -90,6 +90,25 @@ export const patientsRouter = createRouter({
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
+      // Split on whitespace so "Bella Smith" matches a pet named Bella with
+      // owner Smith. Each token must match the pet name/breed or the owner's
+      // first/last name; tokens are AND'd together.
+      const tokens = input.query
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0);
+
+      if (tokens.length === 0) return [];
+
+      const tokenConditions = tokens.map((token) =>
+        or(
+          ilike(patients.name, `%${token}%`),
+          ilike(patients.breed, `%${token}%`),
+          ilike(clients.firstName, `%${token}%`),
+          ilike(clients.lastName, `%${token}%`)
+        )!
+      );
+
       return ctx.db
         .select({
           id: patients.id,
@@ -105,10 +124,7 @@ export const patientsRouter = createRouter({
           and(
             eq(patients.practiceId, ctx.practiceId),
             isNull(patients.deletedAt),
-            or(
-              ilike(patients.name, `%${input.query}%`),
-              ilike(patients.breed, `%${input.query}%`)
-            )
+            ...tokenConditions
           )
         )
         .limit(10);
