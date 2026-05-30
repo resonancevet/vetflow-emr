@@ -181,12 +181,12 @@ export default function OfflineNotesPage() {
     try {
       const soap = await createSoapNote.mutateAsync({
         patientId: selectedPatient.id,
-        subjective: selectedAttachNote.body,
-        objective: "",
-        assessment: selectedAttachNote.title || "Offline field note",
-        plan: selectedAttachNote.visitAt
+        subjective: selectedAttachNote.visitAt
           ? `Field visit time: ${formatDateTime(selectedAttachNote.visitAt)}`
           : "",
+        objective: selectedAttachNote.body,
+        assessment: "",
+        plan: "",
       });
 
       await markOfflineFieldNoteAttached({
@@ -232,13 +232,19 @@ export default function OfflineNotesPage() {
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Title</label>
+              <label className="text-xs font-medium text-muted-foreground">
+                Patient name
+              </label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Visit summary"
+                placeholder="e.g. Bella Smith"
                 className="mt-1 min-h-11"
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Used to find the patient when you attach this note later. Not
+                saved to the patient&apos;s SOAP note.
+              </p>
             </div>
 
             <div>
@@ -314,7 +320,7 @@ export default function OfflineNotesPage() {
                         disabled={!online}
                         onClick={() => {
                           setAttachingId(note.id);
-                          setPatientQuery("");
+                          setPatientQuery(note.title || "");
                           setSelectedPatient(null);
                         }}
                       >
@@ -337,7 +343,8 @@ export default function OfflineNotesPage() {
         <section className="rounded-lg border border-border bg-card p-4">
           <h3 className="text-sm font-semibold">Attach note to patient</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            This will create a SOAP note with your offline note text in the subjective section.
+            Creates a SOAP note: visit time goes in subjective, your note text
+            in objective.
           </p>
 
           <div className="mt-3 space-y-3">
