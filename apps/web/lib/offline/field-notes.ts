@@ -10,9 +10,18 @@ export const OFFLINE_FIELD_NOTES_CHANGED = "vetroamer:offline-field-notes-change
 
 export type OfflineFieldNote = {
   id: string;
+  // Patient name typed offline. Stored in `title` for backward compatibility
+  // with notes created before the SOAP-shaped form.
   title: string;
-  body: string;
+  ownerLastName?: string;
   visitAt?: string;
+  // SOAP-shaped sections. Older notes only have `body`; new notes use the
+  // four explicit fields. Both are kept so existing local notes still load.
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+  body?: string;
   createdAt: string;
   updatedAt: string;
   attachedAt?: string;
@@ -102,20 +111,47 @@ export async function listOfflineFieldNotes(): Promise<OfflineFieldNote[]> {
   );
 }
 
-export async function createOfflineFieldNote(input: {
+export type OfflineFieldNoteInput = {
   title?: string;
-  body: string;
+  ownerLastName?: string;
   visitAt?: string;
-}): Promise<OfflineFieldNote> {
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+};
+
+function hasContent(input: OfflineFieldNoteInput): boolean {
+  return Boolean(
+    input.subjective?.trim() ||
+      input.objective?.trim() ||
+      input.assessment?.trim() ||
+      input.plan?.trim()
+  );
+}
+
+export async function createOfflineFieldNote(
+  input: OfflineFieldNoteInput
+): Promise<OfflineFieldNote> {
   const now = new Date().toISOString();
   const note: OfflineFieldNote = {
     id: createId(),
     title: input.title?.trim() || "Field note",
-    body: input.body,
+    ownerLastName: input.ownerLastName?.trim() || undefined,
     visitAt: input.visitAt,
+    subjective: input.subjective ?? "",
+    objective: input.objective ?? "",
+    assessment: input.assessment ?? "",
+    plan: input.plan ?? "",
     createdAt: now,
     updatedAt: now,
   };
+
+  if (!hasContent(input)) {
+    throw new Error(
+      "Add text in subjective, objective, assessment, or plan before saving."
+    );
+  }
 
   await withStore("readwrite", (store) => store.add(note));
   notifyChanged();
@@ -124,11 +160,7 @@ export async function createOfflineFieldNote(input: {
 
 export async function updateOfflineFieldNote(
   id: string,
-  patch: {
-    title?: string;
-    body?: string;
-    visitAt?: string;
-  }
+  patch: OfflineFieldNoteInput
 ): Promise<OfflineFieldNote> {
   const existing = await withStore<OfflineFieldNote>("readonly", (store) => store.get(id));
   if (!existing) {
@@ -137,9 +169,26 @@ export async function updateOfflineFieldNote(
 
   const next: OfflineFieldNote = {
     ...existing,
-    title: patch.title !== undefined ? patch.title.trim() || "Field note" : existing.title,
-    body: patch.body !== undefined ? patch.body : existing.body,
+    title:
+      patch.title !== undefined
+        ? patch.title.trim() || "Field note"
+        : existing.title,
+    ownerLastName:
+      patch.ownerLastName !== undefined
+        ? patch.ownerLastName.trim() || undefined
+        : existing.ownerLastName,
     visitAt: patch.visitAt !== undefined ? patch.visitAt : existing.visitAt,
+    subjective:
+      patch.subjective !== undefined
+        ? patch.subjective
+        : existing.subjective ?? existing.body ?? "",
+    objective:
+      patch.objective !== undefined ? patch.objective : existing.objective ?? "",
+    assessment:
+      patch.assessment !== undefined
+        ? patch.assessment
+        : existing.assessment ?? "",
+    plan: patch.plan !== undefined ? patch.plan : existing.plan ?? "",
     updatedAt: new Date().toISOString(),
   };
 
