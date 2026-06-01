@@ -12,12 +12,22 @@ import {
   Loader2,
   Plus,
   Mail,
+  CloudDownload,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  type CachedAppointment,
+  type CachedSchedule,
+  getCachedSchedule,
+  saveCachedPatientSnapshot,
+  saveCachedSchedule,
+} from "@/lib/offline/cache";
+import { useNetworkStatus } from "@/lib/offline/use-network-status";
 
 // --- Constants ---
 
@@ -941,12 +951,75 @@ export default function SchedulePage() {
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingDefaultTime, setBookingDefaultTime] = useState<string | undefined>(undefined);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [cachedSchedule, setCachedSchedule] = useState<CachedSchedule | null>(
+    null
+  );
+  const { online } = useNetworkStatus();
 
-  const { data: appointments, isLoading, error } = trpc.appointments.list.useQuery({
+  const {
+    data: appointments,
+    isLoading,
+    error,
+    isError,
+  } = trpc.appointments.list.useQuery({
     startDate: startOfDay(currentDate).toISOString(),
     endDate: endOfDay(currentDate).toISOString(),
     doctorId: doctorFilter !== "all" ? doctorFilter : undefined,
   });
+
+  // Persist successful schedule fetches so the day is available offline.
+  useEffect(() => {
+    if (!appointments || error) return;
+    if (doctorFilter !== "all") return; // Only cache the unfiltered schedule.
+    const cacheable: CachedAppointment[] = appointments.map((appt) => ({
+      ...appt,
+      startTime:
+        appt.startTime instanceof Date
+          ? appt.startTime.toISOString()
+          : appt.startTime,
+      endTime:
+        appt.endTime instanceof Date
+          ? appt.endTime.toISOString()
+          : appt.endTime,
+    }));
+    saveCachedSchedule(toISODate(currentDate), cacheable).catch((err) => {
+      console.warn("Could not cache schedule for offline use:", err);
+    });
+  }, [appointments, error, currentDate, doctorFilter]);
+
+  // Fallback to a cached schedule when the network query fails or returns
+  // nothing while offline. Online data always wins when available.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (appointments && !isError) {
+      setCachedSchedule(null);
+      return;
+    }
+
+    if (isError || (!appointments && !online && !isLoading)) {
+      getCachedSchedule(toISODate(currentDate))
+        .then((entry) => {
+          if (!cancelled) setCachedSchedule(entry ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) setCachedSchedule(null);
+        });
+    } else {
+      setCachedSchedule(null);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appointments, isError, isLoading, online, currentDate]);
+
+  const displayAppointments: Appointment[] | null = appointments
+    ? (appointments as unknown as Appointment[])
+    : cachedSchedule
+      ? (cachedSchedule.appointments as unknown as Appointment[])
+      : null;
+  const isShowingCache = !appointments && !!cachedSchedule;
 
   const { data: doctors } = trpc.appointments.listDoctors.useQuery();
 
@@ -1035,6 +1108,13 @@ export default function SchedulePage() {
             </select>
           </div>
 
+          {/* Prepare for field day */}
+          <PrepareFieldDayButton
+            currentDate={currentDate}
+            appointments={displayAppointments ?? null}
+            online={online}
+          />
+
           {/* New Appointment button */}
           <Button
             size="sm"
@@ -1050,14 +1130,29 @@ export default function SchedulePage() {
       </div>
 
       {/* Error */}
-      {error && (
+      {error && !isShowingCache && (
         <div className="mt-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
           {error.message}
         </div>
       )}
 
+      {/* Offline cache banner */}
+      {isShowingCache && cachedSchedule && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Offline snapshot</p>
+            <p className="mt-0.5 text-xs">
+              Showing the cached schedule from{" "}
+              {new Date(cachedSchedule.cachedAt).toLocaleString()}. Reconnect
+              to see live updates.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Calendar body */}
-      {isLoading ? (
+      {isLoading && !isShowingCache ? (
         <div className="mt-6 flex items-center justify-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading appointments...
@@ -1103,10 +1198,10 @@ export default function SchedulePage() {
               )}
 
               {/* Appointment blocks */}
-              {appointments && appointments.length > 0 ? (
+              {displayAppointments && displayAppointments.length > 0 ? (
                 (() => {
-                  const layout = layoutAppointments(appointments);
-                  return appointments.map((appt) => {
+                  const layout = layoutAppointments(displayAppointments);
+                  return displayAppointments.map((appt) => {
                     const slot = layout.get(appt.id) ?? {
                       column: 0,
                       columnCount: 1,
@@ -1137,9 +1232,10 @@ export default function SchedulePage() {
           </div>
 
           {/* Footer with count */}
-          {appointments && appointments.length > 0 && (
+          {displayAppointments && displayAppointments.length > 0 && (
             <div className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-              {appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
+              {displayAppointments.length} appointment
+              {displayAppointments.length !== 1 ? "s" : ""}
             </div>
           )}
         </div>
@@ -1172,5 +1268,127 @@ export default function SchedulePage() {
         />
       )}
     </div>
+  );
+}
+
+function PrepareFieldDayButton({
+  currentDate,
+  appointments,
+  online,
+}: {
+  currentDate: Date;
+  appointments: Appointment[] | null;
+  online: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
+
+  const handlePrepare = async () => {
+    if (!online) {
+      toast.error("Connect to the network before preparing for field day.");
+      return;
+    }
+
+    setIsPreparing(true);
+    setProgress(null);
+    try {
+      // Re-fetch the day's appointments fresh and cache them.
+      const fresh = await utils.appointments.list.fetch({
+        startDate: startOfDay(currentDate).toISOString(),
+        endDate: endOfDay(currentDate).toISOString(),
+      });
+
+      const cacheable: CachedAppointment[] = (fresh ?? []).map((appt) => ({
+        ...appt,
+        startTime:
+          appt.startTime instanceof Date
+            ? appt.startTime.toISOString()
+            : appt.startTime,
+        endTime:
+          appt.endTime instanceof Date
+            ? appt.endTime.toISOString()
+            : appt.endTime,
+      }));
+      await saveCachedSchedule(toISODate(currentDate), cacheable);
+
+      // Cache snapshots for every unique patient on the schedule.
+      const seen = new Set<string>();
+      const patientIds: string[] = [];
+      for (const appt of fresh ?? appointments ?? []) {
+        if (appt.patientId && !seen.has(appt.patientId)) {
+          seen.add(appt.patientId);
+          patientIds.push(appt.patientId);
+        }
+      }
+
+      setProgress({ done: 0, total: patientIds.length });
+      let cached = 0;
+      let failed = 0;
+      for (const id of patientIds) {
+        try {
+          const snapshot = await utils.patients.getOfflineSnapshot.fetch({ id });
+          await saveCachedPatientSnapshot({
+            patientId: id,
+            patient: snapshot.patient,
+            weights: snapshot.weights,
+            allergies: snapshot.allergies,
+            problems: snapshot.problems,
+            vaccinations: snapshot.vaccinations,
+            prescriptions: snapshot.prescriptions,
+            soapNotes: snapshot.soapNotes,
+            labResults: snapshot.labResults,
+            procedures: snapshot.procedures,
+            alerts: snapshot.alerts,
+          });
+          cached += 1;
+        } catch (err) {
+          console.warn(`Could not cache patient ${id}:`, err);
+          failed += 1;
+        }
+        setProgress({ done: cached + failed, total: patientIds.length });
+      }
+
+      if (failed > 0) {
+        toast.warning(
+          `Cached ${cached} of ${patientIds.length} patient charts (${failed} failed).`
+        );
+      } else if (cached === 0) {
+        toast.success("Schedule cached. No patient charts to download.");
+      } else {
+        toast.success(`Cached ${cached} patient chart${cached === 1 ? "" : "s"} for offline use.`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Could not prepare for field day."
+      );
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={handlePrepare}
+      disabled={isPreparing}
+      title="Cache today's schedule and patient charts for offline use"
+    >
+      {isPreparing ? (
+        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <CloudDownload className="mr-1.5 h-3.5 w-3.5" />
+      )}
+      {isPreparing
+        ? progress
+          ? `Caching ${progress.done}/${progress.total}`
+          : "Preparing..."
+        : "Prepare for field day"}
+    </Button>
   );
 }

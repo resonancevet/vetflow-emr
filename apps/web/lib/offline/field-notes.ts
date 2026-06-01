@@ -1,10 +1,12 @@
 "use client";
 
 const DB_NAME = "vetroamer-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const OUTBOX_STORE = "outbox";
 const ATTACHMENTS_STORE = "attachments";
 const FIELD_NOTES_STORE = "fieldNotes";
+const SCHEDULE_STORE = "scheduleCache";
+const PATIENT_STORE = "patientCache";
 
 export const OFFLINE_FIELD_NOTES_CHANGED = "vetroamer:offline-field-notes-changed";
 
@@ -62,6 +64,20 @@ function openOfflineDb(): Promise<IDBDatabase> {
         const store = db.createObjectStore(FIELD_NOTES_STORE, { keyPath: "id" });
         store.createIndex("updatedAt", "updatedAt");
         store.createIndex("attachedAt", "attachedAt");
+      }
+
+      if (!db.objectStoreNames.contains(SCHEDULE_STORE)) {
+        const schedule = db.createObjectStore(SCHEDULE_STORE, {
+          keyPath: "date",
+        });
+        schedule.createIndex("cachedAt", "cachedAt");
+      }
+
+      if (!db.objectStoreNames.contains(PATIENT_STORE)) {
+        const patient = db.createObjectStore(PATIENT_STORE, {
+          keyPath: "patientId",
+        });
+        patient.createIndex("cachedAt", "cachedAt");
       }
     };
 

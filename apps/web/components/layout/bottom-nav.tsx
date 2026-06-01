@@ -24,6 +24,12 @@ export function BottomNav() {
             <li key={item.href} className="flex-1">
               <Link
                 href={item.href}
+                onClick={(event) => {
+                  if (typeof navigator !== "undefined" && !navigator.onLine) {
+                    event.preventDefault();
+                    window.location.assign(item.href);
+                  }
+                }}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex min-h-[3.5rem] flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium transition-colors",
