@@ -173,7 +173,12 @@ export const patientsRouter = createRouter({
         ctx.db
           .select()
           .from(patientWeights)
-          .where(eq(patientWeights.patientId, input.id))
+          .where(
+            and(
+              eq(patientWeights.patientId, input.id),
+              isNull(patientWeights.deletedAt)
+            )
+          )
           .orderBy(desc(patientWeights.recordedAt)),
         ctx.db
           .select()
@@ -249,7 +254,12 @@ export const patientsRouter = createRouter({
         ctx.db
           .select()
           .from(patientWeights)
-          .where(eq(patientWeights.patientId, input.id))
+          .where(
+            and(
+              eq(patientWeights.patientId, input.id),
+              isNull(patientWeights.deletedAt)
+            )
+          )
           .orderBy(desc(patientWeights.recordedAt))
           .limit(50),
         ctx.db
@@ -523,6 +533,98 @@ export const patientsRouter = createRouter({
         })
         .returning();
       return weight!;
+    }),
+
+  updateWeight: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        weightKg: z.string().min(1),
+        recordedAt: z.string().optional(),
+        clientUpdatedAt: clientUpdatedAtSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, clientUpdatedAt, weightKg, recordedAt } = input;
+
+      const [existing] = await ctx.db
+        .select({
+          id: patientWeights.id,
+          updatedAt: patientWeights.updatedAt,
+          patientId: patientWeights.patientId,
+        })
+        .from(patientWeights)
+        .innerJoin(patients, eq(patientWeights.patientId, patients.id))
+        .where(
+          and(
+            eq(patientWeights.id, id),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patientWeights.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Weight entry not found",
+        });
+      }
+
+      assertNotStale(existing.updatedAt, clientUpdatedAt);
+
+      const update: { weightKg: string; recordedAt?: Date } = { weightKg };
+      if (recordedAt) {
+        const parsed = new Date(recordedAt);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Invalid recordedAt date",
+          });
+        }
+        update.recordedAt = parsed;
+      }
+
+      const [weight] = await ctx.db
+        .update(patientWeights)
+        .set(update)
+        .where(eq(patientWeights.id, id))
+        .returning();
+      return weight!;
+    }),
+
+  deleteWeight: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({
+          id: patientWeights.id,
+          patientId: patientWeights.patientId,
+        })
+        .from(patientWeights)
+        .innerJoin(patients, eq(patientWeights.patientId, patients.id))
+        .where(
+          and(
+            eq(patientWeights.id, input.id),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patientWeights.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Weight entry not found",
+        });
+      }
+
+      await ctx.db
+        .update(patientWeights)
+        .set({ deletedAt: new Date() })
+        .where(eq(patientWeights.id, input.id));
+
+      return { success: true, patientId: existing.patientId };
     }),
 
   addAllergy: protectedProcedure

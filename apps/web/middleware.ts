@@ -10,39 +10,24 @@ function setSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-function isLocalAppHost(host: string): boolean {
-  return (
-    host.startsWith("localhost") ||
-    host.startsWith("127.0.0.1") ||
-    host.endsWith(".trycloudflare.com")
-  );
-}
-
 export async function middleware(request: NextRequest) {
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Unauthenticated visitors at root get redirected to the marketing site (prod only)
-  if (!token && request.nextUrl.pathname === "/") {
-    if (
-      process.env.NODE_ENV === "development" ||
-      isLocalAppHost(request.nextUrl.host)
-    ) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-    const wwwUrl = process.env.NEXT_PUBLIC_WWW_URL || "https://openvpm.com";
-    return NextResponse.redirect(wwwUrl);
-  }
-
+  // Unauthenticated visitors always go to /login. The previous "redirect to
+  // marketing site" behavior caused the iPad to land on openvpm.com whenever
+  // the host header didn't match a local/trycloudflare pattern.
   if (!token) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    if (request.nextUrl.pathname === "/login") {
+      return setSecurityHeaders(NextResponse.next());
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Field app: land on schedule, not clinic dashboard or marketing site
-  if (token && request.nextUrl.pathname === "/") {
+  // Field app: land on schedule, not the clinic dashboard.
+  if (request.nextUrl.pathname === "/") {
     return NextResponse.redirect(new URL("/schedule", request.url));
   }
 

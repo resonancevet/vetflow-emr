@@ -36,7 +36,12 @@ import { PatientAllergiesSection } from "@/components/patients/patient-allergies
 import { PatientAlertsBanner } from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
 import { recordPatientView } from "@/lib/recent-patients";
-import { kgToLb, useWeightUnit } from "@/lib/weight-units";
+import {
+  kgToLb,
+  toKgString,
+  useWeightUnit,
+  type WeightUnit,
+} from "@/lib/weight-units";
 import { saveCachedPatientSnapshot } from "@/lib/offline/cache";
 
 const speciesEmoji: Record<string, string> = {
@@ -596,26 +601,23 @@ export default function PatientDetailPage() {
                       <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                         Recorded By
                       </th>
+                      {canManageClinicalRecords ? (
+                        <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+                          Actions
+                        </th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
                     {patient.weights.map((weight) => (
-                      <tr
+                      <WeightRow
                         key={weight.id}
-                        className="border-b border-border last:border-0"
-                      >
-                        <td className="px-4 py-3">
-                          {weight.recordedAt
-                            ? new Date(weight.recordedAt).toLocaleDateString()
-                            : "\u2014"}
-                        </td>
-                        <td className="px-4 py-3 font-medium">
-                          {formatWeight(weight.weightKg)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {weight.recordedBy ?? "\u2014"}
-                        </td>
-                      </tr>
+                        weight={weight}
+                        unit={weightUnit}
+                        formatWeight={formatWeight}
+                        canManage={canManageClinicalRecords}
+                        patientId={patient.id}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -935,6 +937,159 @@ function VaccinationsTab({
         </tbody>
       </table>
     </div>
+  );
+}
+
+type WeightHistoryItem = {
+  id: string;
+  weightKg: string | null;
+  recordedAt: Date | string | null;
+  recordedBy: string | null;
+  updatedAt: Date | string | null;
+};
+
+function WeightRow({
+  weight,
+  unit,
+  formatWeight,
+  canManage,
+  patientId,
+}: {
+  weight: WeightHistoryItem;
+  unit: WeightUnit;
+  formatWeight: (kg: string | null) => string;
+  canManage: boolean;
+  patientId: string;
+}) {
+  const utils = trpc.useUtils();
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const startEditing = () => {
+    if (!weight.weightKg) {
+      setDraft("");
+    } else {
+      const kg = parseFloat(weight.weightKg);
+      const display = unit === "lb" ? kgToLb(kg) : kg;
+      setDraft(Number.isFinite(display) ? display.toFixed(2) : "");
+    }
+    setIsEditing(true);
+  };
+
+  const invalidate = async () => {
+    await Promise.all([
+      utils.patients.getById.invalidate({ id: patientId }),
+      utils.patients.getOfflineSnapshot.invalidate({ id: patientId }),
+    ]);
+  };
+
+  const updateMutation = trpc.patients.updateWeight.useMutation({
+    onSuccess: async () => {
+      toast.success("Weight updated");
+      setIsEditing(false);
+      await invalidate();
+    },
+    onError: (err) => toast.error(`Failed to update weight: ${err.message}`),
+  });
+
+  const deleteMutation = trpc.patients.deleteWeight.useMutation({
+    onSuccess: async () => {
+      toast.success("Weight removed");
+      await invalidate();
+    },
+    onError: (err) => toast.error(`Failed to delete weight: ${err.message}`),
+  });
+
+  const handleSave = () => {
+    const kg = toKgString(draft, unit);
+    if (!kg) {
+      toast.error("Enter a valid weight.");
+      return;
+    }
+    updateMutation.mutate({
+      id: weight.id,
+      weightKg: kg,
+      clientUpdatedAt: weight.updatedAt
+        ? new Date(weight.updatedAt)
+        : undefined,
+    });
+  };
+
+  return (
+    <tr className="border-b border-border last:border-0 align-middle">
+      <td className="px-4 py-3">
+        {weight.recordedAt
+          ? new Date(weight.recordedAt).toLocaleDateString()
+          : "\u2014"}
+      </td>
+      <td className="px-4 py-3 font-medium">
+        {isEditing ? (
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-32"
+          />
+        ) : (
+          formatWeight(weight.weightKg)
+        )}
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        {weight.recordedBy ?? "\u2014"}
+      </td>
+      {canManage ? (
+        <td className="px-4 py-3 text-right">
+          <div className="flex justify-end gap-2">
+            {isEditing ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={updateMutation.isPending}
+                >
+                  Save
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  disabled={updateMutation.isPending}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={startEditing}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Pencil className="mr-1 h-3.5 w-3.5" />
+                  Edit
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    if (confirm("Remove this weight entry?")) {
+                      deleteMutation.mutate({ id: weight.id });
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              </>
+            )}
+          </div>
+        </td>
+      ) : null}
+    </tr>
   );
 }
 

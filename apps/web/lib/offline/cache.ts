@@ -214,6 +214,69 @@ export async function getCachedPatientSnapshot(
   );
 }
 
+export async function appendCachedPatientWeight(input: {
+  patientId: string;
+  weight: Record<string, unknown> & { id: string };
+}): Promise<CachedPatientSnapshot | undefined> {
+  const existing = await getCachedPatientSnapshot(input.patientId);
+  if (!existing) return undefined;
+
+  const next: CachedPatientSnapshot = {
+    ...existing,
+    weights: [
+      input.weight,
+      ...existing.weights.filter((row) => row.id !== input.weight.id),
+    ],
+    cachedAt: new Date().toISOString(),
+  };
+
+  await withStore(PATIENT_STORE, "readwrite", (store) => store.put(next));
+  notifyChanged();
+  return next;
+}
+
+export async function appendCachedPatientProblem(input: {
+  patientId: string;
+  problem: Record<string, unknown> & { id: string };
+}): Promise<CachedPatientSnapshot | undefined> {
+  const existing = await getCachedPatientSnapshot(input.patientId);
+  if (!existing) return undefined;
+
+  const next: CachedPatientSnapshot = {
+    ...existing,
+    problems: [
+      input.problem,
+      ...existing.problems.filter((row) => row.id !== input.problem.id),
+    ],
+    cachedAt: new Date().toISOString(),
+  };
+
+  await withStore(PATIENT_STORE, "readwrite", (store) => store.put(next));
+  notifyChanged();
+  return next;
+}
+
+export async function appendCachedPatientAlert(input: {
+  patientId: string;
+  alert: Record<string, unknown> & { id: string };
+}): Promise<CachedPatientSnapshot | undefined> {
+  const existing = await getCachedPatientSnapshot(input.patientId);
+  if (!existing) return undefined;
+
+  const next: CachedPatientSnapshot = {
+    ...existing,
+    alerts: [
+      input.alert,
+      ...existing.alerts.filter((row) => row.id !== input.alert.id),
+    ],
+    cachedAt: new Date().toISOString(),
+  };
+
+  await withStore(PATIENT_STORE, "readwrite", (store) => store.put(next));
+  notifyChanged();
+  return next;
+}
+
 export async function listCachedPatientSnapshots(): Promise<
   CachedPatientSnapshot[]
 > {

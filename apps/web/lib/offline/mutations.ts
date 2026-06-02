@@ -56,33 +56,61 @@ export async function runOrQueueMutation<TPayload, TResult>(input: {
   }
 }
 
+// Module-level guard so multiple triggers (online event, focus event, React
+// effect re-runs) can't replay the same queued items in parallel and create
+// duplicate server-side rows.
+let inFlightDrain: Promise<ReplayResult[]> | null = null;
+const claimedItemIds = new Set<string>();
+
 export async function drainOfflineOutbox(replayers: Record<
   string,
   (item: OfflineOutboxItem) => Promise<void>
 >): Promise<ReplayResult[]> {
   if (!navigator.onLine) return [];
 
-  const items = await listOfflineOutbox();
-  const results: ReplayResult[] = [];
+  if (inFlightDrain) return inFlightDrain;
 
-  for (const item of items) {
-    const replayer = replayers[item.target];
-    if (!replayer) {
-      results.push({ status: "skipped", item });
-      continue;
+  inFlightDrain = (async () => {
+    const items = await listOfflineOutbox();
+    const results: ReplayResult[] = [];
+
+    for (const item of items) {
+      // Belt-and-suspenders: skip anything another invocation of this drain
+      // already claimed during the same browser session.
+      if (claimedItemIds.has(item.id)) {
+        results.push({ status: "skipped", item });
+        continue;
+      }
+
+      const replayer = replayers[item.target];
+      if (!replayer) {
+        results.push({ status: "skipped", item });
+        continue;
+      }
+
+      claimedItemIds.add(item.id);
+      try {
+        await replayer(item);
+        await removeOfflineOutboxItem(item);
+        results.push({ status: "replayed", item });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to replay queued item";
+        await markOfflineOutboxAttempt(item, message);
+        results.push({ status: "failed", item, error: message });
+        // Allow a future drain to retry a failed item.
+        claimedItemIds.delete(item.id);
+      }
     }
 
-    try {
-      await replayer(item);
-      await removeOfflineOutboxItem(item);
-      results.push({ status: "replayed", item });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to replay queued item";
-      await markOfflineOutboxAttempt(item, message);
-      results.push({ status: "failed", item, error: message });
-    }
+    return results;
+  })();
+
+  try {
+    return await inFlightDrain;
+  } finally {
+    inFlightDrain = null;
   }
-
-  return results;
 }

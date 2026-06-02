@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, NotebookText, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, NotebookText, Plus, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
+  appendCachedPatientAlert,
+  appendCachedPatientProblem,
+  appendCachedPatientWeight,
   type CachedPatientSnapshot,
   getCachedPatientSnapshot,
   OFFLINE_CACHE_CHANGED,
 } from "@/lib/offline/cache";
+import { runOrQueueMutation } from "@/lib/offline/mutations";
+import { trpc } from "@/lib/trpc";
+import { kgToLb, toKgString, useWeightUnit } from "@/lib/weight-units";
+import { UnitToggle } from "@/components/patients/patient-clinical-add";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -84,6 +93,9 @@ export default function OfflineChartDetailPage() {
   const [snapshot, setSnapshot] = useState<CachedPatientSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const addWeight = trpc.patients.addWeight.useMutation();
+  const createProblem = trpc.records.createProblem.useMutation();
+  const createAlert = trpc.patientAlerts.create.useMutation();
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +189,153 @@ export default function OfflineChartDetailPage() {
   const p = snapshot.patient;
   const owner = [p.clientFirstName, p.clientLastName].filter(Boolean).join(" ");
 
+  const addOfflineWeight = async (weightKg: string) => {
+    try {
+      const result = await runOrQueueMutation({
+        target: "patients.addWeight",
+        payload: {
+          patientId: snapshot.patientId,
+          weightKg,
+        },
+        runOnline: (payload) => addWeight.mutateAsync(payload),
+      });
+
+      const weightRow =
+        result.status === "online"
+          ? ({
+              ...(result.result as Record<string, unknown>),
+              id: (result.result as { id?: string }).id ?? `weight_${Date.now()}`,
+            } as Record<string, unknown> & { id: string })
+          : {
+              id: `queued_${result.item.id}`,
+              patientId: snapshot.patientId,
+              weightKg,
+              recordedAt: new Date().toISOString(),
+              recordedBy: "Queued offline",
+              pendingOffline: true,
+            };
+
+      const next = await appendCachedPatientWeight({
+        patientId: snapshot.patientId,
+        weight: weightRow,
+      });
+      if (next) setSnapshot(next);
+
+      if (result.status === "queued") {
+        toast.success("Weight saved offline and queued for sync.");
+      } else {
+        toast.success("Weight recorded.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Could not save weight.");
+    }
+  };
+
+  const addOfflineProblem = async (input: {
+    description: string;
+    status: "active" | "resolved" | "chronic";
+    onsetDate?: string;
+  }) => {
+    try {
+      const result = await runOrQueueMutation({
+        target: "records.createProblem",
+        payload: {
+          patientId: snapshot.patientId,
+          description: input.description,
+          status: input.status,
+          onsetDate: input.onsetDate,
+        },
+        runOnline: (payload) => createProblem.mutateAsync(payload),
+      });
+
+      const problemRow =
+        result.status === "online"
+          ? ({
+              ...(result.result as Record<string, unknown>),
+              id:
+                (result.result as { id?: string }).id ?? `problem_${Date.now()}`,
+            } as Record<string, unknown> & { id: string })
+          : {
+              id: `queued_${result.item.id}`,
+              patientId: snapshot.patientId,
+              description: input.description,
+              status: input.status,
+              onsetDate: input.onsetDate,
+              createdAt: new Date().toISOString(),
+              pendingOffline: true,
+            };
+
+      const next = await appendCachedPatientProblem({
+        patientId: snapshot.patientId,
+        problem: problemRow,
+      });
+      if (next) setSnapshot(next);
+
+      toast.success(
+        result.status === "queued"
+          ? "Problem saved offline and queued for sync."
+          : "Problem added."
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Could not save problem.");
+    }
+  };
+
+  const addOfflineAlert = async (input: {
+    title: string;
+    type: "behavior" | "medical" | "financial" | "other";
+    severity: "info" | "warning" | "critical";
+    notes?: string;
+  }) => {
+    try {
+      const result = await runOrQueueMutation({
+        target: "patientAlerts.create",
+        payload: {
+          patientId: snapshot.patientId,
+          title: input.title,
+          type: input.type,
+          severity: input.severity,
+          notes: input.notes,
+        },
+        runOnline: (payload) => createAlert.mutateAsync(payload),
+      });
+
+      const alertRow =
+        result.status === "online"
+          ? ({
+              ...(result.result as Record<string, unknown>),
+              id: (result.result as { id?: string }).id ?? `alert_${Date.now()}`,
+            } as Record<string, unknown> & { id: string })
+          : {
+              id: `queued_${result.item.id}`,
+              patientId: snapshot.patientId,
+              title: input.title,
+              type: input.type,
+              severity: input.severity,
+              notes: input.notes,
+              createdAt: new Date().toISOString(),
+              pendingOffline: true,
+            };
+
+      const next = await appendCachedPatientAlert({
+        patientId: snapshot.patientId,
+        alert: alertRow,
+      });
+      if (next) setSnapshot(next);
+
+      toast.success(
+        result.status === "queued"
+          ? "Alert saved offline and queued for sync."
+          : "Alert added."
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Could not save alert.");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -225,7 +384,14 @@ export default function OfflineChartDetailPage() {
         </div>
       </div>
 
+      <OfflineWeightSection
+        weights={snapshot.weights}
+        onAddWeight={addOfflineWeight}
+        saving={addWeight.isPending}
+      />
+
       <SnapshotSection title="Active alerts" empty="No alerts">
+        <OfflineAlertForm onSubmit={addOfflineAlert} saving={createAlert.isPending} />
         {snapshot.alerts.map((alert, i) => (
           <li
             key={asString(alert.id, String(i))}
@@ -260,6 +426,10 @@ export default function OfflineChartDetailPage() {
       </SnapshotSection>
 
       <SnapshotSection title="Problems" empty="No problems recorded">
+        <OfflineProblemForm
+          onSubmit={addOfflineProblem}
+          saving={createProblem.isPending}
+        />
         {snapshot.problems.map((problem, i) => (
           <li
             key={asString(problem.id, String(i))}
@@ -406,6 +576,364 @@ function SnapshotSection({
         <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
       )}
     </section>
+  );
+}
+
+function OfflineProblemForm({
+  onSubmit,
+  saving,
+}: {
+  onSubmit: (input: {
+    description: string;
+    status: "active" | "resolved" | "chronic";
+    onsetDate?: string;
+  }) => Promise<void>;
+  saving: boolean;
+}) {
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<"active" | "resolved" | "chronic">(
+    "active"
+  );
+  const [onsetDate, setOnsetDate] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const disabled = saving || submitting;
+
+  return (
+    <li className="rounded border border-dashed border-border bg-muted/20 p-3 text-sm">
+      <form
+        className="space-y-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (disabled) return;
+          const trimmed = description.trim();
+          if (!trimmed) {
+            toast.error("Enter a problem description.");
+            return;
+          }
+          setSubmitting(true);
+          try {
+            await onSubmit({
+              description: trimmed,
+              status,
+              onsetDate: onsetDate || undefined,
+            });
+            setDescription("");
+            setStatus("active");
+            setOnsetDate("");
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Quick-add problem
+            </label>
+            <Input
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="e.g. Right hind lameness"
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Status</label>
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={status}
+              onChange={(event) =>
+                setStatus(
+                  event.target.value as "active" | "resolved" | "chronic"
+                )
+              }
+            >
+              <option value="active">Active</option>
+              <option value="chronic">Chronic</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Onset</label>
+            <Input
+              type="date"
+              value={onsetDate}
+              onChange={(event) => setOnsetDate(event.target.value)}
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={disabled}>
+            {disabled ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Add
+          </Button>
+        </div>
+      </form>
+    </li>
+  );
+}
+
+function OfflineAlertForm({
+  onSubmit,
+  saving,
+}: {
+  onSubmit: (input: {
+    title: string;
+    type: "behavior" | "medical" | "financial" | "other";
+    severity: "info" | "warning" | "critical";
+    notes?: string;
+  }) => Promise<void>;
+  saving: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState<
+    "behavior" | "medical" | "financial" | "other"
+  >("medical");
+  const [severity, setSeverity] = useState<"info" | "warning" | "critical">(
+    "warning"
+  );
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const disabled = saving || submitting;
+
+  return (
+    <li className="rounded border border-dashed border-amber-300 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+      <form
+        className="space-y-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (disabled) return;
+          const trimmedTitle = title.trim();
+          if (!trimmedTitle) {
+            toast.error("Enter an alert title.");
+            return;
+          }
+          setSubmitting(true);
+          try {
+            await onSubmit({
+              title: trimmedTitle,
+              type,
+              severity,
+              notes: notes.trim() || undefined,
+            });
+            setTitle("");
+            setType("medical");
+            setSeverity("warning");
+            setNotes("");
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Quick-add alert
+            </label>
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Use muzzle for handling"
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Type</label>
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={type}
+              onChange={(event) =>
+                setType(
+                  event.target.value as
+                    | "behavior"
+                    | "medical"
+                    | "financial"
+                    | "other"
+                )
+              }
+            >
+              <option value="medical">Medical</option>
+              <option value="behavior">Behavior</option>
+              <option value="financial">Financial</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Severity</label>
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={severity}
+              onChange={(event) =>
+                setSeverity(
+                  event.target.value as "info" | "warning" | "critical"
+                )
+              }
+            >
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <Button type="submit" size="sm" disabled={disabled}>
+            {disabled ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Add
+          </Button>
+        </div>
+        <Input
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Optional notes"
+        />
+      </form>
+    </li>
+  );
+}
+
+function OfflineWeightSection({
+  weights,
+  onAddWeight,
+  saving,
+}: {
+  weights: Record<string, unknown>[];
+  onAddWeight: (weightKg: string) => Promise<void>;
+  saving: boolean;
+}) {
+  const [unit, setUnit] = useWeightUnit();
+
+  const formatWeight = (kgValue: unknown) => {
+    if (typeof kgValue !== "string" && typeof kgValue !== "number") return "—";
+    const kg = Number(kgValue);
+    if (!Number.isFinite(kg)) return String(kgValue);
+    return unit === "lb" ? `${kgToLb(kg).toFixed(2)} lb` : `${kg.toFixed(2)} kg`;
+  };
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-heading text-base font-semibold">Weight</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This is the first offline write workflow. Entries made offline are
+            queued and sync when the app reconnects.
+          </p>
+        </div>
+        <UnitToggle unit={unit} onChange={setUnit} />
+      </div>
+
+      <OfflineWeightForm
+        unit={unit}
+        onSubmit={onAddWeight}
+        saving={saving}
+      />
+
+      {weights.length > 0 ? (
+        <div className="mt-4 overflow-x-auto rounded-md border border-border">
+          <table className="w-full min-w-[340px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                  Date
+                </th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                  Weight
+                </th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {weights.map((row, i) => (
+                <tr
+                  key={asString(row.id, String(i))}
+                  className="border-b border-border last:border-0"
+                >
+                  <td className="px-3 py-2">{formatDate(row.recordedAt)}</td>
+                  <td className="px-3 py-2 font-medium">
+                    {formatWeight(row.weightKg)}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {row.pendingOffline ? "Queued for sync" : "Synced"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          No weights recorded.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function OfflineWeightForm({
+  unit,
+  onSubmit,
+  saving,
+}: {
+  unit: "kg" | "lb";
+  onSubmit: (weightKg: string) => Promise<void>;
+  saving: boolean;
+}) {
+  const [weight, setWeight] = useState("");
+  // Local guard so a quick double-tap on iPad cannot submit the form twice
+  // (the parent's `saving` flag only reflects the online mutation, not a
+  // queued/offline submit).
+  const [submitting, setSubmitting] = useState(false);
+  const disabled = saving || submitting;
+
+  return (
+    <form
+      className="mt-4 flex flex-wrap items-end gap-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (disabled) return;
+        const kg = toKgString(weight, unit);
+        if (!kg) {
+          toast.error("Enter a valid weight.");
+          return;
+        }
+        setSubmitting(true);
+        try {
+          await onSubmit(kg);
+          setWeight("");
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      <div className="min-w-[12rem] flex-1">
+        <label className="mb-1 block text-xs font-medium">
+          Add weight ({unit})
+        </label>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={weight}
+          onChange={(event) => setWeight(event.target.value)}
+          placeholder={unit === "lb" ? "e.g. 31.3" : "e.g. 14.2"}
+          required
+        />
+      </div>
+      <Button type="submit" size="sm" disabled={disabled}>
+        {disabled ? (
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+        )}
+        Save weight
+      </Button>
+    </form>
   );
 }
 

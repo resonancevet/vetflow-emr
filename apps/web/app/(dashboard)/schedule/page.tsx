@@ -961,6 +961,7 @@ export default function SchedulePage() {
     isLoading,
     error,
     isError,
+    refetch: refetchAppointments,
   } = trpc.appointments.list.useQuery({
     startDate: startOfDay(currentDate).toISOString(),
     endDate: endOfDay(currentDate).toISOString(),
@@ -988,16 +989,25 @@ export default function SchedulePage() {
   }, [appointments, error, currentDate, doctorFilter]);
 
   // Fallback to a cached schedule when the network query fails or returns
-  // nothing while offline. Online data always wins when available.
+  // nothing while offline. Online data always wins when available, and we
+  // never use the cache while the device reports it is online (otherwise a
+  // transient API hiccup leaves a stale "offline snapshot" banner stuck).
   useEffect(() => {
     let cancelled = false;
 
-    if (appointments && !isError) {
+    if (appointments) {
       setCachedSchedule(null);
       return;
     }
 
-    if (isError || (!appointments && !online && !isLoading)) {
+    if (online) {
+      // While online, never substitute the cache for a live response. If the
+      // query is failing, the user sees a normal error with a Retry button.
+      setCachedSchedule(null);
+      return;
+    }
+
+    if (!isLoading) {
       getCachedSchedule(toISODate(currentDate))
         .then((entry) => {
           if (!cancelled) setCachedSchedule(entry ?? null);
@@ -1005,8 +1015,6 @@ export default function SchedulePage() {
         .catch(() => {
           if (!cancelled) setCachedSchedule(null);
         });
-    } else {
-      setCachedSchedule(null);
     }
 
     return () => {
@@ -1019,7 +1027,8 @@ export default function SchedulePage() {
     : cachedSchedule
       ? (cachedSchedule.appointments as unknown as Appointment[])
       : null;
-  const isShowingCache = !appointments && !!cachedSchedule;
+  const isShowingCache = !appointments && !!cachedSchedule && !online;
+  const showOnlineLoadError = online && isError && !appointments;
 
   const { data: doctors } = trpc.appointments.listDoctors.useQuery();
 
@@ -1129,14 +1138,37 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Error */}
-      {error && !isShowingCache && (
+      {/* Online load error with retry — shown when the device thinks it is
+          online but the schedule API call is failing. Avoids a misleading
+          "Offline snapshot" banner when the user is in fact online. */}
+      {showOnlineLoadError && (
+        <div className="mt-4 flex items-start justify-between gap-2 rounded-lg border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          <div>
+            <p className="font-medium">Could not load schedule</p>
+            <p className="mt-0.5 text-xs">
+              {error?.message ??
+                "The schedule could not be reached. Try again in a moment."}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetchAppointments()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Generic non-network error fallback (covers cases where data exists
+          but the latest refetch failed). */}
+      {error && !showOnlineLoadError && !isShowingCache && (
         <div className="mt-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
           {error.message}
         </div>
       )}
 
-      {/* Offline cache banner */}
+      {/* Offline cache banner — only when the device is actually offline. */}
       {isShowingCache && cachedSchedule && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
