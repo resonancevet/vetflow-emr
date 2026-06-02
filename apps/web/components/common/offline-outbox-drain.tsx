@@ -5,6 +5,7 @@ import { drainOfflineOutbox } from "@/lib/offline/mutations";
 import type { OfflineOutboxItem } from "@/lib/offline/outbox";
 import {
   saveCachedPatientSnapshot,
+  updateCachedAppointmentStatus,
   type CachedPatientSnapshot,
 } from "@/lib/offline/cache";
 import { trpc } from "@/lib/trpc";
@@ -17,6 +18,7 @@ export function OfflineOutboxDrain() {
   const addWeight = trpc.patients.addWeight.useMutation();
   const createProblem = trpc.records.createProblem.useMutation();
   const createAlert = trpc.patientAlerts.create.useMutation();
+  const updateApptStatus = trpc.appointments.updateStatus.useMutation();
   const utils = trpc.useUtils();
 
   // Hold the latest mutate fn / utils in refs so the effect can register
@@ -26,10 +28,12 @@ export function OfflineOutboxDrain() {
   const addWeightRef = useRef(addWeight);
   const createProblemRef = useRef(createProblem);
   const createAlertRef = useRef(createAlert);
+  const updateApptStatusRef = useRef(updateApptStatus);
   const utilsRef = useRef(utils);
   addWeightRef.current = addWeight;
   createProblemRef.current = createProblem;
   createAlertRef.current = createAlert;
+  updateApptStatusRef.current = updateApptStatus;
   utilsRef.current = utils;
 
   useEffect(() => {
@@ -146,11 +150,56 @@ export function OfflineOutboxDrain() {
       await refreshCachedPatient(payload.patientId);
     };
 
+    const replayApptStatus = async (item: OfflineOutboxItem) => {
+      const payload = item.payload as {
+        id?: unknown;
+        status?: unknown;
+      };
+
+      const validStatuses = [
+        "scheduled",
+        "confirmed",
+        "checked_in",
+        "in_exam",
+        "checked_out",
+        "no_show",
+        "cancelled",
+      ] as const;
+      type ApptStatus = (typeof validStatuses)[number];
+
+      if (
+        typeof payload.id !== "string" ||
+        !validStatuses.includes(payload.status as ApptStatus)
+      ) {
+        throw new Error("Queued appointment status is malformed.");
+      }
+
+      await updateApptStatusRef.current.mutateAsync({
+        id: payload.id,
+        status: payload.status as ApptStatus,
+      });
+
+      // Clear the pendingOffline flag in any cached schedule that contains
+      // this appointment so the row stops showing "Queued for sync".
+      try {
+        await updateCachedAppointmentStatus({
+          appointmentId: payload.id,
+          status: payload.status as string,
+          pendingOffline: false,
+        });
+      } catch (error) {
+        console.warn("Could not refresh cached schedule after sync", error);
+      }
+
+      await utilsRef.current.appointments.list.invalidate();
+    };
+
     const drain = () => {
       drainOfflineOutbox({
         "patients.addWeight": replayWeight,
         "records.createProblem": replayProblem,
         "patientAlerts.create": replayAlert,
+        "appointments.updateStatus": replayApptStatus,
       }).catch((error) => {
         console.warn("Offline outbox drain failed", error);
       });

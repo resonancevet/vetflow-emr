@@ -26,7 +26,9 @@ import {
   getCachedSchedule,
   saveCachedPatientSnapshot,
   saveCachedSchedule,
+  updateCachedAppointmentStatus,
 } from "@/lib/offline/cache";
+import { runOrQueueMutation } from "@/lib/offline/mutations";
 import { useNetworkStatus } from "@/lib/offline/use-network-status";
 
 // --- Constants ---
@@ -199,6 +201,8 @@ type Appointment = {
   typeColor: string | null;
   typeDuration: number | null;
   roomName: string | null;
+  /** True for appointments whose status was changed offline. */
+  pendingOffline?: boolean;
 };
 
 // --- Components ---
@@ -400,6 +404,11 @@ function AppointmentDetailPopover({
             <span className="text-sm font-medium">
               {STATUS_LABELS[current] || appointment.status}
             </span>
+            {appointment.pendingOffline ? (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                Queued
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -1032,27 +1041,40 @@ export default function SchedulePage() {
 
   const { data: doctors } = trpc.appointments.listDoctors.useQuery();
 
-  const updateStatus = trpc.appointments.updateStatus.useMutation({
-    onSuccess: () => {
-      toast.success("Appointment status updated");
-      setSelectedAppointment(null);
-    },
-    onError: (err) => {
-      toast.error(err.message);
-    },
-  });
+  const updateStatus = trpc.appointments.updateStatus.useMutation();
 
   const utils = trpc.useUtils();
 
-  const handleStatusChange = (id: string, status: AppointmentStatus) => {
-    updateStatus.mutate(
-      { id, status },
-      {
-        onSuccess: () => {
-          utils.appointments.list.invalidate();
-        },
+  const handleStatusChange = async (id: string, status: AppointmentStatus) => {
+    try {
+      const result = await runOrQueueMutation({
+        target: "appointments.updateStatus",
+        payload: { id, status },
+        runOnline: (payload) => updateStatus.mutateAsync(payload),
+      });
+
+      // Reflect the new status in the cached schedule right away so both the
+      // online table (when offline-fallback kicks in later) and the offline
+      // chart context show the latest tap.
+      await updateCachedAppointmentStatus({
+        appointmentId: id,
+        status,
+        pendingOffline: result.status === "queued",
+      });
+
+      if (result.status === "online") {
+        toast.success("Appointment status updated");
+        setSelectedAppointment(null);
+        utils.appointments.list.invalidate();
+      } else {
+        toast.success("Status saved offline and queued for sync.");
+        setSelectedAppointment(null);
       }
-    );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not update status."
+      );
+    }
   };
 
   const goToday = () => setCurrentDate(startOfDay(new Date()));

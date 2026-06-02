@@ -29,6 +29,8 @@ export type CachedAppointment = {
   typeColor: string | null;
   typeDuration: number | null;
   roomName: string | null;
+  /** Set when an offline status change is awaiting sync. */
+  pendingOffline?: boolean;
 };
 
 export type CachedSchedule = {
@@ -254,6 +256,46 @@ export async function appendCachedPatientProblem(input: {
   await withStore(PATIENT_STORE, "readwrite", (store) => store.put(next));
   notifyChanged();
   return next;
+}
+
+/**
+ * Optimistically updates the status (and a tiny pendingOffline flag) of an
+ * appointment in any cached schedule that contains it. This keeps the
+ * Schedule view consistent right after a status tap, even before the
+ * network mutation drains.
+ */
+export async function updateCachedAppointmentStatus(input: {
+  appointmentId: string;
+  status: string;
+  pendingOffline: boolean;
+}): Promise<void> {
+  const schedules = await listCachedSchedules();
+  const matches = schedules.filter((entry) =>
+    entry.appointments.some((appt) => appt.id === input.appointmentId)
+  );
+  if (matches.length === 0) return;
+
+  await Promise.all(
+    matches.map((entry) => {
+      const next: CachedSchedule = {
+        ...entry,
+        appointments: entry.appointments.map((appt) =>
+          appt.id === input.appointmentId
+            ? ({
+                ...appt,
+                status: input.status,
+                ...(input.pendingOffline
+                  ? { pendingOffline: true }
+                  : { pendingOffline: undefined }),
+              } as CachedAppointment)
+            : appt
+        ),
+        cachedAt: new Date().toISOString(),
+      };
+      return withStore(SCHEDULE_STORE, "readwrite", (store) => store.put(next));
+    })
+  );
+  notifyChanged();
 }
 
 export async function appendCachedPatientAlert(input: {
