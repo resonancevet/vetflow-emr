@@ -4,6 +4,7 @@ import {
   MessageSquare,
   NotebookPen,
   PawPrint,
+  RefreshCw,
   Settings,
   Users,
   type LucideIcon,
@@ -30,6 +31,7 @@ export const v0NavItems: NavItem[] = [
   { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
   { href: "/offline-notes", label: "Offline Notes", icon: NotebookPen },
   { href: "/offline-charts", label: "Offline Charts", icon: CloudDownload },
+  { href: "/sync", label: "Pending Sync", icon: RefreshCw },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];
 
@@ -41,6 +43,7 @@ export const routeLabels: Record<string, string> = {
   "/communications": "Communications",
   "/offline-notes": "Offline Notes",
   "/offline-charts": "Offline Charts",
+  "/sync": "Pending Sync",
 };
 
 export const v0NewActions = [

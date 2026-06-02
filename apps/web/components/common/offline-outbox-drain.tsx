@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { drainOfflineOutbox } from "@/lib/offline/mutations";
+import {
+  drainOfflineOutbox,
+  OFFLINE_SYNC_REQUESTED,
+} from "@/lib/offline/mutations";
 import type { OfflineOutboxItem } from "@/lib/offline/outbox";
 import {
   saveCachedPatientSnapshot,
@@ -207,11 +210,13 @@ export function OfflineOutboxDrain() {
 
     window.addEventListener("online", drain);
     window.addEventListener("focus", drain);
+    window.addEventListener(OFFLINE_SYNC_REQUESTED, drain);
     drain();
 
     return () => {
       window.removeEventListener("online", drain);
       window.removeEventListener("focus", drain);
+      window.removeEventListener(OFFLINE_SYNC_REQUESTED, drain);
     };
   }, []);
 

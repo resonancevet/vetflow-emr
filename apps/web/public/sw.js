@@ -7,6 +7,7 @@ const APP_SHELL = [
   "/clients",
   "/offline-notes",
   "/offline-charts",
+  "/sync",
   "/favicon.svg",
   "/logo.svg",
   "/manifest.webmanifest"

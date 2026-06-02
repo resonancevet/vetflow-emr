@@ -13,6 +13,8 @@ type ReplayResult =
   | { status: "failed"; item: OfflineOutboxItem; error: string }
   | { status: "skipped"; item: OfflineOutboxItem };
 
+export const OFFLINE_SYNC_REQUESTED = "vetroamer:offline-sync-requested";
+
 export function isNetworkError(error: unknown) {
   if (!navigator.onLine) return true;
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) {

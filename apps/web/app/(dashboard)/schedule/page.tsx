@@ -1339,6 +1339,22 @@ function PrepareFieldDayButton({
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null
   );
+  const [lastPrepared, setLastPrepared] = useState<{
+    at: string;
+    date: string;
+    cached: number;
+    failed: number;
+  } | null>(null);
+  const prepStorageKey = `vetroamer.fieldDayPrepared.${toISODate(currentDate)}`;
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(prepStorageKey);
+      setLastPrepared(raw ? JSON.parse(raw) : null);
+    } catch {
+      setLastPrepared(null);
+    }
+  }, [prepStorageKey]);
 
   const handlePrepare = async () => {
     if (!online) {
@@ -1414,6 +1430,19 @@ function PrepareFieldDayButton({
       } else {
         toast.success(`Cached ${cached} patient chart${cached === 1 ? "" : "s"} for offline use.`);
       }
+
+      const prepared = {
+        at: new Date().toISOString(),
+        date: toISODate(currentDate),
+        cached,
+        failed,
+      };
+      setLastPrepared(prepared);
+      try {
+        window.localStorage.setItem(prepStorageKey, JSON.stringify(prepared));
+      } catch {
+        // Best-effort UI hint only; the actual cache has already been written.
+      }
     } catch (err) {
       console.error(err);
       toast.error(
@@ -1425,24 +1454,37 @@ function PrepareFieldDayButton({
   };
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      onClick={handlePrepare}
-      disabled={isPreparing}
-      title="Cache today's schedule and patient charts for offline use"
-    >
-      {isPreparing ? (
-        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <CloudDownload className="mr-1.5 h-3.5 w-3.5" />
-      )}
-      {isPreparing
-        ? progress
-          ? `Caching ${progress.done}/${progress.total}`
-          : "Preparing..."
-        : "Prepare for field day"}
-    </Button>
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={handlePrepare}
+        disabled={isPreparing}
+        title="Cache today's schedule and patient charts for offline use"
+      >
+        {isPreparing ? (
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <CloudDownload className="mr-1.5 h-3.5 w-3.5" />
+        )}
+        {isPreparing
+          ? progress
+            ? `Caching ${progress.done}/${progress.total}`
+            : "Preparing..."
+          : "Prepare for field day"}
+      </Button>
+      {lastPrepared ? (
+        <p className="max-w-[16rem] text-right text-[11px] text-muted-foreground">
+          Last prepared {new Date(lastPrepared.at).toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })}{" "}
+          · {lastPrepared.cached} chart
+          {lastPrepared.cached === 1 ? "" : "s"} cached
+          {lastPrepared.failed ? ` · ${lastPrepared.failed} failed` : ""}
+        </p>
+      ) : null}
+    </div>
   );
 }

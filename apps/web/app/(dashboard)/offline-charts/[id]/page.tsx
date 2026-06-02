@@ -397,7 +397,14 @@ export default function OfflineChartDetailPage() {
             key={asString(alert.id, String(i))}
             className="rounded border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-900 dark:bg-amber-950/30"
           >
-            <p className="font-medium">{asString(alert.title)}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{asString(alert.title)}</p>
+              {alert.pendingOffline ? (
+                <span className="rounded-full border border-amber-400 bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                  Queued for sync
+                </span>
+              ) : null}
+            </div>
             <p className="text-xs text-muted-foreground">
               {asString(alert.type)} \u00B7 {asString(alert.severity)}
             </p>
@@ -435,7 +442,14 @@ export default function OfflineChartDetailPage() {
             key={asString(problem.id, String(i))}
             className="rounded border border-border p-2 text-sm"
           >
-            <p className="font-medium">{asString(problem.description)}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{asString(problem.description)}</p>
+              {problem.pendingOffline ? (
+                <span className="rounded-full border border-amber-400 bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                  Queued for sync
+                </span>
+              ) : null}
+            </div>
             <p className="text-xs text-muted-foreground">
               Status: {asString(problem.status)}
               {problem.onsetDate
