@@ -1,4 +1,15 @@
-const CACHE_NAME = "vetroamer-shell-v3";
+const CACHE_NAME = "vetroamer-shell-v4";
+
+// Single cache key under which we save the most recent
+// "/offline-charts/<id>" navigation response. Serving this shell for any
+// patient ID while offline lets the route open every cached patient instead
+// of only the IDs that happened to be visited online before the iPad lost
+// service.
+const OFFLINE_CHART_DETAIL_SHELL = "/__offline-charts-detail-shell";
+
+function isOfflineChartDetailPath(pathname) {
+  return /^\/offline-charts\/[^/]+$/.test(pathname);
+}
 const APP_SHELL = [
   "/",
   "/login",
@@ -58,6 +69,8 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (request.mode === "navigate") {
+    const isDetail = isOfflineChartDetailPath(url.pathname);
+
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -65,7 +78,10 @@ self.addEventListener("fetch", (event) => {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(request, copy.clone());
-              cache.put(url.pathname, copy);
+              cache.put(url.pathname, copy.clone());
+              if (isDetail) {
+                cache.put(OFFLINE_CHART_DETAIL_SHELL, copy.clone());
+              }
             });
           }
           return response;
@@ -74,6 +90,13 @@ self.addEventListener("fetch", (event) => {
           caches
             .match(request)
             .then((cached) => cached || caches.match(url.pathname))
+            .then(
+              (cached) =>
+                cached ||
+                (isDetail
+                  ? caches.match(OFFLINE_CHART_DETAIL_SHELL)
+                  : undefined)
+            )
             .then((cached) => cached || caches.match("/offline-charts"))
             .then((cached) => cached || caches.match("/schedule"))
             .then((cached) => cached || caches.match("/login"))

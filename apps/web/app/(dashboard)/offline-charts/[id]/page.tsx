@@ -87,9 +87,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+function readPatientIdFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  const match = window.location.pathname.match(
+    /^\/offline-charts\/([^/?#]+)/
+  );
+  return match ? decodeURIComponent(match[1]!) : "";
+}
+
 export default function OfflineChartDetailPage() {
-  const params = useParams<{ id: string }>();
+  // The patient ID is read from the URL directly instead of `useParams()`.
+  // When the service worker serves a cached "detail shell" for a different
+  // patient ID than the current URL, Next.js's route data still reflects the
+  // originally-cached URL, so `useParams()` would return the wrong ID. Reading
+  // the path is robust to that.
+  const useParamsForFallback = useParams<{ id: string }>();
   const router = useRouter();
+  const [patientId, setPatientId] = useState<string>(() => {
+    const fromUrl = readPatientIdFromUrl();
+    return fromUrl || useParamsForFallback.id;
+  });
   const [snapshot, setSnapshot] = useState<CachedPatientSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,12 +114,30 @@ export default function OfflineChartDetailPage() {
   const createProblem = trpc.records.createProblem.useMutation();
   const createAlert = trpc.patientAlerts.create.useMutation();
 
+  // Re-read the URL on mount so we never trust a stale Next.js route param
+  // baked into a cached HTML shell.
   useEffect(() => {
+    const fromUrl = readPatientIdFromUrl();
+    if (fromUrl && fromUrl !== patientId) {
+      setPatientId(fromUrl);
+    }
+  }, [patientId]);
+
+  const goToOfflineCharts = () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      window.location.assign("/offline-charts");
+      return;
+    }
+    router.push("/offline-charts");
+  };
+
+  useEffect(() => {
+    if (!patientId) return;
     let cancelled = false;
     const load = () => {
       setLoading(true);
       setError(null);
-      withTimeout(getCachedPatientSnapshot(params.id), 7000)
+      withTimeout(getCachedPatientSnapshot(patientId), 7000)
         .then((entry) => {
           if (!cancelled) setSnapshot(entry ?? null);
         })
@@ -129,7 +164,7 @@ export default function OfflineChartDetailPage() {
       cancelled = true;
       window.removeEventListener(OFFLINE_CACHE_CHANGED, handle);
     };
-  }, [params.id]);
+  }, [patientId]);
 
   if (loading) {
     return (
@@ -146,7 +181,7 @@ export default function OfflineChartDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push("/offline-charts")}
+          onClick={goToOfflineCharts}
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Offline Charts
@@ -342,7 +377,7 @@ export default function OfflineChartDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push("/offline-charts")}
+          onClick={goToOfflineCharts}
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Offline Charts

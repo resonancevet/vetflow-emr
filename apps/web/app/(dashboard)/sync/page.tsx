@@ -1,9 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  NotebookPen,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  listOfflineFieldNotes,
+  OFFLINE_FIELD_NOTES_CHANGED,
+  type OfflineFieldNote,
+} from "@/lib/offline/field-notes";
 import {
   listOfflineOutbox,
   removeOfflineOutboxItem,
@@ -60,9 +72,11 @@ function describeItem(item: OfflineOutboxItem): {
 
 export default function PendingSyncPage() {
   const [items, setItems] = useState<OfflineOutboxItem[]>([]);
+  const [unattachedNotes, setUnattachedNotes] = useState<OfflineFieldNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const { online } = useNetworkStatus();
+  const pendingCount = items.length + unattachedNotes.length;
 
   const failedCount = useMemo(
     () => items.filter((item) => item.lastError).length,
@@ -71,8 +85,11 @@ export default function PendingSyncPage() {
 
   const load = () => {
     setLoading(true);
-    listOfflineOutbox()
-      .then(setItems)
+    Promise.all([listOfflineOutbox(), listOfflineFieldNotes()])
+      .then(([nextItems, notes]) => {
+        setItems(nextItems);
+        setUnattachedNotes(notes.filter((note) => !note.attachedAt));
+      })
       .catch((error) => {
         console.error(error);
         toast.error("Could not read pending sync items.");
@@ -83,7 +100,11 @@ export default function PendingSyncPage() {
   useEffect(() => {
     load();
     window.addEventListener(OFFLINE_OUTBOX_CHANGED, load);
-    return () => window.removeEventListener(OFFLINE_OUTBOX_CHANGED, load);
+    window.addEventListener(OFFLINE_FIELD_NOTES_CHANGED, load);
+    return () => {
+      window.removeEventListener(OFFLINE_OUTBOX_CHANGED, load);
+      window.removeEventListener(OFFLINE_FIELD_NOTES_CHANGED, load);
+    };
   }, []);
 
   const requestSync = () => {
@@ -119,8 +140,9 @@ export default function PendingSyncPage() {
         <div>
           <h2 className="font-heading text-xl font-semibold">Pending Sync</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Offline changes are saved locally here and automatically sync when
-            this device reconnects.
+            Structured offline changes sync automatically when this device
+            reconnects. Offline field notes stay here until you attach them to a
+            patient.
           </p>
         </div>
         <Button onClick={requestSync} disabled={!online || syncing}>
@@ -142,7 +164,7 @@ export default function PendingSyncPage() {
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Pending</p>
-          <p className="mt-1 text-lg font-semibold">{items.length}</p>
+          <p className="mt-1 text-lg font-semibold">{pendingCount}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Needs attention</p>
@@ -155,7 +177,7 @@ export default function PendingSyncPage() {
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading pending items...
         </div>
-      ) : items.length === 0 ? (
+      ) : pendingCount === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center">
           <CheckCircle2 className="mx-auto h-9 w-9 text-green-600" />
           <p className="mt-3 font-medium">Everything is synced</p>
@@ -165,6 +187,47 @@ export default function PendingSyncPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          {unattachedNotes.map((note) => (
+            <div
+              key={note.id}
+              className="rounded-lg border border-border bg-card p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">Offline field note</p>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+                      <NotebookPen className="h-3 w-3" />
+                      Needs attachment
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {note.title}
+                    {note.ownerLastName ? ` · owner ${note.ownerLastName}` : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Saved {formatDateTime(note.updatedAt)}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (
+                      typeof navigator !== "undefined" &&
+                      !navigator.onLine
+                    ) {
+                      window.location.assign("/offline-notes");
+                    } else {
+                      window.location.href = "/offline-notes";
+                    }
+                  }}
+                >
+                  Open Notes
+                </Button>
+              </div>
+            </div>
+          ))}
           {items.map((item) => {
             const description = describeItem(item);
             return (
