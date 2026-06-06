@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -350,6 +351,7 @@ function AppointmentDetailPopover({
   isUpdating: boolean;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const start = new Date(appointment.startTime);
   const end = new Date(appointment.endTime);
 
@@ -422,9 +424,22 @@ function AppointmentDetailPopover({
         {/* Body */}
         <div className="px-4 py-3 space-y-3">
           <div>
-            <h3 className="font-semibold text-base">
-              {appointment.patientName || "Unknown Patient"}
-            </h3>
+            {appointment.patientId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(`/patients/${appointment.patientId}`);
+                }}
+                className="text-left font-semibold text-base text-primary hover:underline"
+              >
+                {appointment.patientName || "Unknown Patient"}
+              </button>
+            ) : (
+              <h3 className="font-semibold text-base">
+                {appointment.patientName || "Unknown Patient"}
+              </h3>
+            )}
             {appointment.patientSpecies && (
               <p className="text-xs text-muted-foreground">{appointment.patientSpecies}</p>
             )}

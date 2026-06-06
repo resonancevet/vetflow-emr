@@ -120,6 +120,31 @@ export function SoapNotesTab({
     onError: (err) => toast.error(err.message),
   });
 
+  const finalizeNote = trpc.records.finalizeSoapNote.useMutation({
+    onSuccess: () => {
+      toast.success("SOAP note finalized");
+      utils.records.listSoapNotes.invalidate({ patientId: patient.id });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleFinalize = (note: {
+    id: string;
+    updatedAt?: Date | string | null;
+  }) => {
+    if (
+      !confirm(
+        "Finalize this SOAP note? Once finalized, it is locked and can only be changed with an addendum."
+      )
+    ) {
+      return;
+    }
+    finalizeNote.mutate({
+      id: note.id,
+      clientUpdatedAt: note.updatedAt ? new Date(note.updatedAt) : undefined,
+    });
+  };
+
   const startEdit = (note: {
     id: string;
     subjective: string | null;
@@ -174,6 +199,7 @@ export function SoapNotesTab({
           {soapNotes.map((note) => {
             const isExpanded = expandedNoteId === note.id;
             const isEditing = editingNoteId === note.id;
+            const isFinalized = !!note.finalizedAt;
             return (
               <div
                 key={note.id}
@@ -189,14 +215,26 @@ export function SoapNotesTab({
                   }}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
-                  <div className="flex items-center gap-4">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">
-                        {note.createdAt
-                          ? new Date(note.createdAt).toLocaleDateString()
-                          : "No date"}
-                      </p>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">
+                          {note.createdAt
+                            ? new Date(note.createdAt).toLocaleDateString()
+                            : "No date"}
+                        </p>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                            isFinalized
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                          )}
+                        >
+                          {isFinalized ? "Finalized" : "Draft"}
+                        </span>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {note.authorName ?? "Unknown author"}
                       </p>
@@ -265,8 +303,16 @@ export function SoapNotesTab({
                       </>
                     ) : (
                       <>
-                        {canCreate && (
-                          <div className="flex justify-end">
+                        {isFinalized && (
+                          <p className="text-xs text-muted-foreground">
+                            Signed by {note.finalizedByName ?? "Unknown"} on{" "}
+                            {note.finalizedAt
+                              ? new Date(note.finalizedAt).toLocaleString()
+                              : "unknown date"}
+                          </p>
+                        )}
+                        {canCreate && !isFinalized && (
+                          <div className="flex justify-end gap-2">
                             <Button
                               type="button"
                               size="sm"
@@ -276,6 +322,17 @@ export function SoapNotesTab({
                               <Pencil className="mr-1.5 h-3.5 w-3.5" />
                               Edit
                             </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => handleFinalize(note)}
+                              disabled={finalizeNote.isPending}
+                            >
+                              <Check className="mr-1.5 h-3.5 w-3.5" />
+                              {finalizeNote.isPending
+                                ? "Finalizing..."
+                                : "Finalize"}
+                            </Button>
                           </div>
                         )}
                         <SoapField label="Subjective" value={note.subjective} />
@@ -284,7 +341,10 @@ export function SoapNotesTab({
                         <SoapField label="Plan" value={note.plan} />
                       </>
                     )}
-                    <SoapAttachments noteId={note.id} canUpload={canCreate} />
+                    <SoapAttachments entityId={note.id} canUpload={canCreate && !isFinalized} />
+                    {isFinalized && (
+                      <SoapAddenda noteId={note.id} canAdd={canCreate} />
+                    )}
                   </div>
                 )}
               </div>
@@ -323,10 +383,12 @@ type SoapAttachment = {
 };
 
 function SoapAttachments({
-  noteId,
+  entityId,
+  entityType = "soap_note",
   canUpload,
 }: {
-  noteId: string;
+  entityId: string;
+  entityType?: string;
   canUpload: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -337,8 +399,8 @@ function SoapAttachments({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const { data: files, isLoading } = trpc.records.listFilesForEntity.useQuery({
-    entityType: "soap_note",
-    entityId: noteId,
+    entityType,
+    entityId,
   });
 
   const renameFile = trpc.records.renameFile.useMutation({
@@ -346,8 +408,8 @@ function SoapAttachments({
       toast.success("Attachment renamed");
       setRenamingId(null);
       utils.records.listFilesForEntity.invalidate({
-        entityType: "soap_note",
-        entityId: noteId,
+        entityType,
+        entityId,
       });
     },
     onError: (err) => toast.error(err.message),
@@ -357,8 +419,8 @@ function SoapAttachments({
     onSuccess: () => {
       toast.success("Attachment removed");
       utils.records.listFilesForEntity.invalidate({
-        entityType: "soap_note",
-        entityId: noteId,
+        entityType,
+        entityId,
       });
     },
     onError: (err) => toast.error(err.message),
@@ -374,8 +436,8 @@ function SoapAttachments({
         selected.map((file) =>
           uploadFileToApi(file, {
             category: "soap-attachments",
-            entityType: "soap_note",
-            entityId: noteId,
+            entityType,
+            entityId,
           })
         )
       );
@@ -383,8 +445,8 @@ function SoapAttachments({
         selected.length === 1 ? "Attachment added" : "Attachments added"
       );
       utils.records.listFilesForEntity.invalidate({
-        entityType: "soap_note",
-        entityId: noteId,
+        entityType,
+        entityId,
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -651,6 +713,195 @@ function AttachmentViewer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SoapAddenda({
+  noteId,
+  canAdd,
+}: {
+  noteId: string;
+  canAdd: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [content, setContent] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: addenda, isLoading } = trpc.records.listSoapAddenda.useQuery({
+    soapNoteId: noteId,
+  });
+
+  const addAddendum = trpc.records.addSoapAddendum.useMutation();
+
+  function handleAttachmentSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? []);
+    setPendingAttachments((prev) => [...prev, ...selected]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  }
+
+  const handleSubmit = async () => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    setSubmitting(true);
+    try {
+      const addendum = await addAddendum.mutateAsync({
+        soapNoteId: noteId,
+        content: trimmed,
+      });
+
+      if (pendingAttachments.length > 0) {
+        await Promise.all(
+          pendingAttachments.map((file) =>
+            uploadFileToApi(file, {
+              category: "soap-attachments",
+              entityType: "soap_note_addendum",
+              entityId: addendum.id,
+            })
+          )
+        );
+        utils.records.listFilesForEntity.invalidate({
+          entityType: "soap_note_addendum",
+          entityId: addendum.id,
+        });
+      }
+
+      toast.success("Addendum added");
+      setContent("");
+      setPendingAttachments([]);
+      utils.records.listSoapAddenda.invalidate({ soapNoteId: noteId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add addendum");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-border pt-4">
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Addenda
+      </h4>
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading addenda...</p>
+      ) : addenda && addenda.length > 0 ? (
+        <div className="space-y-3">
+          {addenda.map((entry) => (
+            <div
+              key={entry.id}
+              className="rounded-md border border-border bg-muted/30 px-3 py-2"
+            >
+              <p className="text-xs text-muted-foreground">
+                {entry.authorName ?? "Unknown author"} ·{" "}
+                {entry.createdAt
+                  ? new Date(entry.createdAt).toLocaleString()
+                  : "Unknown date"}
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-sm">{entry.content}</p>
+              <SoapAttachments
+                entityType="soap_note_addendum"
+                entityId={entry.id}
+                canUpload={canAdd}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No addenda yet.</p>
+      )}
+
+      {canAdd && (
+        <div className="mt-4 space-y-2">
+          <label
+            htmlFor={`addendum-${noteId}`}
+            className="block text-sm font-medium"
+          >
+            Add addendum
+          </label>
+          <textarea
+            id={`addendum-${noteId}`}
+            rows={4}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Document a correction or follow-up to this finalized note..."
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y min-h-[6rem]"
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleAttachmentSelect}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            multiple
+            className="hidden"
+            onChange={handleAttachmentSelect}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => cameraInputRef.current?.click()}
+            >
+              <Camera className="mr-1.5 h-3.5 w-3.5" />
+              Take photo
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="mr-1.5 h-3.5 w-3.5" />
+              Add files
+            </Button>
+          </div>
+          {pendingAttachments.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {pendingAttachments.map((file, i) => (
+                <li
+                  key={`${file.name}-${i}`}
+                  className="flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs"
+                >
+                  <span className="max-w-[8rem] truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    aria-label="Remove attachment"
+                    onClick={() =>
+                      setPendingAttachments((prev) =>
+                        prev.filter((_, idx) => idx !== i)
+                      )
+                    }
+                    className="rounded p-0.5 hover:bg-accent"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSubmit}
+              disabled={submitting || !content.trim()}
+            >
+              {submitting ? "Adding..." : "Add addendum"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

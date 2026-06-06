@@ -55,10 +55,36 @@ export const soapNotes = pgTable(
     objective: text("objective"),
     assessment: text("assessment"),
     plan: text("plan"),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    finalizedBy: uuid("finalized_by").references(() => users.id),
   },
   (table) => ({
     patientIdx: index("soap_notes_patient_idx").on(table.patientId),
     practiceIdx: index("soap_notes_practice_idx").on(table.practiceId, table.deletedAt),
+  })
+);
+
+export const soapNoteAddenda = pgTable(
+  "soap_note_addenda",
+  {
+    ...baseColumns(),
+    practiceId: uuid("practice_id")
+      .notNull()
+      .references(() => practices.id),
+    soapNoteId: uuid("soap_note_id")
+      .notNull()
+      .references(() => soapNotes.id),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id),
+    content: text("content").notNull(),
+  },
+  (table) => ({
+    soapNoteIdx: index("soap_note_addenda_soap_note_idx").on(table.soapNoteId),
+    practiceIdx: index("soap_note_addenda_practice_idx").on(
+      table.practiceId,
+      table.deletedAt
+    ),
   })
 );
 
@@ -182,7 +208,7 @@ export const caseEntries = pgTable("case_entries", {
 });
 
 // Relations
-export const soapNotesRelations = relations(soapNotes, ({ one }) => ({
+export const soapNotesRelations = relations(soapNotes, ({ one, many }) => ({
   practice: one(practices, {
     fields: [soapNotes.practiceId],
     references: [practices.id],
@@ -197,6 +223,26 @@ export const soapNotesRelations = relations(soapNotes, ({ one }) => ({
   }),
   author: one(users, {
     fields: [soapNotes.authorId],
+    references: [users.id],
+  }),
+  finalizedByUser: one(users, {
+    fields: [soapNotes.finalizedBy],
+    references: [users.id],
+  }),
+  addenda: many(soapNoteAddenda),
+}));
+
+export const soapNoteAddendaRelations = relations(soapNoteAddenda, ({ one }) => ({
+  practice: one(practices, {
+    fields: [soapNoteAddenda.practiceId],
+    references: [practices.id],
+  }),
+  soapNote: one(soapNotes, {
+    fields: [soapNoteAddenda.soapNoteId],
+    references: [soapNotes.id],
+  }),
+  author: one(users, {
+    fields: [soapNoteAddenda.authorId],
     references: [users.id],
   }),
 }));

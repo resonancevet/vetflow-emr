@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { eq, and, isNull, desc } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
   soapNotes,
+  soapNoteAddenda,
   vaccinationRecords,
   labResults,
   procedures,
@@ -23,6 +25,7 @@ export const recordsRouter = createRouter({
   listSoapNotes: protectedProcedure
     .input(z.object({ patientId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const finalizedByUser = alias(users, "finalized_by_user");
       return ctx.db
         .select({
           id: soapNotes.id,
@@ -31,11 +34,17 @@ export const recordsRouter = createRouter({
           assessment: soapNotes.assessment,
           plan: soapNotes.plan,
           authorName: users.name,
+          finalizedAt: soapNotes.finalizedAt,
+          finalizedByName: finalizedByUser.name,
           createdAt: soapNotes.createdAt,
           updatedAt: soapNotes.updatedAt,
         })
         .from(soapNotes)
         .leftJoin(users, eq(soapNotes.authorId, users.id))
+        .leftJoin(
+          finalizedByUser,
+          eq(soapNotes.finalizedBy, finalizedByUser.id)
+        )
         .where(
           and(
             eq(soapNotes.patientId, input.patientId),
@@ -86,7 +95,10 @@ export const recordsRouter = createRouter({
       const { id, clientUpdatedAt, ...fields } = input;
 
       const [existing] = await ctx.db
-        .select({ updatedAt: soapNotes.updatedAt })
+        .select({
+          updatedAt: soapNotes.updatedAt,
+          finalizedAt: soapNotes.finalizedAt,
+        })
         .from(soapNotes)
         .where(
           and(
@@ -98,6 +110,11 @@ export const recordsRouter = createRouter({
         .limit(1);
 
       if (!existing) throw new Error("SOAP note not found");
+      if (existing.finalizedAt) {
+        throw new Error(
+          "This note is finalized. Add an addendum instead of editing."
+        );
+      }
       assertNotStale(existing.updatedAt, clientUpdatedAt);
 
       // Empty string is a valid "clear this section" value, so we let it
@@ -120,6 +137,129 @@ export const recordsRouter = createRouter({
         .returning();
       if (!note) throw new Error("SOAP note not found");
       return note;
+    }),
+
+  finalizeSoapNote: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        clientUpdatedAt: clientUpdatedAtSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({
+          updatedAt: soapNotes.updatedAt,
+          finalizedAt: soapNotes.finalizedAt,
+        })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.id, input.id),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) throw new Error("SOAP note not found");
+      if (existing.finalizedAt) throw new Error("SOAP note is already finalized");
+      assertNotStale(existing.updatedAt, input.clientUpdatedAt);
+
+      const now = new Date();
+      const [note] = await ctx.db
+        .update(soapNotes)
+        .set({
+          finalizedAt: now,
+          finalizedBy: ctx.user.id,
+        })
+        .where(
+          and(
+            eq(soapNotes.id, input.id),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .returning();
+      if (!note) throw new Error("SOAP note not found");
+      return note;
+    }),
+
+  listSoapAddenda: protectedProcedure
+    .input(z.object({ soapNoteId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const [note] = await ctx.db
+        .select({ id: soapNotes.id })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.id, input.soapNoteId),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .limit(1);
+      if (!note) throw new Error("SOAP note not found");
+
+      return ctx.db
+        .select({
+          id: soapNoteAddenda.id,
+          content: soapNoteAddenda.content,
+          authorName: users.name,
+          createdAt: soapNoteAddenda.createdAt,
+        })
+        .from(soapNoteAddenda)
+        .leftJoin(users, eq(soapNoteAddenda.authorId, users.id))
+        .where(
+          and(
+            eq(soapNoteAddenda.soapNoteId, input.soapNoteId),
+            eq(soapNoteAddenda.practiceId, ctx.practiceId),
+            isNull(soapNoteAddenda.deletedAt)
+          )
+        )
+        .orderBy(desc(soapNoteAddenda.createdAt));
+    }),
+
+  addSoapAddendum: protectedProcedure
+    .use(requireRole("admin", "veterinarian"))
+    .input(
+      z.object({
+        soapNoteId: z.string().uuid(),
+        content: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [note] = await ctx.db
+        .select({
+          id: soapNotes.id,
+          finalizedAt: soapNotes.finalizedAt,
+        })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.id, input.soapNoteId),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!note) throw new Error("SOAP note not found");
+      if (!note.finalizedAt) {
+        throw new Error("Only finalized notes can receive addenda");
+      }
+
+      const [addendum] = await ctx.db
+        .insert(soapNoteAddenda)
+        .values({
+          soapNoteId: input.soapNoteId,
+          practiceId: ctx.practiceId,
+          authorId: ctx.user.id,
+          content: input.content,
+        })
+        .returning();
+      return addendum!;
     }),
 
   listFilesForEntity: protectedProcedure
