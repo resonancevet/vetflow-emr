@@ -56,6 +56,37 @@ pnpm db:migrate
   file. It is fine for throwaway local experiments, but **do not use it in
   production** — it leaves no migration history.
 
+## Local backup and restore
+
+Backups need both the Postgres database and MinIO object files. Postgres holds
+patients, records, SOAP notes, addenda, users, scheduling, and file metadata.
+MinIO holds the actual uploaded photos/PDFs.
+
+Create a timestamped local backup:
+
+```bash
+pnpm backup:local
+```
+
+By default this writes to `backups/local/<timestamp>/`:
+
+- `postgres-openpims.dump` — custom-format Postgres dump
+- `minio-data.tgz` — archive of the MinIO `/data` volume
+- `manifest.txt` — basic backup metadata
+
+Backups are gitignored. Copy important backups somewhere outside the repo too
+(external drive, encrypted cloud storage, or another machine). A backup that
+only lives on the same laptop does not protect against laptop loss.
+
+Restore a backup into the local Docker stack:
+
+```bash
+VETFLOW_RESTORE_CONFIRM=restore-local-data pnpm backup:restore backups/local/<timestamp>
+```
+
+Restore is intentionally guarded because it overwrites the local Docker
+Postgres database and MinIO object store.
+
 ## PostgreSQL port conflict
 
 If `pnpm db:migrate` fails silently or says role `openpims` does not exist:

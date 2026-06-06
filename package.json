@@ -12,6 +12,8 @@
     "db:seed": "pnpm --filter @openpims/db db:seed",
     "db:reset": "pnpm --filter @openpims/db db:reset",
     "db:studio": "pnpm --filter @openpims/db db:studio",
+    "backup:local": "bash scripts/backup-local.sh",
+    "backup:restore": "bash scripts/restore-local.sh",
     "clean": "turbo clean",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
