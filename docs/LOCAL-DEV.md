@@ -15,7 +15,7 @@ cp .env.example .env
 
 docker compose -f docker/docker-compose.yml up -d
 pnpm install
-pnpm db:push
+pnpm db:migrate
 pnpm db:seed
 pnpm dev
 ```
@@ -33,9 +33,32 @@ Use **one** `.env` at the **repo root** (not under `apps/web`). All apps load it
 
 Optional: `.env.local` at repo root for personal overrides (gitignored).
 
+## Database migrations
+
+Schema changes are tracked as versioned SQL migrations in
+`packages/db/drizzle/` (committed to git). This is the production-safe path —
+a fresh database is built entirely from these files, in order.
+
+**Workflow when you change the schema** (files under `packages/db/schema/`):
+
+```bash
+# 1. Generate a migration from your schema edits
+pnpm db:generate
+# 2. Apply pending migrations to your local DB
+pnpm db:migrate
+# 3. Commit the generated files in packages/db/drizzle/ alongside your schema change
+```
+
+- `pnpm db:migrate` applies only pending migrations and records them in the
+  `drizzle.__drizzle_migrations` table. It is safe to run repeatedly and is the
+  command to run on deploy.
+- `pnpm db:push` diffs and mutates the schema in place without a migration
+  file. It is fine for throwaway local experiments, but **do not use it in
+  production** — it leaves no migration history.
+
 ## PostgreSQL port conflict
 
-If `pnpm db:push` fails silently or says role `openpims` does not exist:
+If `pnpm db:migrate` fails silently or says role `openpims` does not exist:
 
 1. Stop Homebrew Postgres: `brew services stop postgresql@18`
 2. Or reset Docker volumes: `docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d`
