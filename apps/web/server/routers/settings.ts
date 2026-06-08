@@ -8,6 +8,7 @@ import {
   appointmentTypes,
   rooms,
 } from "@openpims/db";
+import { writeAudit } from "../lib/audit";
 
 const adminProcedure = protectedProcedure.use(requireRole("admin"));
 
@@ -90,6 +91,15 @@ export const settingsRouter = createRouter({
           email: users.email,
           role: users.role,
         });
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "staff.create",
+        entityType: "user",
+        entityId: user!.id,
+        changes: { email: input.email, role: input.role },
+        ipAddress: ctx.ipAddress,
+      });
       return user!;
     }),
 
@@ -114,6 +124,17 @@ export const settingsRouter = createRouter({
           and(eq(users.id, id), eq(users.practiceId, ctx.practiceId))
         )
         .returning();
+      if (input.role) {
+        await writeAudit({
+          practiceId: ctx.practiceId,
+          userId: ctx.user.id,
+          action: "staff.role_change",
+          entityType: "user",
+          entityId: id,
+          changes: { role: input.role },
+          ipAddress: ctx.ipAddress,
+        });
+      }
       return updated!;
     }),
 

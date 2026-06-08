@@ -16,16 +16,30 @@ cp .env.example .env
 docker compose -f docker/docker-compose.yml up -d
 pnpm install
 pnpm db:migrate
-pnpm db:seed
 pnpm dev
 ```
 
-Open http://localhost:3000/login
+Open http://localhost:3000/login and register your practice at `/register`.
+Do **not** run `pnpm db:seed` for real data — seed loads demo patients and shared passwords.
 
-**Demo login:** `admin@neighborhoodvet.example.com` / `password123`  
-Or click **Continue as demo veterinarian** when `NEXT_PUBLIC_DEMO_MODE=true`.
+To load demo data for testing only:
 
-After login you land on **Schedule**.
+```bash
+SEED_DEMO=true pnpm db:seed
+```
+
+## Clean start for real data
+
+1. Ensure Docker Postgres is running.
+2. Run `pnpm db:migrate` on an empty database (or restore from backup).
+3. Set in `.env`:
+   - `NEXT_PUBLIC_DEMO_MODE="false"`
+   - `ALLOW_REGISTRATION="true"` (only while creating your practice)
+   - A real `NEXTAUTH_SECRET` (`openssl rand -base64 32`)
+4. Start the app and open `/register` to create your practice and admin account.
+5. After registration succeeds, set `ALLOW_REGISTRATION="false"` so strangers cannot create practices.
+
+Do not run `pnpm db:seed` unless `SEED_DEMO=true` and you intentionally want demo data.
 
 ## Environment file
 
@@ -87,7 +101,19 @@ VETFLOW_RESTORE_CONFIRM=restore-local-data pnpm backup:restore backups/local/<ti
 Restore is intentionally guarded because it overwrites the local Docker
 Postgres database and MinIO object store.
 
-## PostgreSQL port conflict
+Copy important backups off the laptop on a regular cadence (external drive or
+encrypted cloud storage). A backup that only lives on the same machine does not
+protect against laptop loss or theft.
+
+## Demo mode (testing only)
+
+When `NEXT_PUBLIC_DEMO_MODE="true"`, the login page shows a demo shortcut.
+Keep this **false** when using real medical data.
+
+**Demo login** (only after `SEED_DEMO=true pnpm db:seed`):  
+`admin@neighborhoodvet.example.com` / `password123`
+
+After login you land on **Schedule**.
 
 If `pnpm db:migrate` fails silently or says role `openpims` does not exist:
 

@@ -22,11 +22,18 @@ interface AppSession extends Session {
 export type TRPCContext = {
   db: Database;
   session: AppSession | null;
+  ipAddress: string | null;
 };
 
-export async function createTRPCContext(): Promise<TRPCContext> {
+export async function createTRPCContext(opts?: {
+  req?: Request;
+}): Promise<TRPCContext> {
   const session = (await getServerSession(authOptions)) as AppSession | null;
-  return { db, session };
+  const ipAddress = opts?.req
+    ? (opts.req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+        opts.req.headers.get("x-real-ip"))
+    : null;
+  return { db, session, ipAddress };
 }
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -56,6 +63,7 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
       session: ctx.session,
       user: ctx.session.user,
       practiceId: ctx.session.user.practiceId,
+      ipAddress: ctx.ipAddress,
     },
   });
 });
@@ -77,6 +85,7 @@ export function requireRole(...roles: UserRole[]) {
         session: ctx.session,
         user: ctx.session.user,
         practiceId: ctx.session.user.practiceId,
+        ipAddress: ctx.ipAddress,
       },
     });
   });

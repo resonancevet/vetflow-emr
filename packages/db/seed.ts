@@ -2,6 +2,13 @@ import { createRequire } from "node:module";
 
 createRequire(import.meta.url)("@openpims/config/load-env");
 
+if (process.env.SEED_DEMO !== "true") {
+  console.error(
+    "Refusing to seed demo data. Set SEED_DEMO=true to load the demo practice."
+  );
+  process.exit(1);
+}
+
 import crypto from "crypto";
 import { db } from "./client";
 import {

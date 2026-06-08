@@ -8,6 +8,7 @@ import {
   users,
 } from "@openpims/db";
 import { alias } from "drizzle-orm/pg-core";
+import { writeAudit } from "../lib/audit";
 
 export const controlledSubstancesRouter = createRouter({
   list: protectedProcedure
@@ -150,6 +151,20 @@ export const controlledSubstancesRouter = createRouter({
             : new Date(),
         })
         .returning();
+
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "controlled_substance.create",
+        entityType: "controlled_substance_log",
+        entityId: entry!.id,
+        changes: {
+          drugName: input.drugName,
+          action: input.action,
+          quantity: input.quantity,
+        },
+        ipAddress: ctx.ipAddress,
+      });
 
       return entry!;
     }),

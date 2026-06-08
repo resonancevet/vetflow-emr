@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   Check,
   Layers,
+  ScrollText,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────────────
-type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data" | "templates";
+type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data" | "templates" | "audit";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "practice", label: "Practice Info", icon: Settings },
@@ -37,6 +38,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "rooms", label: "Rooms", icon: DoorOpen },
   { id: "data", label: "Data", icon: Database },
   { id: "templates", label: "Templates", icon: Layers },
+  { id: "audit", label: "Audit Log", icon: ScrollText },
 ];
 
 const TIMEZONES = [
@@ -127,6 +129,7 @@ export default function SettingsPage() {
         {activeTab === "rooms" && <RoomsTab />}
         {activeTab === "data" && <DataTab />}
         {activeTab === "templates" && <TemplatesTab />}
+        {activeTab === "audit" && <AuditLogTab />}
       </div>
     </div>
   );
@@ -1905,6 +1908,70 @@ function TemplatesTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function AuditLogTab() {
+  const { data, isLoading } = trpc.audit.list.useQuery({
+    limit: 50,
+    offset: 0,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const entries = data?.items ?? [];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Recent sensitive actions across your practice. Entries are append-only.
+      </p>
+      {entries.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          No audit entries yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/40">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">When</th>
+                <th className="px-4 py-2 text-left font-medium">User</th>
+                <th className="px-4 py-2 text-left font-medium">Action</th>
+                <th className="px-4 py-2 text-left font-medium">Entity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                    {entry.createdAt
+                      ? new Date(entry.createdAt).toLocaleString()
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-2">{entry.userName ?? "System"}</td>
+                  <td className="px-4 py-2 font-mono text-xs">{entry.action}</td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {entry.entityType}
+                    {entry.entityId ? (
+                      <span className="ml-1 font-mono text-[10px]">
+                        {entry.entityId.slice(0, 8)}…
+                      </span>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

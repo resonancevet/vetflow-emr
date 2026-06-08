@@ -19,6 +19,7 @@ import {
   assertNotStale,
   clientUpdatedAtSchema,
 } from "../lib/optimistic-update";
+import { writeAudit } from "../lib/audit";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -136,6 +137,15 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!note) throw new Error("SOAP note not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "soap.update",
+        entityType: "soap_note",
+        entityId: note.id,
+        changes: updateValues,
+        ipAddress: ctx.ipAddress,
+      });
       return note;
     }),
 
@@ -183,6 +193,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!note) throw new Error("SOAP note not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "soap.finalize",
+        entityType: "soap_note",
+        entityId: note.id,
+        ipAddress: ctx.ipAddress,
+      });
       return note;
     }),
 
@@ -259,6 +277,15 @@ export const recordsRouter = createRouter({
           content: input.content,
         })
         .returning();
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "soap.addendum.create",
+        entityType: "soap_note_addendum",
+        entityId: addendum!.id,
+        changes: { soapNoteId: input.soapNoteId, content: input.content },
+        ipAddress: ctx.ipAddress,
+      });
       return addendum!;
     }),
 
@@ -447,6 +474,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!record) throw new Error("Vaccination not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "vaccination.delete",
+        entityType: "vaccination",
+        entityId: record.id,
+        ipAddress: ctx.ipAddress,
+      });
       return record;
     }),
 
@@ -568,6 +603,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!problem) throw new Error("Problem not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "problem.delete",
+        entityType: "problem",
+        entityId: problem.id,
+        ipAddress: ctx.ipAddress,
+      });
       return problem;
     }),
 
@@ -683,6 +726,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!rx) throw new Error("Prescription not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "prescription.delete",
+        entityType: "prescription",
+        entityId: rx.id,
+        ipAddress: ctx.ipAddress,
+      });
       return rx;
     }),
 
@@ -825,6 +876,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!result) throw new Error("Lab result not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "lab_result.delete",
+        entityType: "lab_result",
+        entityId: result.id,
+        ipAddress: ctx.ipAddress,
+      });
       return result;
     }),
 
@@ -931,6 +990,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!procedure) throw new Error("Procedure not found");
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "procedure.delete",
+        entityType: "procedure",
+        entityId: procedure.id,
+        ipAddress: ctx.ipAddress,
+      });
       return procedure;
     }),
 });

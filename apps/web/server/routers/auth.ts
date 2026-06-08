@@ -17,6 +17,13 @@ export const authRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (process.env.ALLOW_REGISTRATION !== "true") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Registration is disabled.",
+        });
+      }
+
       // Rate limit by email: 5 registrations per hour
       const { success } = rateLimit({
         key: `register:${input.email}`,

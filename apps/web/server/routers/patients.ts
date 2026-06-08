@@ -2,6 +2,7 @@ import { z } from "zod";
 import { eq, and, isNull, ilike, or, sql, desc, ne, gt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
+import { writeAudit } from "../lib/audit";
 import {
   assertNotStale,
   clientUpdatedAtSchema,
@@ -455,6 +456,15 @@ export const patientsRouter = createRouter({
         .insert(patients)
         .values({ ...input, practiceId: ctx.practiceId })
         .returning();
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "patient.create",
+        entityType: "patient",
+        entityId: patient!.id,
+        changes: { name: input.name, species: input.species },
+        ipAddress: ctx.ipAddress,
+      });
       return patient!;
     }),
 
@@ -513,6 +523,14 @@ export const patientsRouter = createRouter({
             eq(patients.practiceId, ctx.practiceId)
           )
         );
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "patient.delete",
+        entityType: "patient",
+        entityId: input.id,
+        ipAddress: ctx.ipAddress,
+      });
       return { success: true };
     }),
 
@@ -826,6 +844,16 @@ export const patientsRouter = createRouter({
         .from(patients)
         .where(eq(patients.id, input.keepId))
         .limit(1);
+
+      await writeAudit({
+        practiceId: ctx.practiceId,
+        userId: ctx.user.id,
+        action: "patient.merge",
+        entityType: "patient",
+        entityId: input.keepId,
+        changes: { keepId: input.keepId, mergeId: input.mergeId },
+        ipAddress: ctx.ipAddress,
+      });
 
       return kept!;
     }),
