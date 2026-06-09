@@ -26,11 +26,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Field app: land on schedule, not the clinic dashboard.
-  if (request.nextUrl.pathname === "/") {
-    return NextResponse.redirect(new URL("/schedule", request.url));
-  }
-
   const response = NextResponse.next();
   return setSecurityHeaders(response);
 }
