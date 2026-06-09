@@ -5,6 +5,7 @@ import {
   text,
   jsonb,
   boolean,
+  integer,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -21,6 +22,8 @@ export const practices = pgTable("practices", {
   logoUrl: varchar("logo_url", { length: 512 }),
   settings: jsonb("settings").default({}),
   subscriptionTier: varchar("subscription_tier", { length: 32 }).default("free"),
+  scheduleStartHour: integer("schedule_start_hour").notNull().default(8),
+  scheduleEndHour: integer("schedule_end_hour").notNull().default(18),
 });
 
 export const locations = pgTable("locations", {

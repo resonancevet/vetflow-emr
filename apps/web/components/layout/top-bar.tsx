@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Search, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { OfflineStatusPill } from "@/components/layout/offline-status-pill";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { APP_NAME, routeLabels, v0NewActions } from "@/lib/nav-config";
 
@@ -46,7 +45,6 @@ export function TopBar({
       </h1>
 
       <div className="flex items-center gap-1 md:gap-2">
-        <OfflineStatusPill />
         <ThemeToggle />
 
         <button

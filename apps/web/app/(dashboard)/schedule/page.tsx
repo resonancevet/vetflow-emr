@@ -8,37 +8,23 @@ import {
   Calendar,
   Clock,
   User,
-  Filter,
   X,
   Loader2,
   Plus,
   Mail,
-  CloudDownload,
-  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import {
-  type CachedAppointment,
-  type CachedSchedule,
-  getCachedSchedule,
-  saveCachedPatientSnapshot,
-  saveCachedSchedule,
-  updateCachedAppointmentStatus,
-} from "@/lib/offline/cache";
-import { runOrQueueMutation } from "@/lib/offline/mutations";
-import { useNetworkStatus } from "@/lib/offline/use-network-status";
 
 // --- Constants ---
 
-const START_HOUR = 8;
-const END_HOUR = 18;
+const DEFAULT_START_HOUR = 8;
+const DEFAULT_END_HOUR = 18;
 const HOUR_HEIGHT_DEFAULT = 60;
 const HOUR_HEIGHT_LG = 72;
-const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 type AppointmentStatus =
   | "scheduled"
@@ -113,9 +99,13 @@ function endOfDay(date: Date): Date {
   return d;
 }
 
-function getTopOffset(time: Date, hourHeight: number): number {
+function getTopOffset(
+  time: Date,
+  hourHeight: number,
+  startHour: number
+): number {
   const hours = time.getHours() + time.getMinutes() / 60;
-  return (hours - START_HOUR) * hourHeight;
+  return (hours - startHour) * hourHeight;
 }
 
 function getBlockHeight(start: Date, end: Date, hourHeight: number): number {
@@ -202,8 +192,6 @@ type Appointment = {
   typeColor: string | null;
   typeDuration: number | null;
   roomName: string | null;
-  /** True for appointments whose status was changed offline. */
-  pendingOffline?: boolean;
 };
 
 // --- Components ---
@@ -217,11 +205,19 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function TimeSlots({ hourHeight }: { hourHeight: number }) {
+function TimeSlots({
+  hourHeight,
+  startHour,
+  endHour,
+}: {
+  hourHeight: number;
+  startHour: number;
+  endHour: number;
+}) {
   const slots = [];
-  for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
+  for (let hour = startHour; hour <= endHour; hour++) {
     const label =
-      hour === 0
+      hour === 0 || hour === 24
         ? "12 AM"
         : hour < 12
           ? `${hour} AM`
@@ -232,7 +228,7 @@ function TimeSlots({ hourHeight }: { hourHeight: number }) {
       <div
         key={hour}
         className="relative"
-        style={{ height: hour < END_HOUR ? hourHeight : 0 }}
+        style={{ height: hour < endHour ? hourHeight : 0 }}
       >
         <span className="absolute -top-3 right-3 text-xs lg:text-sm text-muted-foreground select-none">
           {label}
@@ -243,14 +239,22 @@ function TimeSlots({ hourHeight }: { hourHeight: number }) {
   return <div className="w-16 shrink-0 pt-0">{slots}</div>;
 }
 
-function GridLines({ hourHeight }: { hourHeight: number }) {
+function GridLines({
+  hourHeight,
+  startHour,
+  endHour,
+}: {
+  hourHeight: number;
+  startHour: number;
+  endHour: number;
+}) {
   const lines = [];
-  for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+  for (let hour = startHour; hour < endHour; hour++) {
     lines.push(
       <div
         key={`h-${hour}`}
         className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
-        style={{ top: (hour - START_HOUR) * hourHeight }}
+        style={{ top: (hour - startHour) * hourHeight }}
       />
     );
     // Half-hour dashed line
@@ -258,7 +262,7 @@ function GridLines({ hourHeight }: { hourHeight: number }) {
       <div
         key={`hh-${hour}`}
         className="absolute left-0 right-0 border-t border-dashed border-foreground/10 dark:border-foreground/15"
-        style={{ top: (hour - START_HOUR) * hourHeight + hourHeight / 2 }}
+        style={{ top: (hour - startHour) * hourHeight + hourHeight / 2 }}
       />
     );
   }
@@ -267,7 +271,7 @@ function GridLines({ hourHeight }: { hourHeight: number }) {
     <div
       key="bottom"
       className="absolute left-0 right-0 border-t border-foreground/20 dark:border-foreground/25"
-      style={{ top: TOTAL_HOURS * hourHeight }}
+      style={{ top: (endHour - startHour) * hourHeight }}
     />
   );
   return <>{lines}</>;
@@ -279,16 +283,18 @@ function AppointmentBlock({
   column,
   columnCount,
   hourHeight,
+  startHour,
 }: {
   appointment: Appointment;
   onClick: () => void;
   column: number;
   columnCount: number;
   hourHeight: number;
+  startHour: number;
 }) {
   const start = new Date(appointment.startTime);
   const end = new Date(appointment.endTime);
-  const top = getTopOffset(start, hourHeight);
+  const top = getTopOffset(start, hourHeight, startHour);
   const height = getBlockHeight(start, end, hourHeight);
 
   // Use the type color or a default
@@ -406,11 +412,6 @@ function AppointmentDetailPopover({
             <span className="text-sm font-medium">
               {STATUS_LABELS[current] || appointment.status}
             </span>
-            {appointment.pendingOffline ? (
-              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                Queued
-              </span>
-            ) : null}
           </div>
           <button
             type="button"
@@ -660,6 +661,15 @@ function BookingForm({
     if (match) setRoomId(match.id);
   }, [editingAppointment, roomsList, roomId]);
 
+  // Single-doctor practice: the Doctor field is hidden, so auto-assign the
+  // only doctor to keep the appointment attributed.
+  useEffect(() => {
+    if (isEditing || doctorId) return;
+    if (doctors && doctors.length === 1) {
+      setDoctorId(doctors[0].id);
+    }
+  }, [doctors, doctorId, isEditing]);
+
   const createAppointment = trpc.appointments.create.useMutation({
     onSuccess: () => {
       toast.success("Appointment created");
@@ -836,56 +846,62 @@ function BookingForm({
             )}
           </div>
 
-          {/* Appointment Type */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Appointment Type</label>
-            <select
-              value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
-              className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Select type...</option>
-              {appointmentTypes?.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.durationMinutes} min)
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Appointment Type — only when types are configured */}
+          {appointmentTypes && appointmentTypes.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Appointment Type</label>
+              <select
+                value={typeId}
+                onChange={(e) => setTypeId(e.target.value)}
+                className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Select type...</option>
+                {appointmentTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.durationMinutes} min)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {/* Doctor */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Doctor</label>
-            <select
-              value={doctorId}
-              onChange={(e) => setDoctorId(e.target.value)}
-              className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Select doctor...</option>
-              {doctors?.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  Dr. {doc.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Doctor — only when more than one doctor is configured */}
+          {doctors && doctors.length > 1 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Doctor</label>
+              <select
+                value={doctorId}
+                onChange={(e) => setDoctorId(e.target.value)}
+                className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Select doctor...</option>
+                {doctors.map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    Dr. {doc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {/* Room */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Room</label>
-            <select
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Select room...</option>
-              {roomsList?.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Room — only when rooms are configured */}
+          {roomsList && roomsList.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Room</label>
+              <select
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Select room...</option>
+                {roomsList.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Date */}
           <div>
@@ -970,91 +986,29 @@ export default function SchedulePage() {
   }, []);
 
   const [currentDate, setCurrentDate] = useState(() => startOfDay(new Date()));
-  const [doctorFilter, setDoctorFilter] = useState<string>("all");
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingDefaultTime, setBookingDefaultTime] = useState<string | undefined>(undefined);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
-  const [cachedSchedule, setCachedSchedule] = useState<CachedSchedule | null>(
-    null
-  );
-  const { online } = useNetworkStatus();
+
+  const { data: scheduleHours } = trpc.appointments.getScheduleHours.useQuery();
+  const startHour = scheduleHours?.startHour ?? DEFAULT_START_HOUR;
+  const endHour = scheduleHours?.endHour ?? DEFAULT_END_HOUR;
+  const totalHours = Math.max(endHour - startHour, 1);
 
   const {
     data: appointments,
     isLoading,
     error,
-    isError,
     refetch: refetchAppointments,
   } = trpc.appointments.list.useQuery({
     startDate: startOfDay(currentDate).toISOString(),
     endDate: endOfDay(currentDate).toISOString(),
-    doctorId: doctorFilter !== "all" ? doctorFilter : undefined,
   });
-
-  // Persist successful schedule fetches so the day is available offline.
-  useEffect(() => {
-    if (!appointments || error) return;
-    if (doctorFilter !== "all") return; // Only cache the unfiltered schedule.
-    const cacheable: CachedAppointment[] = appointments.map((appt) => ({
-      ...appt,
-      startTime:
-        appt.startTime instanceof Date
-          ? appt.startTime.toISOString()
-          : appt.startTime,
-      endTime:
-        appt.endTime instanceof Date
-          ? appt.endTime.toISOString()
-          : appt.endTime,
-    }));
-    saveCachedSchedule(toISODate(currentDate), cacheable).catch((err) => {
-      console.warn("Could not cache schedule for offline use:", err);
-    });
-  }, [appointments, error, currentDate, doctorFilter]);
-
-  // Fallback to a cached schedule when the network query fails or returns
-  // nothing while offline. Online data always wins when available, and we
-  // never use the cache while the device reports it is online (otherwise a
-  // transient API hiccup leaves a stale "offline snapshot" banner stuck).
-  useEffect(() => {
-    let cancelled = false;
-
-    if (appointments) {
-      setCachedSchedule(null);
-      return;
-    }
-
-    if (online) {
-      // While online, never substitute the cache for a live response. If the
-      // query is failing, the user sees a normal error with a Retry button.
-      setCachedSchedule(null);
-      return;
-    }
-
-    if (!isLoading) {
-      getCachedSchedule(toISODate(currentDate))
-        .then((entry) => {
-          if (!cancelled) setCachedSchedule(entry ?? null);
-        })
-        .catch(() => {
-          if (!cancelled) setCachedSchedule(null);
-        });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appointments, isError, isLoading, online, currentDate]);
 
   const displayAppointments: Appointment[] | null = appointments
     ? (appointments as unknown as Appointment[])
-    : cachedSchedule
-      ? (cachedSchedule.appointments as unknown as Appointment[])
-      : null;
-  const isShowingCache = !appointments && !!cachedSchedule && !online;
-  const showOnlineLoadError = online && isError && !appointments;
-
-  const { data: doctors } = trpc.appointments.listDoctors.useQuery();
+    : null;
 
   const updateStatus = trpc.appointments.updateStatus.useMutation();
 
@@ -1062,29 +1016,10 @@ export default function SchedulePage() {
 
   const handleStatusChange = async (id: string, status: AppointmentStatus) => {
     try {
-      const result = await runOrQueueMutation({
-        target: "appointments.updateStatus",
-        payload: { id, status },
-        runOnline: (payload) => updateStatus.mutateAsync(payload),
-      });
-
-      // Reflect the new status in the cached schedule right away so both the
-      // online table (when offline-fallback kicks in later) and the offline
-      // chart context show the latest tap.
-      await updateCachedAppointmentStatus({
-        appointmentId: id,
-        status,
-        pendingOffline: result.status === "queued",
-      });
-
-      if (result.status === "online") {
-        toast.success("Appointment status updated");
-        setSelectedAppointment(null);
-        utils.appointments.list.invalidate();
-      } else {
-        toast.success("Status saved offline and queued for sync.");
-        setSelectedAppointment(null);
-      }
+      await updateStatus.mutateAsync({ id, status });
+      toast.success("Appointment status updated");
+      setSelectedAppointment(null);
+      utils.appointments.list.invalidate();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Could not update status."
@@ -1102,8 +1037,8 @@ export default function SchedulePage() {
   // Current time indicator position
   const now = new Date();
   const showNowLine =
-    isToday && now.getHours() >= START_HOUR && now.getHours() < END_HOUR;
-  const nowTop = getTopOffset(now, hourHeight);
+    isToday && now.getHours() >= startHour && now.getHours() < endHour;
+  const nowTop = getTopOffset(now, hourHeight, startHour);
 
   return (
     <div>
@@ -1137,30 +1072,6 @@ export default function SchedulePage() {
         <h3 className="text-sm font-medium">{formatDate(currentDate)}</h3>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Doctor filter */}
-          <div className="relative">
-            <Filter className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            <select
-              value={doctorFilter}
-              onChange={(e) => setDoctorFilter(e.target.value)}
-              className="h-9 appearance-none rounded-md border border-input bg-background pl-8 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="all">All Doctors</option>
-              {doctors?.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  Dr. {doc.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Prepare for field day */}
-          <PrepareFieldDayButton
-            currentDate={currentDate}
-            appointments={displayAppointments ?? null}
-            online={online}
-          />
-
           {/* New Appointment button */}
           <Button
             size="sm"
@@ -1175,15 +1086,13 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Online load error with retry — shown when the device thinks it is
-          online but the schedule API call is failing. Avoids a misleading
-          "Offline snapshot" banner when the user is in fact online. */}
-      {showOnlineLoadError && (
+      {/* Load error with retry */}
+      {error && (
         <div className="mt-4 flex items-start justify-between gap-2 rounded-lg border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
           <div>
             <p className="font-medium">Could not load schedule</p>
             <p className="mt-0.5 text-xs">
-              {error?.message ??
+              {error.message ??
                 "The schedule could not be reached. Try again in a moment."}
             </p>
           </div>
@@ -1197,31 +1106,8 @@ export default function SchedulePage() {
         </div>
       )}
 
-      {/* Generic non-network error fallback (covers cases where data exists
-          but the latest refetch failed). */}
-      {error && !showOnlineLoadError && !isShowingCache && (
-        <div className="mt-4 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
-          {error.message}
-        </div>
-      )}
-
-      {/* Offline cache banner — only when the device is actually offline. */}
-      {isShowingCache && cachedSchedule && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-medium">Offline snapshot</p>
-            <p className="mt-0.5 text-xs">
-              Showing the cached schedule from{" "}
-              {new Date(cachedSchedule.cachedAt).toLocaleString()}. Reconnect
-              to see live updates.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Calendar body */}
-      {isLoading && !isShowingCache ? (
+      {isLoading ? (
         <div className="mt-6 flex items-center justify-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading appointments...
@@ -1231,19 +1117,23 @@ export default function SchedulePage() {
           {/* Day grid */}
           <div className="flex overflow-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
             {/* Time labels */}
-            <TimeSlots hourHeight={hourHeight} />
+            <TimeSlots
+              hourHeight={hourHeight}
+              startHour={startHour}
+              endHour={endHour}
+            />
 
             {/* Appointment area */}
             <div
               className="relative flex-1 border-l border-border cursor-pointer"
-              style={{ height: TOTAL_HOURS * hourHeight }}
+              style={{ height: totalHours * hourHeight }}
               onClick={(e) => {
                 // Only handle clicks on the background, not on appointment blocks
                 if ((e.target as HTMLElement).closest("button")) return;
                 const rect = e.currentTarget.getBoundingClientRect();
                 const y = e.clientY - rect.top;
                 const hoursFromTop = y / hourHeight;
-                const totalMinutes = Math.round((START_HOUR + hoursFromTop) * 60);
+                const totalMinutes = Math.round((startHour + hoursFromTop) * 60);
                 // Snap to nearest 30 min
                 const snapped = Math.round(totalMinutes / 30) * 30;
                 const hour = Math.floor(snapped / 60);
@@ -1253,7 +1143,11 @@ export default function SchedulePage() {
                 setShowBookingForm(true);
               }}
             >
-              <GridLines hourHeight={hourHeight} />
+              <GridLines
+                hourHeight={hourHeight}
+                startHour={startHour}
+                endHour={endHour}
+              />
 
               {/* Current time indicator */}
               {showNowLine && (
@@ -1283,6 +1177,7 @@ export default function SchedulePage() {
                         column={slot.column}
                         columnCount={slot.columnCount}
                         hourHeight={hourHeight}
+                        startHour={startHour}
                       />
                     );
                   });
@@ -1336,170 +1231,6 @@ export default function SchedulePage() {
           editingAppointment={editingAppointment}
         />
       )}
-    </div>
-  );
-}
-
-function PrepareFieldDayButton({
-  currentDate,
-  appointments,
-  online,
-}: {
-  currentDate: Date;
-  appointments: Appointment[] | null;
-  online: boolean;
-}) {
-  const utils = trpc.useUtils();
-  const [isPreparing, setIsPreparing] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
-    null
-  );
-  const [lastPrepared, setLastPrepared] = useState<{
-    at: string;
-    date: string;
-    cached: number;
-    failed: number;
-  } | null>(null);
-  const prepStorageKey = `vetroamer.fieldDayPrepared.${toISODate(currentDate)}`;
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(prepStorageKey);
-      setLastPrepared(raw ? JSON.parse(raw) : null);
-    } catch {
-      setLastPrepared(null);
-    }
-  }, [prepStorageKey]);
-
-  const handlePrepare = async () => {
-    if (!online) {
-      toast.error("Connect to the network before preparing for field day.");
-      return;
-    }
-
-    setIsPreparing(true);
-    setProgress(null);
-    try {
-      // Re-fetch the day's appointments fresh and cache them.
-      const fresh = await utils.appointments.list.fetch({
-        startDate: startOfDay(currentDate).toISOString(),
-        endDate: endOfDay(currentDate).toISOString(),
-      });
-
-      const cacheable: CachedAppointment[] = (fresh ?? []).map((appt) => ({
-        ...appt,
-        startTime:
-          appt.startTime instanceof Date
-            ? appt.startTime.toISOString()
-            : appt.startTime,
-        endTime:
-          appt.endTime instanceof Date
-            ? appt.endTime.toISOString()
-            : appt.endTime,
-      }));
-      await saveCachedSchedule(toISODate(currentDate), cacheable);
-
-      // Cache snapshots for every unique patient on the schedule.
-      const seen = new Set<string>();
-      const patientIds: string[] = [];
-      for (const appt of fresh ?? appointments ?? []) {
-        if (appt.patientId && !seen.has(appt.patientId)) {
-          seen.add(appt.patientId);
-          patientIds.push(appt.patientId);
-        }
-      }
-
-      setProgress({ done: 0, total: patientIds.length });
-      let cached = 0;
-      let failed = 0;
-      for (const id of patientIds) {
-        try {
-          const snapshot = await utils.patients.getOfflineSnapshot.fetch({ id });
-          await saveCachedPatientSnapshot({
-            patientId: id,
-            patient: snapshot.patient,
-            weights: snapshot.weights,
-            allergies: snapshot.allergies,
-            problems: snapshot.problems,
-            vaccinations: snapshot.vaccinations,
-            prescriptions: snapshot.prescriptions,
-            soapNotes: snapshot.soapNotes,
-            labResults: snapshot.labResults,
-            procedures: snapshot.procedures,
-            alerts: snapshot.alerts,
-          });
-          cached += 1;
-        } catch (err) {
-          console.warn(`Could not cache patient ${id}:`, err);
-          failed += 1;
-        }
-        setProgress({ done: cached + failed, total: patientIds.length });
-      }
-
-      if (failed > 0) {
-        toast.warning(
-          `Cached ${cached} of ${patientIds.length} patient charts (${failed} failed).`
-        );
-      } else if (cached === 0) {
-        toast.success("Schedule cached. No patient charts to download.");
-      } else {
-        toast.success(`Cached ${cached} patient chart${cached === 1 ? "" : "s"} for offline use.`);
-      }
-
-      const prepared = {
-        at: new Date().toISOString(),
-        date: toISODate(currentDate),
-        cached,
-        failed,
-      };
-      setLastPrepared(prepared);
-      try {
-        window.localStorage.setItem(prepStorageKey, JSON.stringify(prepared));
-      } catch {
-        // Best-effort UI hint only; the actual cache has already been written.
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error(
-        err instanceof Error ? err.message : "Could not prepare for field day."
-      );
-    } finally {
-      setIsPreparing(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={handlePrepare}
-        disabled={isPreparing}
-        title="Cache today's schedule and patient charts for offline use"
-      >
-        {isPreparing ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <CloudDownload className="mr-1.5 h-3.5 w-3.5" />
-        )}
-        {isPreparing
-          ? progress
-            ? `Caching ${progress.done}/${progress.total}`
-            : "Preparing..."
-          : "Prepare for field day"}
-      </Button>
-      {lastPrepared ? (
-        <p className="max-w-[16rem] text-right text-[11px] text-muted-foreground">
-          Last prepared {new Date(lastPrepared.at).toLocaleTimeString([], {
-            hour: "numeric",
-            minute: "2-digit",
-          })}{" "}
-          · {lastPrepared.cached} chart
-          {lastPrepared.cached === 1 ? "" : "s"} cached
-          {lastPrepared.failed ? ` · ${lastPrepared.failed} failed` : ""}
-        </p>
-      ) : null}
     </div>
   );
 }

@@ -63,12 +63,6 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  onClick={(event) => {
-                    if (typeof navigator !== "undefined" && !navigator.onLine) {
-                      event.preventDefault();
-                      window.location.assign(item.href);
-                    }
-                  }}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",

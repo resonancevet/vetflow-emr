@@ -8,6 +8,13 @@
       "when": 1780713697611,
       "tag": "0000_fresh_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780974599592,
+      "tag": "0001_lowly_karma",
+      "breakpoints": true
     }
   ]
 }

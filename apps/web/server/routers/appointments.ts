@@ -10,6 +10,7 @@ import {
   users,
   rooms,
   recurringSeries,
+  practices,
 } from "@openpims/db";
 
 export const appointmentsRouter = createRouter({
@@ -320,6 +321,23 @@ export const appointmentsRouter = createRouter({
           isNull(rooms.deletedAt)
         )
       );
+  }),
+
+  // Configurable day-grid bounds for the schedule, available to all roles.
+  getScheduleHours: protectedProcedure.query(async ({ ctx }) => {
+    const [practice] = await ctx.db
+      .select({
+        startHour: practices.scheduleStartHour,
+        endHour: practices.scheduleEndHour,
+      })
+      .from(practices)
+      .where(eq(practices.id, ctx.practiceId))
+      .limit(1);
+
+    return {
+      startHour: practice?.startHour ?? 8,
+      endHour: practice?.endHour ?? 18,
+    };
   }),
 
   createRecurring: protectedProcedure

@@ -42,7 +42,6 @@ import {
   useWeightUnit,
   type WeightUnit,
 } from "@/lib/weight-units";
-import { saveCachedPatientSnapshot } from "@/lib/offline/cache";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -157,33 +156,6 @@ export default function PatientDetailPage() {
       clientLastName: patient.clientLastName ?? null,
     });
   }, [patient]);
-
-  // Quietly refresh the offline snapshot cache whenever the patient is viewed
-  // online so a recently viewed chart is available in the field. We fetch via
-  // the tRPC client utility instead of useQuery so this stays out of the way
-  // and never blocks the page.
-  const { data: offlineSnapshot } = trpc.patients.getOfflineSnapshot.useQuery(
-    { id: params.id },
-    { enabled: !!params.id, staleTime: 60_000 }
-  );
-  useEffect(() => {
-    if (!offlineSnapshot) return;
-    saveCachedPatientSnapshot({
-      patientId: params.id,
-      patient: offlineSnapshot.patient,
-      weights: offlineSnapshot.weights,
-      allergies: offlineSnapshot.allergies,
-      problems: offlineSnapshot.problems,
-      vaccinations: offlineSnapshot.vaccinations,
-      prescriptions: offlineSnapshot.prescriptions,
-      soapNotes: offlineSnapshot.soapNotes,
-      labResults: offlineSnapshot.labResults,
-      procedures: offlineSnapshot.procedures,
-      alerts: offlineSnapshot.alerts,
-    }).catch((err) => {
-      console.warn("Could not cache offline snapshot:", err);
-    });
-  }, [offlineSnapshot, params.id]);
 
   const updatePhotoMutation = trpc.patients.update.useMutation({
     onSuccess: () => {
@@ -977,10 +949,7 @@ function WeightRow({
   };
 
   const invalidate = async () => {
-    await Promise.all([
-      utils.patients.getById.invalidate({ id: patientId }),
-      utils.patients.getOfflineSnapshot.invalidate({ id: patientId }),
-    ]);
+    await utils.patients.getById.invalidate({ id: patientId });
   };
 
   const updateMutation = trpc.patients.updateWeight.useMutation({

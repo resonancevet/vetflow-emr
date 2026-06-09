@@ -26,14 +26,27 @@ export const settingsRouter = createRouter({
 
   updatePractice: adminProcedure
     .input(
-      z.object({
-        name: z.string().min(1).optional(),
-        address: z.string().optional(),
-        phone: z.string().optional(),
-        email: z.string().email().optional(),
-        website: z.string().optional(),
-        timezone: z.string().optional(),
-      })
+      z
+        .object({
+          name: z.string().min(1).optional(),
+          address: z.string().optional(),
+          phone: z.string().optional(),
+          email: z.string().email().optional(),
+          website: z.string().optional(),
+          timezone: z.string().optional(),
+          scheduleStartHour: z.number().int().min(0).max(23).optional(),
+          scheduleEndHour: z.number().int().min(1).max(24).optional(),
+        })
+        .refine(
+          (data) =>
+            data.scheduleStartHour === undefined ||
+            data.scheduleEndHour === undefined ||
+            data.scheduleEndHour > data.scheduleStartHour,
+          {
+            message: "Schedule end time must be after the start time",
+            path: ["scheduleEndHour"],
+          }
+        )
     )
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db

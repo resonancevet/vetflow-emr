@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, ilike, or, sql, desc, ne, gt } from "drizzle-orm";
+import { eq, and, isNull, ilike, or, sql, desc, ne, gt, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import { writeAudit } from "../lib/audit";
@@ -134,6 +134,30 @@ export const patientsRouter = createRouter({
         .limit(10);
     }),
 
+  /**
+   * Given a list of patient IDs, returns those that exist and belong to the
+   * current practice. Used to prune the per-browser "recently viewed" list of
+   * stale entries (e.g. demo patients from another practice or deleted records).
+   */
+  filterExisting: protectedProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).max(50) }))
+    .query(async ({ ctx, input }) => {
+      if (input.ids.length === 0) return { ids: [] as string[] };
+
+      const rows = await ctx.db
+        .select({ id: patients.id })
+        .from(patients)
+        .where(
+          and(
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patients.deletedAt),
+            inArray(patients.id, input.ids)
+          )
+        );
+
+      return { ids: rows.map((r) => r.id) };
+    }),
+
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
@@ -193,239 +217,6 @@ export const patientsRouter = createRouter({
       ]);
 
       return { ...patient, weights, allergies };
-    }),
-
-  /**
-   * Returns a single bundled snapshot of a patient chart suitable for caching
-   * locally on a tablet for offline read-only use. Queries are limited to a
-   * recent window per record type to keep the payload small.
-   */
-  getOfflineSnapshot: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const [patient] = await ctx.db
-        .select({
-          id: patients.id,
-          name: patients.name,
-          species: patients.species,
-          breed: patients.breed,
-          sex: patients.sex,
-          dob: patients.dob,
-          color: patients.color,
-          microchipNumber: patients.microchipNumber,
-          photoUrl: patients.photoUrl,
-          status: patients.status,
-          clientId: patients.clientId,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
-          clientEmail: clients.email,
-          clientPhone: clients.phone,
-        })
-        .from(patients)
-        .leftJoin(clients, eq(patients.clientId, clients.id))
-        .where(
-          and(
-            eq(patients.id, input.id),
-            eq(patients.practiceId, ctx.practiceId),
-            isNull(patients.deletedAt)
-          )
-        )
-        .limit(1);
-
-      if (!patient) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Patient not found",
-        });
-      }
-
-      const now = new Date();
-
-      const [
-        weights,
-        allergies,
-        problems,
-        vaccinations,
-        prescriptionRows,
-        soapNoteRows,
-        labResultRows,
-        procedureRows,
-        alerts,
-      ] = await Promise.all([
-        ctx.db
-          .select()
-          .from(patientWeights)
-          .where(
-            and(
-              eq(patientWeights.patientId, input.id),
-              isNull(patientWeights.deletedAt)
-            )
-          )
-          .orderBy(desc(patientWeights.recordedAt))
-          .limit(50),
-        ctx.db
-          .select()
-          .from(patientAllergies)
-          .where(
-            and(
-              eq(patientAllergies.patientId, input.id),
-              isNull(patientAllergies.deletedAt)
-            )
-          ),
-        ctx.db
-          .select()
-          .from(problemList)
-          .where(
-            and(
-              eq(problemList.patientId, input.id),
-              eq(problemList.practiceId, ctx.practiceId),
-              isNull(problemList.deletedAt)
-            )
-          )
-          .orderBy(desc(problemList.createdAt)),
-        ctx.db
-          .select({
-            id: vaccinationRecords.id,
-            vaccineName: vaccinationRecords.vaccineName,
-            lotNumber: vaccinationRecords.lotNumber,
-            manufacturer: vaccinationRecords.manufacturer,
-            administeredAt: vaccinationRecords.administeredAt,
-            nextDueDate: vaccinationRecords.nextDueDate,
-            administeredByName: users.name,
-          })
-          .from(vaccinationRecords)
-          .leftJoin(users, eq(vaccinationRecords.administeredBy, users.id))
-          .where(
-            and(
-              eq(vaccinationRecords.patientId, input.id),
-              eq(vaccinationRecords.practiceId, ctx.practiceId),
-              isNull(vaccinationRecords.deletedAt)
-            )
-          )
-          .orderBy(desc(vaccinationRecords.administeredAt))
-          .limit(50),
-        ctx.db
-          .select({
-            id: prescriptions.id,
-            medicationName: prescriptions.medicationName,
-            dosage: prescriptions.dosage,
-            frequency: prescriptions.frequency,
-            quantity: prescriptions.quantity,
-            refillsRemaining: prescriptions.refillsRemaining,
-            startDate: prescriptions.startDate,
-            endDate: prescriptions.endDate,
-            status: prescriptions.status,
-            instructions: prescriptions.instructions,
-            prescriberName: users.name,
-            createdAt: prescriptions.createdAt,
-          })
-          .from(prescriptions)
-          .leftJoin(users, eq(prescriptions.prescribedBy, users.id))
-          .where(
-            and(
-              eq(prescriptions.patientId, input.id),
-              eq(prescriptions.practiceId, ctx.practiceId),
-              isNull(prescriptions.deletedAt)
-            )
-          )
-          .orderBy(desc(prescriptions.createdAt))
-          .limit(50),
-        ctx.db
-          .select({
-            id: soapNotes.id,
-            subjective: soapNotes.subjective,
-            objective: soapNotes.objective,
-            assessment: soapNotes.assessment,
-            plan: soapNotes.plan,
-            authorName: users.name,
-            createdAt: soapNotes.createdAt,
-            updatedAt: soapNotes.updatedAt,
-          })
-          .from(soapNotes)
-          .leftJoin(users, eq(soapNotes.authorId, users.id))
-          .where(
-            and(
-              eq(soapNotes.patientId, input.id),
-              eq(soapNotes.practiceId, ctx.practiceId),
-              isNull(soapNotes.deletedAt)
-            )
-          )
-          .orderBy(desc(soapNotes.createdAt))
-          .limit(20),
-        ctx.db
-          .select({
-            id: labResults.id,
-            testName: labResults.testName,
-            resultValue: labResults.resultValue,
-            unit: labResults.unit,
-            referenceRangeLow: labResults.referenceRangeLow,
-            referenceRangeHigh: labResults.referenceRangeHigh,
-            status: labResults.status,
-            orderedByName: users.name,
-            createdAt: labResults.createdAt,
-          })
-          .from(labResults)
-          .leftJoin(users, eq(labResults.orderedBy, users.id))
-          .where(
-            and(
-              eq(labResults.patientId, input.id),
-              eq(labResults.practiceId, ctx.practiceId),
-              isNull(labResults.deletedAt)
-            )
-          )
-          .orderBy(desc(labResults.createdAt))
-          .limit(50),
-        ctx.db
-          .select({
-            id: procedures.id,
-            name: procedures.name,
-            description: procedures.description,
-            performedByName: users.name,
-            anesthesiaUsed: procedures.anesthesiaUsed,
-            durationMinutes: procedures.durationMinutes,
-            notes: procedures.notes,
-            createdAt: procedures.createdAt,
-          })
-          .from(procedures)
-          .leftJoin(users, eq(procedures.performedBy, users.id))
-          .where(
-            and(
-              eq(procedures.patientId, input.id),
-              eq(procedures.practiceId, ctx.practiceId),
-              isNull(procedures.deletedAt)
-            )
-          )
-          .orderBy(desc(procedures.createdAt))
-          .limit(50),
-        ctx.db
-          .select()
-          .from(patientAlerts)
-          .where(
-            and(
-              eq(patientAlerts.practiceId, ctx.practiceId),
-              eq(patientAlerts.patientId, input.id),
-              isNull(patientAlerts.deletedAt),
-              or(
-                isNull(patientAlerts.expiresAt),
-                gt(patientAlerts.expiresAt, now)
-              )!
-            )
-          )
-          .orderBy(desc(patientAlerts.createdAt)),
-      ]);
-
-      return {
-        patient,
-        weights,
-        allergies,
-        problems,
-        vaccinations,
-        prescriptions: prescriptionRows,
-        soapNotes: soapNoteRows,
-        labResults: labResultRows,
-        procedures: procedureRows,
-        alerts,
-      };
     }),
 
   create: protectedProcedure

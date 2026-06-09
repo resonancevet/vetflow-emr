@@ -51,6 +51,17 @@ const TIMEZONES = [
   "Pacific/Honolulu",
 ];
 
+/** Formats a 0–24 hour integer as a 12-hour clock label (e.g. 8 → "8:00 AM"). */
+function formatHourLabel(hour: number): string {
+  if (hour === 24) return "12:00 AM (midnight)";
+  const period = hour < 12 ? "AM" : "PM";
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:00 ${period}`;
+}
+
+const SCHEDULE_START_HOURS = Array.from({ length: 24 }, (_, i) => i); // 0–23
+const SCHEDULE_END_HOURS = Array.from({ length: 24 }, (_, i) => i + 1); // 1–24
+
 const PRESET_COLORS = [
   "#0d9488",
   "#dc2626",
@@ -156,6 +167,8 @@ function PracticeInfoTab() {
     email: string;
     website: string;
     timezone: string;
+    scheduleStartHour: number;
+    scheduleEndHour: number;
   } | null>(null);
 
   // Initialize form when data loads
@@ -166,6 +179,8 @@ function PracticeInfoTab() {
     email: practice?.email ?? "",
     website: practice?.website ?? "",
     timezone: practice?.timezone ?? "America/New_York",
+    scheduleStartHour: practice?.scheduleStartHour ?? 8,
+    scheduleEndHour: practice?.scheduleEndHour ?? 18,
   };
 
   if (isLoading) {
@@ -176,9 +191,11 @@ function PracticeInfoTab() {
     );
   }
 
-  const handleChange = (field: string, value: string) => {
+  const handleChange = (field: string, value: string | number) => {
     setForm({ ...current, [field]: value });
   };
+
+  const scheduleInvalid = current.scheduleEndHour <= current.scheduleStartHour;
 
   return (
     <div className="max-w-2xl space-y-6 rounded-lg border border-border bg-card p-6">
@@ -235,12 +252,58 @@ function PracticeInfoTab() {
             ))}
           </select>
         </label>
+
+        <div className="border-t border-border pt-4">
+          <h3 className="text-sm font-semibold">Schedule Hours</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The start and end of the day shown on the appointment calendar.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <label className="space-y-1.5">
+              <span className="text-sm font-medium">Set start time</span>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={current.scheduleStartHour}
+                onChange={(e) =>
+                  handleChange("scheduleStartHour", Number(e.target.value))
+                }
+              >
+                {SCHEDULE_START_HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {formatHourLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-sm font-medium">Set end time</span>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={current.scheduleEndHour}
+                onChange={(e) =>
+                  handleChange("scheduleEndHour", Number(e.target.value))
+                }
+              >
+                {SCHEDULE_END_HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {formatHourLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {scheduleInvalid && (
+            <p className="mt-2 text-xs text-destructive">
+              End time must be after the start time.
+            </p>
+          )}
+        </div>
       </div>
       <Button
         onClick={() => {
           updateMutation.mutate(current);
         }}
-        disabled={updateMutation.isPending}
+        disabled={updateMutation.isPending || scheduleInvalid}
       >
         {updateMutation.isPending ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />

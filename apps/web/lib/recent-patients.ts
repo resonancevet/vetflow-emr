@@ -69,6 +69,20 @@ export function clearRecentPatients(): void {
 }
 
 /**
+ * Removes any recent entries whose IDs are not in `validIds`, dropping stale
+ * patients (deleted, or belonging to a practice the user no longer views).
+ * No-op when nothing would change so we don't churn storage/events.
+ */
+export function pruneRecentPatients(validIds: string[]): void {
+  const existing = readFromStorage();
+  if (existing.length === 0) return;
+  const valid = new Set(validIds);
+  const next = existing.filter((p) => valid.has(p.id));
+  if (next.length === existing.length) return;
+  writeToStorage(next);
+}
+
+/**
  * React hook that subscribes to the recent patients list. Updates when this
  * tab writes via `recordPatientView` or when another tab updates storage.
  */

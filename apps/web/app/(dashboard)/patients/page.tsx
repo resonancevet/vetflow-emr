@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Plus, PawPrint, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
-import { useRecentPatients } from "@/lib/recent-patients";
+import { useRecentPatients, pruneRecentPatients } from "@/lib/recent-patients";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -46,6 +46,22 @@ export default function PatientsPage() {
   const [search, setSearch] = useState("");
   const [species, setSpecies] = useState("");
   const recentPatients = useRecentPatients();
+
+  // Validate the per-browser recent list against the current practice and drop
+  // stale entries (e.g. demo patients from another practice or deleted records).
+  const recentIds = useMemo(
+    () => recentPatients.map((p) => p.id),
+    [recentPatients]
+  );
+  const { data: validRecent } = trpc.patients.filterExisting.useQuery(
+    { ids: recentIds },
+    { enabled: recentIds.length > 0 }
+  );
+  useEffect(() => {
+    if (validRecent) {
+      pruneRecentPatients(validRecent.ids);
+    }
+  }, [validRecent]);
 
   const { data, isLoading, error } = trpc.patients.list.useQuery({
     search: search || undefined,
