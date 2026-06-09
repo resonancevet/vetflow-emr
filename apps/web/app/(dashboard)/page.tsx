@@ -305,7 +305,10 @@ export default function DashboardPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "0.5rem",
                       fontSize: "0.875rem",
+                      color: "hsl(var(--foreground))",
                     }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
                   />
                   <Legend wrapperStyle={{ fontSize: "0.75rem" }} />
                   <Bar
@@ -361,7 +364,10 @@ export default function DashboardPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "0.5rem",
                       fontSize: "0.875rem",
+                      color: "hsl(var(--foreground))",
                     }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -399,7 +405,10 @@ export default function DashboardPage() {
                     border: "1px solid hsl(var(--border))",
                     borderRadius: "0.5rem",
                     fontSize: "0.875rem",
+                    color: "hsl(var(--foreground))",
                   }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "hsl(var(--foreground))" }}
                   formatter={(value: number) => [formatCurrency(value), "Revenue"]}
                 />
                 <Line
