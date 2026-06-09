@@ -306,14 +306,19 @@ function AppointmentBlock({
   const widthPct = 100 / totalCols;
   const leftPct = column * widthPct;
 
+  // Gate the detail line on the actual rendered height (not the raw slot
+  // height) so the time range isn't clipped on short blocks.
+  const renderedHeight = Math.max(height, 44);
+  const showDetails = renderedHeight >= 44;
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="absolute rounded-md px-2 py-1.5 text-left text-xs lg:text-sm overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 min-h-11"
+      className="absolute rounded-md px-2 py-1 text-left text-xs lg:text-sm leading-tight overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 min-h-11"
       style={{
         top,
-        height: Math.max(height, 44),
+        height: renderedHeight,
         left: `calc(${leftPct}% + 2px)`,
         width: `calc(${widthPct}% - 4px)`,
         backgroundColor: `${bgColor}20`,
@@ -333,8 +338,8 @@ function AppointmentBlock({
           )}
         </span>
       </div>
-      {height >= 36 && (
-        <div className="text-muted-foreground truncate mt-0.5">
+      {showDetails && (
+        <div className="text-muted-foreground truncate">
           {appointment.typeName || "Appointment"} &middot;{" "}
           {formatTime(start)} - {formatTime(end)}
         </div>
@@ -1115,7 +1120,7 @@ export default function SchedulePage() {
       ) : (
         <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
           {/* Day grid */}
-          <div className="flex overflow-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
+          <div className="flex overflow-auto pt-9 pb-9" style={{ maxHeight: "calc(100vh - 220px)" }}>
             {/* Time labels */}
             <TimeSlots
               hourHeight={hourHeight}
