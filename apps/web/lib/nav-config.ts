@@ -1,6 +1,11 @@
 import {
+  BarChart3,
   Calendar,
+  Clipboard,
+  DollarSign,
+  LayoutDashboard,
   MessageSquare,
+  Package,
   PawPrint,
   Settings,
   Users,
@@ -22,17 +27,27 @@ export type NavItem = {
  * mobile bottom-nav slots are Schedule, Patients, Clients, Settings.
  */
 export const v0NavItems: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/schedule", label: "Schedule", icon: Calendar, mobilePrimary: true },
   { href: "/patients", label: "Patients", icon: PawPrint, mobilePrimary: true },
   { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
+  { href: "/whiteboard", label: "Whiteboard", icon: Clipboard },
+  { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/billing", label: "Billing", icon: DollarSign },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];
 
 export const routeLabels: Record<string, string> = {
+  "/": "Dashboard",
   "/schedule": "Schedule",
   "/patients": "Patients",
   "/settings": "Settings",
   "/clients": "Clients",
+  "/whiteboard": "Whiteboard",
+  "/inventory": "Inventory",
+  "/billing": "Billing",
+  "/reports": "Reports",
   "/communications": "Communications",
 };
 
