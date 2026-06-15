@@ -22,7 +22,14 @@ export default function NewSoapNotePage() {
   const [objective, setObjective] = useState("");
   const [assessment, setAssessment] = useState("");
   const [plan, setPlan] = useState("");
+  const [reasonForVisit, setReasonForVisit] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [prognosis, setPrognosis] = useState("");
   const [weight, setWeight] = useState("");
+  const [temperatureF, setTemperatureF] = useState("");
+  const [heartRate, setHeartRate] = useState("");
+  const [respiratoryRate, setRespiratoryRate] = useState("");
+  const [examStatus, setExamStatus] = useState<"wnl" | "abnormal" | "not_examined">("wnl");
   const [weightUnit, setWeightUnit] = useWeightUnit();
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
 
@@ -34,6 +41,7 @@ export default function NewSoapNotePage() {
 
   const createNote = trpc.records.createSoapNote.useMutation();
   const addWeight = trpc.patients.addWeight.useMutation();
+  const createVitals = trpc.compliance.createExamVitals.useMutation();
 
   async function handleSave() {
     if (!params.patientId) return;
@@ -45,7 +53,37 @@ export default function NewSoapNotePage() {
         objective: objective || undefined,
         assessment: assessment || undefined,
         plan: plan || undefined,
+        reasonForVisit: reasonForVisit || undefined,
+        diagnosis: diagnosis || undefined,
+        prognosis: prognosis || undefined,
       });
+
+      const weightKg = toKgString(weight, weightUnit);
+      const hasVitals =
+        weightKg ||
+        temperatureF ||
+        heartRate ||
+        respiratoryRate ||
+        examStatus !== "wnl";
+      if (hasVitals) {
+        try {
+          await createVitals.mutateAsync({
+            patientId: params.patientId,
+            soapNoteId: note.id,
+            weightKg: weightKg || undefined,
+            temperatureF: temperatureF || undefined,
+            heartRate: heartRate ? Number(heartRate) : undefined,
+            respiratoryRate: respiratoryRate ? Number(respiratoryRate) : undefined,
+            examStatus,
+          });
+        } catch (vitalsErr) {
+          toast.error(
+            vitalsErr instanceof Error
+              ? `Vitals not saved: ${vitalsErr.message}`
+              : "Vitals not saved"
+          );
+        }
+      }
 
       if (pendingAttachments.length > 0) {
         await Promise.all(
@@ -59,8 +97,6 @@ export default function NewSoapNotePage() {
         );
       }
 
-      // Save weight as a separate vital so the Weight tab stays accurate.
-      const weightKg = toKgString(weight, weightUnit);
       if (weightKg) {
         try {
           await addWeight.mutateAsync({
@@ -69,7 +105,6 @@ export default function NewSoapNotePage() {
           });
           utils.patients.getById.invalidate({ id: params.patientId });
         } catch (weightErr) {
-          // Don't fail the whole save — the SOAP note already exists.
           toast.error(
             weightErr instanceof Error
               ? `Weight not saved: ${weightErr.message}`
@@ -126,28 +161,98 @@ export default function NewSoapNotePage() {
       <div className="mt-6 space-y-6">
         <div className="rounded-lg border border-border bg-card p-4 sm:p-6 space-y-6">
           <div>
+            <label htmlFor="reason" className="block text-sm font-medium mb-1.5">
+              Reason for visit
+            </label>
+            <Input
+              id="reason"
+              value={reasonForVisit}
+              onChange={(e) => setReasonForVisit(e.target.value)}
+              placeholder="Chief complaint or visit reason"
+            />
+          </div>
+
+          <div>
             <label
               htmlFor="weight-input"
               className="block text-sm font-medium mb-1.5"
             >
-              Weight ({weightUnit})
+              Vitals
             </label>
             <p className="text-xs text-muted-foreground mb-2">
-              Optional. Saved to this patient&apos;s weight history in
-              kilograms.
+              Weight is also saved to the patient weight history.
             </p>
-            <div className="flex items-center gap-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center gap-2 sm:col-span-2">
+                <Input
+                  id="weight-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder={weightUnit === "lb" ? "Weight (lb)" : "Weight (kg)"}
+                  className="min-h-11"
+                />
+                <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+              </div>
               <Input
-                id="weight-input"
                 type="number"
-                step="0.01"
-                min="0"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                placeholder={weightUnit === "lb" ? "e.g. 31.3" : "e.g. 14.2"}
-                className="max-w-[12rem] min-h-11"
+                step="0.1"
+                value={temperatureF}
+                onChange={(e) => setTemperatureF(e.target.value)}
+                placeholder="Temp (°F)"
               />
-              <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+              <Input
+                type="number"
+                value={heartRate}
+                onChange={(e) => setHeartRate(e.target.value)}
+                placeholder="Heart rate"
+              />
+              <Input
+                type="number"
+                value={respiratoryRate}
+                onChange={(e) => setRespiratoryRate(e.target.value)}
+                placeholder="Resp rate"
+              />
+              <select
+                value={examStatus}
+                onChange={(e) =>
+                  setExamStatus(
+                    e.target.value as "wnl" | "abnormal" | "not_examined"
+                  )
+                }
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm sm:col-span-2"
+              >
+                <option value="wnl">Physical exam: WNL</option>
+                <option value="abnormal">Physical exam: Abnormal</option>
+                <option value="not_examined">Physical exam: Not examined</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="diagnosis" className="block text-sm font-medium mb-1.5">
+                Diagnosis
+              </label>
+              <Input
+                id="diagnosis"
+                value={diagnosis}
+                onChange={(e) => setDiagnosis(e.target.value)}
+                placeholder="Structured diagnosis"
+              />
+            </div>
+            <div>
+              <label htmlFor="prognosis" className="block text-sm font-medium mb-1.5">
+                Prognosis
+              </label>
+              <Input
+                id="prognosis"
+                value={prognosis}
+                onChange={(e) => setPrognosis(e.target.value)}
+                placeholder="Prognosis"
+              />
             </div>
           </div>
 

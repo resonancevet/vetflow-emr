@@ -108,6 +108,9 @@ export function SoapNotesTab({
     objective: "",
     assessment: "",
     plan: "",
+    diagnosis: "",
+    prognosis: "",
+    reasonForVisit: "",
   });
   const [editUpdatedAt, setEditUpdatedAt] = useState<Date | undefined>();
 
@@ -151,6 +154,9 @@ export function SoapNotesTab({
     objective: string | null;
     assessment: string | null;
     plan: string | null;
+    diagnosis?: string | null;
+    prognosis?: string | null;
+    reasonForVisit?: string | null;
     updatedAt?: Date | string | null;
   }) => {
     setEditingNoteId(note.id);
@@ -160,6 +166,9 @@ export function SoapNotesTab({
       objective: note.objective ?? "",
       assessment: note.assessment ?? "",
       plan: note.plan ?? "",
+      diagnosis: note.diagnosis ?? "",
+      prognosis: note.prognosis ?? "",
+      reasonForVisit: note.reasonForVisit ?? "",
     });
     setEditUpdatedAt(
       note.updatedAt ? new Date(note.updatedAt) : undefined
@@ -176,6 +185,9 @@ export function SoapNotesTab({
       objective: editForm.objective,
       assessment: editForm.assessment,
       plan: editForm.plan,
+      diagnosis: editForm.diagnosis || undefined,
+      prognosis: editForm.prognosis || undefined,
+      reasonForVisit: editForm.reasonForVisit || undefined,
       clientUpdatedAt: editUpdatedAt,
     });
   };
@@ -232,7 +244,11 @@ export function SoapNotesTab({
                               : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
                           )}
                         >
-                          {isFinalized ? "Finalized" : "Draft"}
+                          {isFinalized
+                            ? note.autoFinalized
+                              ? "Auto-locked"
+                              : "Finalized"
+                            : "Draft"}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -275,6 +291,27 @@ export function SoapNotesTab({
                           }
                         />
                         <SoapEditField
+                          label="Reason for visit"
+                          value={editForm.reasonForVisit}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, reasonForVisit: v }))
+                          }
+                        />
+                        <SoapEditField
+                          label="Diagnosis"
+                          value={editForm.diagnosis}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, diagnosis: v }))
+                          }
+                        />
+                        <SoapEditField
+                          label="Prognosis"
+                          value={editForm.prognosis}
+                          onChange={(v) =>
+                            setEditForm((f) => ({ ...f, prognosis: v }))
+                          }
+                        />
+                        <SoapEditField
                           label="Plan"
                           value={editForm.plan}
                           onChange={(v) =>
@@ -305,10 +342,13 @@ export function SoapNotesTab({
                       <>
                         {isFinalized && (
                           <p className="text-xs text-muted-foreground">
-                            Signed by {note.finalizedByName ?? "Unknown"} on{" "}
+                            {note.autoFinalized ? "Auto-locked" : "Signed"} by{" "}
+                            {note.finalizedByName ?? "Unknown"} on{" "}
                             {note.finalizedAt
                               ? new Date(note.finalizedAt).toLocaleString()
                               : "unknown date"}
+                            {note.autoFinalized &&
+                              " (24-hour record lock per NH Vet 701.01(c))"}
                           </p>
                         )}
                         {canCreate && !isFinalized && (
@@ -335,9 +375,15 @@ export function SoapNotesTab({
                             </Button>
                           </div>
                         )}
+                        <SoapField
+                          label="Reason for visit"
+                          value={note.reasonForVisit}
+                        />
                         <SoapField label="Subjective" value={note.subjective} />
                         <SoapField label="Objective" value={note.objective} />
                         <SoapField label="Assessment" value={note.assessment} />
+                        <SoapField label="Diagnosis" value={note.diagnosis} />
+                        <SoapField label="Prognosis" value={note.prognosis} />
                         <SoapField label="Plan" value={note.plan} />
                       </>
                     )}
@@ -969,6 +1015,15 @@ export function PrescriptionsTab({
     endDate: "",
     status: "active" as "active" | "completed" | "cancelled" | "expired",
     instructions: "",
+    route: "oral" as
+      | "oral"
+      | "topical"
+      | "subcutaneous"
+      | "intramuscular"
+      | "intravenous"
+      | "other",
+    responseToTreatment: "",
+    administeredAt: "",
   });
 
   const invalidate = () =>
@@ -1003,6 +1058,11 @@ export function PrescriptionsTab({
       endDate: rx.endDate ?? "",
       status: (rx.status ?? "active") as typeof form.status,
       instructions: rx.instructions ?? "",
+      route: (rx.route ?? "oral") as typeof form.route,
+      responseToTreatment: rx.responseToTreatment ?? "",
+      administeredAt: rx.administeredAt
+        ? new Date(rx.administeredAt).toISOString().slice(0, 16)
+        : "",
     });
   };
 
@@ -1020,6 +1080,11 @@ export function PrescriptionsTab({
       endDate: form.endDate || undefined,
       status: form.status,
       instructions: form.instructions || undefined,
+      route: form.route,
+      responseToTreatment: form.responseToTreatment || undefined,
+      administeredAt: form.administeredAt
+        ? new Date(form.administeredAt).toISOString()
+        : undefined,
     });
   };
 
@@ -1047,6 +1112,9 @@ export function PrescriptionsTab({
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Frequency
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Route
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Status
@@ -1114,6 +1182,29 @@ export function PrescriptionsTab({
                     />
                   ) : (
                     rx.frequency ?? "--"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing ? (
+                    <select
+                      value={form.route}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          route: e.target.value as typeof form.route,
+                        }))
+                      }
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="oral">Oral</option>
+                      <option value="topical">Topical</option>
+                      <option value="subcutaneous">SC</option>
+                      <option value="intramuscular">IM</option>
+                      <option value="intravenous">IV</option>
+                      <option value="other">Other</option>
+                    </select>
+                  ) : (
+                    rx.route ?? "—"
                   )}
                 </td>
                 <td className="px-4 py-3">
@@ -1870,6 +1961,109 @@ export function LabResultsTab({
   );
 }
 
+function ProcedureTeamSection({
+  procedureId,
+  canManage,
+}: {
+  procedureId: string;
+  canManage: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const { data: team } = trpc.compliance.listProcedureTeam.useQuery({
+    procedureId,
+  });
+  const { data: staff } = trpc.compliance.listPracticeStaff.useQuery(undefined, {
+    enabled: canManage,
+  });
+  const [userId, setUserId] = useState("");
+  const [role, setRole] = useState("");
+
+  const addMember = trpc.compliance.addProcedureTeamMember.useMutation({
+    onSuccess: () => {
+      toast.success("Team member added");
+      utils.compliance.listProcedureTeam.invalidate({ procedureId });
+      setUserId("");
+      setRole("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const removeMember = trpc.compliance.removeProcedureTeamMember.useMutation({
+    onSuccess: () => {
+      utils.compliance.listProcedureTeam.invalidate({ procedureId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="mt-2 rounded-md border border-dashed border-border bg-muted/30 p-2">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Team members
+      </p>
+      {team && team.length > 0 ? (
+        <ul className="mt-1 space-y-1 text-xs">
+          {team.map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-2">
+              <span>
+                {m.userName}
+                {m.role ? ` (${m.role})` : ""}
+              </span>
+              {canManage && (
+                <button
+                  type="button"
+                  className="text-destructive hover:underline"
+                  onClick={() => removeMember.mutate({ id: m.id })}
+                >
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground">No team listed</p>
+      )}
+      {canManage && staff && staff.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <select
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+          >
+            <option value="">Add staff...</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.role})
+              </option>
+            ))}
+          </select>
+          <Input
+            className="h-8 max-w-[8rem] text-xs"
+            placeholder="Role"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!userId || addMember.isPending}
+            onClick={() =>
+              addMember.mutate({
+                procedureId,
+                userId,
+                role: role || undefined,
+              })
+            }
+          >
+            Add
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProceduresTab({
   patient,
   canManage,
@@ -1881,6 +2075,7 @@ export function ProceduresTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
+    procedureType: "general" as "general" | "surgery" | "dental" | "other",
     description: "",
     anesthesiaUsed: "",
     durationMinutes: "",
@@ -1924,6 +2119,7 @@ export function ProceduresTab({
     setEditingId(proc.id);
     setEditForm({
       name: proc.name,
+      procedureType: (proc.procedureType ?? "general") as typeof editForm.procedureType,
       description: proc.description ?? "",
       anesthesiaUsed: proc.anesthesiaUsed ?? "",
       durationMinutes:
@@ -1940,6 +2136,7 @@ export function ProceduresTab({
     updateProcedure.mutate({
       id: editingId,
       name: editForm.name.trim(),
+      procedureType: editForm.procedureType,
       description: editForm.description || undefined,
       anesthesiaUsed: editForm.anesthesiaUsed || undefined,
       durationMinutes:
@@ -1970,6 +2167,11 @@ export function ProceduresTab({
             createProcedure.mutate({
               patientId: patient.id,
               name: formData.get("name") as string,
+              procedureType: (formData.get("procedureType") as
+                | "general"
+                | "surgery"
+                | "dental"
+                | "other") || "general",
               description:
                 (formData.get("description") as string) || undefined,
               anesthesiaUsed:
@@ -1991,6 +2193,21 @@ export function ProceduresTab({
                 required
                 placeholder="e.g. Dental Prophylaxis"
               />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Type
+              </label>
+              <select
+                name="procedureType"
+                defaultValue="general"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="general">General</option>
+                <option value="surgery">Surgery</option>
+                <option value="dental">Dental</option>
+                <option value="other">Other</option>
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -2101,7 +2318,12 @@ export function ProceduresTab({
                         </div>
                       ) : (
                         <>
-                          <p className="font-medium">{proc.name}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium">{proc.name}</p>
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                              {proc.procedureType ?? "general"}
+                            </span>
+                          </div>
                           {proc.description && (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {proc.description}
@@ -2112,6 +2334,10 @@ export function ProceduresTab({
                               {proc.notes}
                             </p>
                           )}
+                          <ProcedureTeamSection
+                            procedureId={proc.id}
+                            canManage={canManage}
+                          />
                         </>
                       )}
                     </td>

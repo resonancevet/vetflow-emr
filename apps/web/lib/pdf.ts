@@ -12,6 +12,55 @@ const FONT = "helvetica";
 const PAGE_MARGIN = 20; // mm
 const PAGE_WIDTH = 210; // A4 / letter approximate usable width
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2;
+const FOOTER_RESERVED = 22; // mm — NH Vet 701.01(b)(1)/(b)(2) identifier bar
+
+/** Owner/patient identifiers repeated on every exported record page. */
+export interface RecordPageIdentifiers {
+  patientName: string;
+  microchip?: string;
+  clientName: string;
+  clientAddress?: string;
+  clientPhone?: string;
+}
+
+function applyRecordPageFooters(
+  doc: jsPDF,
+  identifiers: RecordPageIdentifiers,
+  options?: { generatedLabel?: string }
+) {
+  const pageCount = doc.getNumberOfPages();
+  const today = new Date().toLocaleDateString();
+  const generatedLabel =
+    options?.generatedLabel ?? `Generated on ${today} — For reference only`;
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const barY = pageHeight - FOOTER_RESERVED;
+
+    doc.setFont(FONT, "normal");
+    doc.setFontSize(7);
+    setColor(doc, COLOR_GRAY);
+
+    const ownerParts = [`Owner: ${identifiers.clientName}`];
+    if (identifiers.clientAddress) ownerParts.push(identifiers.clientAddress);
+    if (identifiers.clientPhone) ownerParts.push(`Ph: ${identifiers.clientPhone}`);
+    const ownerLine = doc.splitTextToSize(ownerParts.join(" | "), CONTENT_WIDTH)[0] as string;
+
+    let patientLine = `Patient: ${identifiers.patientName}`;
+    if (identifiers.microchip) patientLine += ` | Microchip: ${identifiers.microchip}`;
+
+    doc.text(ownerLine, PAGE_MARGIN, barY);
+    doc.text(patientLine, PAGE_MARGIN, barY + 3.5);
+
+    doc.setFont(FONT, "italic");
+    doc.setFontSize(7);
+    doc.text(generatedLabel, PAGE_WIDTH / 2, barY + 8, { align: "center" });
+    doc.text(`Page ${i} of ${pageCount}`, PAGE_WIDTH - PAGE_MARGIN, barY + 8, {
+      align: "right",
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,7 +93,7 @@ function drawLine(doc: jsPDF, y: number) {
  */
 function ensureSpace(doc: jsPDF, y: number, needed: number): number {
   const pageHeight = doc.internal.pageSize.getHeight();
-  if (y + needed > pageHeight - 20) {
+  if (y + needed > pageHeight - FOOTER_RESERVED) {
     doc.addPage();
     return PAGE_MARGIN;
   }
@@ -395,6 +444,7 @@ export interface MedicalSummaryData {
   color?: string;
   microchip?: string;
   clientName: string;
+  clientAddress?: string;
   clientPhone?: string;
   clientEmail?: string;
   allergies: Array<{ allergen: string; severity: string }>;
@@ -406,6 +456,8 @@ export interface MedicalSummaryData {
     objective?: string;
     assessment?: string;
     plan?: string;
+    diagnosis?: string;
+    prognosis?: string;
   }>;
   prescriptions: Array<{
     medication: string;
@@ -514,6 +566,17 @@ export function generateMedicalSummaryPdf(data: MedicalSummaryData): jsPDF {
   doc.text(data.clientName, PAGE_MARGIN + doc.getTextWidth("Name: "), y);
   y += 6;
 
+  if (data.clientAddress) {
+    doc.setFont(FONT, "bold");
+    doc.text("Address: ", PAGE_MARGIN, y);
+    doc.setFont(FONT, "normal");
+    const addrLines = doc.splitTextToSize(
+      data.clientAddress,
+      CONTENT_WIDTH - doc.getTextWidth("Address: ")
+    );
+    doc.text(addrLines, PAGE_MARGIN + doc.getTextWidth("Address: "), y);
+    y += addrLines.length * 5 + 2;
+  }
   if (data.clientPhone) {
     doc.setFont(FONT, "bold");
     doc.text("Phone: ", PAGE_MARGIN, y);
@@ -631,6 +694,8 @@ export function generateMedicalSummaryPdf(data: MedicalSummaryData): jsPDF {
         ["S: ", note.subjective],
         ["O: ", note.objective],
         ["A: ", note.assessment],
+        ["Dx: ", note.diagnosis],
+        ["Px: ", note.prognosis],
         ["P: ", note.plan],
       ];
 
@@ -688,25 +753,13 @@ export function generateMedicalSummaryPdf(data: MedicalSummaryData): jsPDF {
     }
   }
 
-  // ---- Footer ---------------------------------------------------------------
-  const pageCount = doc.getNumberOfPages();
-  const today = new Date().toLocaleDateString();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    const pageHeight = doc.internal.pageSize.getHeight();
-    doc.setFont(FONT, "italic");
-    doc.setFontSize(8);
-    setColor(doc, COLOR_GRAY);
-    doc.text(
-      `Generated on ${today} — This document is for reference only`,
-      PAGE_WIDTH / 2,
-      pageHeight - 10,
-      { align: "center" }
-    );
-    doc.text(`Page ${i} of ${pageCount}`, PAGE_WIDTH - PAGE_MARGIN, pageHeight - 10, {
-      align: "right",
-    });
-  }
+  applyRecordPageFooters(doc, {
+    patientName: data.patientName,
+    microchip: data.microchip,
+    clientName: data.clientName,
+    clientAddress: data.clientAddress,
+    clientPhone: data.clientPhone,
+  });
 
   return doc;
 }
@@ -720,7 +773,10 @@ export interface DischargeInstructionsData {
   practicePhone?: string;
   patientName: string;
   species: string;
+  microchip?: string;
   clientName: string;
+  clientAddress?: string;
+  clientPhone?: string;
   visitDate: string;
   doctorName?: string;
   diagnosis?: string;
@@ -932,22 +988,21 @@ export function generateDischargeInstructions(
     doc.text(emergLines, PAGE_MARGIN, y);
   }
 
-  // Footer
-  const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setFont(FONT, "italic");
-  doc.setFontSize(8);
-  setColor(doc, COLOR_GRAY);
-  doc.text(
-    "If you have any questions or concerns, please contact our office.",
-    PAGE_WIDTH / 2,
-    pageHeight - 15,
-    { align: "center" }
+  applyRecordPageFooters(
+    doc,
+    {
+      patientName: data.patientName,
+      microchip: data.microchip,
+      clientName: data.clientName,
+      clientAddress: data.clientAddress,
+      clientPhone: data.clientPhone,
+    },
+    {
+      generatedLabel: data.practicePhone
+        ? `Questions? Call ${data.practicePhone}`
+        : "If you have questions, contact our office.",
+    }
   );
-  if (data.practicePhone) {
-    doc.text(data.practicePhone, PAGE_WIDTH / 2, pageHeight - 10, {
-      align: "center",
-    });
-  }
 
   return doc;
 }

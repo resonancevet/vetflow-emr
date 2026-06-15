@@ -5,7 +5,7 @@ export async function uploadFileToApi(
     entityType?: string;
     entityId?: string;
   }
-): Promise<{ url: string; key: string }> {
+): Promise<{ id?: string; url: string; key: string }> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("category", options.category);

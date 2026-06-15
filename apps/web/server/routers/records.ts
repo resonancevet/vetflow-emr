@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { createRouter, protectedProcedure, requireRole } from "../trpc";
+import { autoFinalizeStaleSoapNotes } from "@/lib/record-lockdown";
 import {
   soapNotes,
   soapNoteAddenda,
@@ -20,12 +20,15 @@ import {
   clientUpdatedAtSchema,
 } from "../lib/optimistic-update";
 import { writeAudit } from "../lib/audit";
+import { createRouter, protectedProcedure, requireRole } from "../trpc";
 
 export const recordsRouter = createRouter({
   // SOAP Notes
   listSoapNotes: protectedProcedure
     .input(z.object({ patientId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      await autoFinalizeStaleSoapNotes(ctx.db);
+
       const finalizedByUser = alias(users, "finalized_by_user");
       return ctx.db
         .select({
@@ -34,9 +37,13 @@ export const recordsRouter = createRouter({
           objective: soapNotes.objective,
           assessment: soapNotes.assessment,
           plan: soapNotes.plan,
+          diagnosis: soapNotes.diagnosis,
+          prognosis: soapNotes.prognosis,
+          reasonForVisit: soapNotes.reasonForVisit,
           authorName: users.name,
           finalizedAt: soapNotes.finalizedAt,
           finalizedByName: finalizedByUser.name,
+          autoFinalized: soapNotes.autoFinalized,
           createdAt: soapNotes.createdAt,
           updatedAt: soapNotes.updatedAt,
         })
@@ -66,6 +73,9 @@ export const recordsRouter = createRouter({
         objective: z.string().optional(),
         assessment: z.string().optional(),
         plan: z.string().optional(),
+        diagnosis: z.string().optional(),
+        prognosis: z.string().optional(),
+        reasonForVisit: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -89,6 +99,9 @@ export const recordsRouter = createRouter({
         objective: z.string().optional(),
         assessment: z.string().optional(),
         plan: z.string().optional(),
+        diagnosis: z.string().optional(),
+        prognosis: z.string().optional(),
+        reasonForVisit: z.string().optional(),
         clientUpdatedAt: clientUpdatedAtSchema,
       })
     )
@@ -121,7 +134,15 @@ export const recordsRouter = createRouter({
       // Empty string is a valid "clear this section" value, so we let it
       // through; only undefined fields are skipped.
       const updateValues: Record<string, string> = {};
-      for (const key of ["subjective", "objective", "assessment", "plan"] as const) {
+      for (const key of [
+        "subjective",
+        "objective",
+        "assessment",
+        "plan",
+        "diagnosis",
+        "prognosis",
+        "reasonForVisit",
+      ] as const) {
         const value = fields[key];
         if (value !== undefined) updateValues[key] = value;
       }
@@ -303,6 +324,7 @@ export const recordsRouter = createRouter({
           fileName: files.fileName,
           fileKey: files.fileKey,
           mimeType: files.mimeType,
+          category: files.category,
           createdAt: files.createdAt,
         })
         .from(files)
@@ -322,6 +344,7 @@ export const recordsRouter = createRouter({
         id: row.id,
         fileName: row.fileName,
         mimeType: row.mimeType,
+        category: row.category,
         createdAt: row.createdAt,
         fileUrl: `/api/files/${row.id}`,
       }));
@@ -629,6 +652,9 @@ export const recordsRouter = createRouter({
           startDate: prescriptions.startDate,
           endDate: prescriptions.endDate,
           status: prescriptions.status,
+          route: prescriptions.route,
+          responseToTreatment: prescriptions.responseToTreatment,
+          administeredAt: prescriptions.administeredAt,
           instructions: prescriptions.instructions,
           prescriberName: users.name,
           createdAt: prescriptions.createdAt,
@@ -658,13 +684,27 @@ export const recordsRouter = createRouter({
         startDate: z.string(),
         endDate: z.string().optional(),
         instructions: z.string().optional(),
+        route: z
+          .enum([
+            "oral",
+            "topical",
+            "subcutaneous",
+            "intramuscular",
+            "intravenous",
+            "other",
+          ])
+          .optional(),
+        responseToTreatment: z.string().optional(),
+        administeredAt: z.string().datetime().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { administeredAt, ...rest } = input;
       const [rx] = await ctx.db
         .insert(prescriptions)
         .values({
-          ...input,
+          ...rest,
+          administeredAt: administeredAt ? new Date(administeredAt) : null,
           prescribedBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
@@ -686,10 +726,22 @@ export const recordsRouter = createRouter({
         endDate: z.string().optional(),
         status: z.enum(["active", "completed", "cancelled", "expired"]),
         instructions: z.string().optional(),
+        route: z
+          .enum([
+            "oral",
+            "topical",
+            "subcutaneous",
+            "intramuscular",
+            "intravenous",
+            "other",
+          ])
+          .optional(),
+        responseToTreatment: z.string().optional(),
+        administeredAt: z.string().datetime().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...fields } = input;
+      const { id, administeredAt, ...fields } = input;
       const [rx] = await ctx.db
         .update(prescriptions)
         .set({
@@ -697,6 +749,9 @@ export const recordsRouter = createRouter({
           quantity: fields.quantity ?? null,
           endDate: fields.endDate || null,
           instructions: fields.instructions || null,
+          route: fields.route ?? null,
+          responseToTreatment: fields.responseToTreatment || null,
+          administeredAt: administeredAt ? new Date(administeredAt) : null,
         })
         .where(
           and(
@@ -895,6 +950,7 @@ export const recordsRouter = createRouter({
         .select({
           id: procedures.id,
           name: procedures.name,
+          procedureType: procedures.procedureType,
           description: procedures.description,
           performedByName: users.name,
           anesthesiaUsed: procedures.anesthesiaUsed,
@@ -921,6 +977,9 @@ export const recordsRouter = createRouter({
         patientId: z.string().uuid(),
         appointmentId: z.string().uuid().optional(),
         name: z.string().min(1),
+        procedureType: z
+          .enum(["general", "surgery", "dental", "other"])
+          .default("general"),
         description: z.string().optional(),
         anesthesiaUsed: z.string().optional(),
         durationMinutes: z.number().int().positive().optional(),
@@ -945,6 +1004,7 @@ export const recordsRouter = createRouter({
       z.object({
         id: z.string().uuid(),
         name: z.string().min(1),
+        procedureType: z.enum(["general", "surgery", "dental", "other"]),
         description: z.string().optional(),
         anesthesiaUsed: z.string().optional(),
         durationMinutes: z.number().int().positive().optional(),
@@ -957,6 +1017,7 @@ export const recordsRouter = createRouter({
         .update(procedures)
         .set({
           name: fields.name,
+          procedureType: fields.procedureType,
           description: fields.description || null,
           anesthesiaUsed: fields.anesthesiaUsed || null,
           durationMinutes: fields.durationMinutes ?? null,

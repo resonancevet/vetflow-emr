@@ -31,6 +31,7 @@ import {
   LabResultsTab,
   ProceduresTab,
 } from "@/components/patients/patient-clinical-tabs";
+import { PatientComplianceSection } from "@/components/patients/patient-compliance-section";
 import { PatientCommunicationsTab } from "@/components/patients/patient-communications-tab";
 import { PatientAllergiesSection } from "@/components/patients/patient-allergies-section";
 import { PatientAlertsBanner } from "@/components/patients/patient-alerts-banner";
@@ -91,7 +92,8 @@ type Tab =
   | "prescriptions"
   | "problems"
   | "labResults"
-  | "procedures";
+  | "procedures"
+  | "compliance";
 
 const allTabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -103,6 +105,7 @@ const allTabs: { id: Tab; label: string }[] = [
   { id: "problems", label: "Problems" },
   { id: "labResults", label: "Lab Results" },
   { id: "procedures", label: "Procedures" },
+  { id: "compliance", label: "Compliance" },
 ];
 
 // Tabs hidden from front desk staff (clinical-only content)
@@ -111,6 +114,7 @@ const frontDeskRestrictedTabs: Tab[] = [
   "prescriptions",
   "labResults",
   "procedures",
+  "compliance",
 ];
 
 export default function PatientDetailPage() {
@@ -244,6 +248,8 @@ export default function PatientDetailPage() {
         clientName: [patient.clientFirstName, patient.clientLastName]
           .filter(Boolean)
           .join(" "),
+        clientAddress: patient.clientAddress ?? undefined,
+        clientPhone: patient.clientPhone ?? undefined,
         allergies: (patient.allergies ?? []).map((a) => ({
           allergen: a.allergen,
           severity: a.severity ?? "unknown",
@@ -270,6 +276,8 @@ export default function PatientDetailPage() {
           objective: n.objective ?? undefined,
           assessment: n.assessment ?? undefined,
           plan: n.plan ?? undefined,
+          diagnosis: n.diagnosis ?? undefined,
+          prognosis: n.prognosis ?? undefined,
         })),
         prescriptions: prescriptions.map((rx) => ({
           medication: rx.medicationName,
@@ -674,6 +682,23 @@ export default function PatientDetailPage() {
               clientLastName: patient.clientLastName ?? null,
             }}
             canManage={canManagePrescriptions}
+          />
+        )}
+
+        {activeTab === "compliance" && (
+          <PatientComplianceSection
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              microchipNumber: patient.microchipNumber,
+              clientId: patient.clientId,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+              clientPhone: patient.clientPhone,
+              clientAddress: patient.clientAddress,
+            }}
+            canManage={canManageClinicalRecords}
           />
         )}
         </div>

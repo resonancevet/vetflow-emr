@@ -5,6 +5,7 @@ import {
   varchar,
   text,
   timestamp,
+  boolean,
   integer,
   numeric,
   date,
@@ -37,6 +38,13 @@ export const noteTypeEnum = pgEnum("note_type", [
 
 export const caseStatusEnum = pgEnum("case_status", ["open", "closed"]);
 
+export const procedureTypeEnum = pgEnum("procedure_type", [
+  "general",
+  "surgery",
+  "dental",
+  "other",
+]);
+
 export const soapNotes = pgTable(
   "soap_notes",
   {
@@ -55,8 +63,12 @@ export const soapNotes = pgTable(
     objective: text("objective"),
     assessment: text("assessment"),
     plan: text("plan"),
+    diagnosis: varchar("diagnosis", { length: 500 }),
+    prognosis: text("prognosis"),
+    reasonForVisit: varchar("reason_for_visit", { length: 500 }),
     finalizedAt: timestamp("finalized_at", { withTimezone: true }),
     finalizedBy: uuid("finalized_by").references(() => users.id),
+    autoFinalized: boolean("auto_finalized").notNull().default(false),
   },
   (table) => ({
     patientIdx: index("soap_notes_patient_idx").on(table.patientId),
@@ -142,6 +154,7 @@ export const procedures = pgTable("procedures", {
     .references(() => patients.id),
   appointmentId: uuid("appointment_id").references(() => appointments.id),
   name: varchar("name", { length: 255 }).notNull(),
+  procedureType: procedureTypeEnum("procedure_type").notNull().default("general"),
   description: text("description"),
   performedBy: uuid("performed_by").references(() => users.id),
   anesthesiaUsed: text("anesthesia_used"),

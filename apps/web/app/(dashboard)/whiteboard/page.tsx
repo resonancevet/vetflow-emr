@@ -5,6 +5,7 @@ import { Clock, User, X, Loader2, MapPin, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { generateDischargeInstructions } from "@/lib/pdf";
+import { uploadFileToApi } from "@/lib/upload";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -24,11 +25,16 @@ type WhiteboardAppointment = {
   status: string;
   startTime: Date | string;
   notes: string | null;
+  patientId: string | null;
   patientName: string | null;
   patientSpecies: string | null;
+  patientMicrochip: string | null;
   patientPhotoUrl: string | null;
+  clientId: string | null;
   clientFirstName: string | null;
   clientLastName: string | null;
+  clientPhone: string | null;
+  clientAddress: string | null;
   doctorName: string | null;
   roomName: string | null;
   typeName: string | null;
@@ -247,6 +253,9 @@ function AppointmentDetailModal({
   isUpdating: boolean;
 }) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const createDischarge = trpc.compliance.createDischargeInstructions.useMutation();
+  const attachDischargePdf = trpc.compliance.attachDischargePdf.useMutation();
+  const [isSavingDischarge, setIsSavingDischarge] = useState(false);
   const start = new Date(appointment.startTime);
 
   useEffect(() => {
@@ -296,27 +305,83 @@ function AppointmentDetailModal({
     });
   }
 
-  const handlePrintDischarge = () => {
-    generateDischargeInstructions({
-      practiceName: "",
-      patientName: appointment.patientName || "Unknown",
-      species: appointment.patientSpecies || "unknown",
-      clientName: clientName,
-      visitDate: new Date(appointment.startTime).toLocaleDateString(),
-      doctorName: appointment.doctorName || undefined,
-      medications: [],
-      instructions: [
-        "Monitor your pet for any changes in behavior or appetite",
-        "Administer all prescribed medications as directed",
-        "Keep the follow-up appointment if one was scheduled",
-        "Ensure fresh water is available at all times",
-      ],
-      emergencyNotes:
-        "If your pet shows signs of difficulty breathing, excessive bleeding, seizures, collapse, or inability to urinate, seek emergency veterinary care immediately.",
-    }).save(
-      `discharge_${(appointment.patientName || "patient").replace(/\s+/g, "_")}.pdf`
-    );
-    toast.success("Discharge instructions downloaded");
+  const defaultInstructions = [
+    "Monitor your pet for any changes in behavior or appetite",
+    "Administer all prescribed medications as directed",
+    "Keep the follow-up appointment if one was scheduled",
+    "Ensure fresh water is available at all times",
+  ];
+  const defaultEmergencyNotes =
+    "If your pet shows signs of difficulty breathing, excessive bleeding, seizures, collapse, or inability to urinate, seek emergency veterinary care immediately.";
+
+  const handlePrintDischarge = async () => {
+    if (!appointment.patientId) {
+      toast.error("Patient is required to save discharge instructions");
+      return;
+    }
+
+    setIsSavingDischarge(true);
+    const visitDate = new Date(appointment.startTime).toISOString().slice(0, 10);
+
+    try {
+      const record = await createDischarge.mutateAsync({
+        patientId: appointment.patientId,
+        appointmentId: appointment.id,
+        visitDate,
+        doctorName: appointment.doctorName || undefined,
+        instructions: defaultInstructions,
+        emergencyNotes: defaultEmergencyNotes,
+      });
+
+      const pdfData = {
+        practiceName: "",
+        patientName: appointment.patientName || "Unknown",
+        species: appointment.patientSpecies || "unknown",
+        microchip: appointment.patientMicrochip ?? undefined,
+        clientName,
+        clientAddress: appointment.clientAddress ?? undefined,
+        clientPhone: appointment.clientPhone ?? undefined,
+        visitDate: new Date(appointment.startTime).toLocaleDateString(),
+        doctorName: appointment.doctorName || undefined,
+        medications: [] as Array<{
+          name: string;
+          dosage: string;
+          frequency: string;
+        }>,
+        instructions: defaultInstructions,
+        emergencyNotes: defaultEmergencyNotes,
+      };
+
+      const doc = generateDischargeInstructions(pdfData);
+      const blob = doc.output("blob");
+      const pdfFile = new File(
+        [blob],
+        `discharge_${(appointment.patientName || "patient").replace(/\s+/g, "_")}.pdf`,
+        { type: "application/pdf" }
+      );
+
+      const upload = await uploadFileToApi(pdfFile, {
+        category: "discharge-pdf",
+        entityType: "discharge_instructions",
+        entityId: record.id,
+      });
+
+      if (upload.id) {
+        await attachDischargePdf.mutateAsync({
+          id: record.id,
+          pdfFileId: upload.id,
+        });
+      }
+
+      doc.save(pdfFile.name);
+      toast.success("Discharge instructions saved and downloaded");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save discharge instructions"
+      );
+    } finally {
+      setIsSavingDischarge(false);
+    }
   };
 
   return (
@@ -428,10 +493,11 @@ function AppointmentDetailModal({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={isSavingDischarge}
                 onClick={handlePrintDischarge}
               >
                 <FileText className="mr-1.5 h-3 w-3" />
-                Print Discharge
+                {isSavingDischarge ? "Saving..." : "Print Discharge"}
               </Button>
             )}
           </div>

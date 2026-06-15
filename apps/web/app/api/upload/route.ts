@@ -13,6 +13,11 @@ const ALLOWED_CATEGORIES = [
   "soap-attachments",
   "documents",
   "lab-results",
+  "cage-chart",
+  "dental-chart",
+  "surgical-report",
+  "anesthesia-monitor",
+  "discharge-pdf",
 ] as const;
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -96,21 +101,24 @@ export async function POST(req: NextRequest) {
     const url = await uploadFile(key, buffer, mimeType);
 
     // Persist metadata in the database
-    await db.insert(files).values({
-      practiceId,
-      uploadedBy: session.user.id,
-      fileName: file.name,
-      fileKey: key,
-      fileUrl: url,
-      mimeType,
-      fileSizeBytes: file.size,
-      category,
-      entityType: entityType ?? null,
-      entityId: entityId ?? null,
-    });
+    const [fileRow] = await db
+      .insert(files)
+      .values({
+        practiceId,
+        uploadedBy: session.user.id,
+        fileName: file.name,
+        fileKey: key,
+        fileUrl: url,
+        mimeType,
+        fileSizeBytes: file.size,
+        category,
+        entityType: entityType ?? null,
+        entityId: entityId ?? null,
+      })
+      .returning({ id: files.id });
 
     return NextResponse.json(
-      { url, key, entityType, entityId },
+      { id: fileRow!.id, url, key, entityType, entityId },
       { status: 201 },
     );
   } catch (err) {

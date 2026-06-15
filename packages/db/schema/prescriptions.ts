@@ -6,12 +6,22 @@ import {
   text,
   integer,
   date,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { baseColumns } from "./common";
 import { practices } from "./practices";
 import { users } from "./users";
 import { patients } from "./patients";
+
+export const prescriptionRouteEnum = pgEnum("prescription_route", [
+  "oral",
+  "topical",
+  "subcutaneous",
+  "intramuscular",
+  "intravenous",
+  "other",
+]);
 
 export const prescriptionStatusEnum = pgEnum("prescription_status", [
   "active",
@@ -45,6 +55,9 @@ export const prescriptions = pgTable("prescriptions", {
   startDate: date("start_date").notNull(),
   endDate: date("end_date"),
   status: prescriptionStatusEnum("status").notNull().default("active"),
+  route: prescriptionRouteEnum("route"),
+  responseToTreatment: text("response_to_treatment"),
+  administeredAt: timestamp("administered_at", { withTimezone: true }),
   instructions: text("instructions"),
 });
 
