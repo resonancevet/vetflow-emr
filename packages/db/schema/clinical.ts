@@ -117,6 +117,7 @@ export const vaccinationRecords = pgTable("vaccination_records", {
     .defaultNow(),
   nextDueDate: date("next_due_date"),
   certificateUrl: varchar("certificate_url", { length: 512 }),
+  notes: text("notes"),
 });
 
 export const labResults = pgTable("lab_results", {
@@ -140,6 +141,8 @@ export const labResults = pgTable("lab_results", {
     scale: 3,
   }),
   status: labStatusEnum("status").notNull().default("pending"),
+  resultDate: date("result_date"),
+  notes: text("notes"),
   orderedBy: uuid("ordered_by").references(() => users.id),
   reviewedBy: uuid("reviewed_by").references(() => users.id),
 });

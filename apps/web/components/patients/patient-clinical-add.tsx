@@ -239,13 +239,19 @@ function VaccinationForm({
   onSubmit: (data: {
     vaccineName: string;
     lotNumber?: string;
+    administeredAt?: string;
     nextDueDate?: string;
+    notes?: string;
   }) => void;
   loading: boolean;
 }) {
   const [vaccineName, setVaccineName] = useState("");
   const [lotNumber, setLotNumber] = useState("");
+  const [administeredAt, setAdministeredAt] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
   const [nextDueDate, setNextDueDate] = useState("");
+  const [notes, setNotes] = useState("");
 
   return (
     <form
@@ -256,7 +262,9 @@ function VaccinationForm({
         onSubmit({
           vaccineName: vaccineName.trim(),
           lotNumber: lotNumber || undefined,
+          administeredAt: administeredAt || undefined,
           nextDueDate: nextDueDate || undefined,
+          notes: notes || undefined,
         });
       }}
     >
@@ -270,6 +278,14 @@ function VaccinationForm({
         />
       </div>
       <div>
+        <label className="mb-1 block text-xs font-medium">Date given</label>
+        <Input
+          type="date"
+          value={administeredAt}
+          onChange={(e) => setAdministeredAt(e.target.value)}
+        />
+      </div>
+      <div>
         <label className="mb-1 block text-xs font-medium">Lot number</label>
         <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
       </div>
@@ -279,6 +295,14 @@ function VaccinationForm({
           type="date"
           value={nextDueDate}
           onChange={(e) => setNextDueDate(e.target.value)}
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">Notes</label>
+        <Input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Optional notes"
         />
       </div>
       <div className="sm:col-span-2">

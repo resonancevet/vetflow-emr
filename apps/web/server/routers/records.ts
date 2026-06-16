@@ -411,6 +411,7 @@ export const recordsRouter = createRouter({
           manufacturer: vaccinationRecords.manufacturer,
           administeredAt: vaccinationRecords.administeredAt,
           nextDueDate: vaccinationRecords.nextDueDate,
+          notes: vaccinationRecords.notes,
           administeredByName: users.name,
         })
         .from(vaccinationRecords)
@@ -433,14 +434,18 @@ export const recordsRouter = createRouter({
         vaccineName: z.string().min(1),
         lotNumber: z.string().optional(),
         manufacturer: z.string().optional(),
+        administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
+        notes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { administeredAt, ...rest } = input;
       const [record] = await ctx.db
         .insert(vaccinationRecords)
         .values({
-          ...input,
+          ...rest,
+          ...(administeredAt ? { administeredAt: new Date(administeredAt) } : {}),
           administeredBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
@@ -456,11 +461,13 @@ export const recordsRouter = createRouter({
         vaccineName: z.string().min(1),
         lotNumber: z.string().optional(),
         manufacturer: z.string().optional(),
+        administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
+        notes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...fields } = input;
+      const { id, administeredAt, ...fields } = input;
       const [record] = await ctx.db
         .update(vaccinationRecords)
         .set({
@@ -468,6 +475,8 @@ export const recordsRouter = createRouter({
           lotNumber: fields.lotNumber || null,
           manufacturer: fields.manufacturer || null,
           nextDueDate: fields.nextDueDate || null,
+          notes: fields.notes || null,
+          ...(administeredAt ? { administeredAt: new Date(administeredAt) } : {}),
         })
         .where(
           and(
@@ -805,6 +814,8 @@ export const recordsRouter = createRouter({
           referenceRangeLow: labResults.referenceRangeLow,
           referenceRangeHigh: labResults.referenceRangeHigh,
           status: labResults.status,
+          resultDate: labResults.resultDate,
+          notes: labResults.notes,
           orderedByName: users.name,
           createdAt: labResults.createdAt,
         })
@@ -832,6 +843,8 @@ export const recordsRouter = createRouter({
         referenceRangeLow: z.string().optional(),
         referenceRangeHigh: z.string().optional(),
         status: z.enum(["pending", "completed", "reviewed"]).default("pending"),
+        resultDate: z.string().optional(),
+        notes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -839,6 +852,8 @@ export const recordsRouter = createRouter({
         .insert(labResults)
         .values({
           ...input,
+          resultDate: input.resultDate || null,
+          notes: input.notes || null,
           orderedBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
@@ -886,6 +901,8 @@ export const recordsRouter = createRouter({
         referenceRangeLow: z.string().optional(),
         referenceRangeHigh: z.string().optional(),
         status: z.enum(["pending", "completed", "reviewed"]),
+        resultDate: z.string().optional(),
+        notes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -899,6 +916,8 @@ export const recordsRouter = createRouter({
           referenceRangeLow: fields.referenceRangeLow || null,
           referenceRangeHigh: fields.referenceRangeHigh || null,
           status: fields.status,
+          resultDate: fields.resultDate || null,
+          notes: fields.notes || null,
           ...(fields.status === "reviewed"
             ? { reviewedBy: ctx.user.id }
             : {}),

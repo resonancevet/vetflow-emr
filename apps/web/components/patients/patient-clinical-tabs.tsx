@@ -1577,6 +1577,8 @@ export function LabResultsTab({
     referenceRangeLow: "",
     referenceRangeHigh: "",
     status: "pending" as "pending" | "completed" | "reviewed",
+    resultDate: "",
+    notes: "",
   });
   const { data: labResultsList, refetch } = trpc.records.listLabResults.useQuery({
     patientId: patient.id,
@@ -1632,6 +1634,8 @@ export function LabResultsTab({
       referenceRangeLow: lab.referenceRangeLow ?? "",
       referenceRangeHigh: lab.referenceRangeHigh ?? "",
       status: (lab.status ?? "pending") as typeof editForm.status,
+      resultDate: lab.resultDate ?? "",
+      notes: lab.notes ?? "",
     });
   };
 
@@ -1645,6 +1649,8 @@ export function LabResultsTab({
       referenceRangeLow: editForm.referenceRangeLow || undefined,
       referenceRangeHigh: editForm.referenceRangeHigh || undefined,
       status: editForm.status,
+      resultDate: editForm.resultDate || undefined,
+      notes: editForm.notes || undefined,
     });
   };
 
@@ -1674,6 +1680,8 @@ export function LabResultsTab({
                 (formData.get("referenceRangeLow") as string) || undefined,
               referenceRangeHigh:
                 (formData.get("referenceRangeHigh") as string) || undefined,
+              resultDate: (formData.get("resultDate") as string) || undefined,
+              notes: (formData.get("notes") as string) || undefined,
             });
           }}
         >
@@ -1708,6 +1716,18 @@ export function LabResultsTab({
               </label>
               <Input name="referenceRangeHigh" placeholder="e.g. 27.0" />
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Date Given
+              </label>
+              <Input name="resultDate" type="date" />
+            </div>
+            <div className="col-span-2 sm:col-span-3">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Notes
+              </label>
+              <Input name="notes" placeholder="Optional notes" />
+            </div>
           </div>
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={createLabResult.isPending}>
@@ -1719,7 +1739,7 @@ export function LabResultsTab({
 
       {labResultsList && labResultsList.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[840px] text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
@@ -1741,7 +1761,10 @@ export function LabResultsTab({
                   Ordered By
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                  Date
+                  Date Given
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Notes
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                   Actions
@@ -1873,9 +1896,42 @@ export function LabResultsTab({
                       {lab.orderedByName ?? "--"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {lab.createdAt
-                        ? new Date(lab.createdAt).toLocaleDateString()
-                        : "--"}
+                      {isEditing ? (
+                        <Input
+                          type="date"
+                          value={editForm.resultDate}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              resultDate: e.target.value,
+                            }))
+                          }
+                        />
+                      ) : lab.resultDate ? (
+                        new Date(lab.resultDate).toLocaleDateString()
+                      ) : lab.createdAt ? (
+                        new Date(lab.createdAt).toLocaleDateString()
+                      ) : (
+                        "--"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {isEditing ? (
+                        <Input
+                          value={editForm.notes}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              notes: e.target.value,
+                            }))
+                          }
+                          placeholder="Notes"
+                        />
+                      ) : (
+                        <span className="block max-w-[16rem] whitespace-pre-wrap break-words">
+                          {lab.notes || "--"}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1">

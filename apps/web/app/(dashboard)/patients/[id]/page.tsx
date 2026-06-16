@@ -4,6 +4,15 @@ import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import {
   ArrowLeft,
   User,
   Activity,
@@ -12,6 +21,8 @@ import {
   FileDown,
   Pencil,
   Trash2,
+  LineChart as LineChartIcon,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -132,6 +143,7 @@ export default function PatientDetailPage() {
     userRole === "admin" || userRole === "veterinarian";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [weightUnit, setWeightUnit] = useWeightUnit();
+  const [weightView, setWeightView] = useState<"list" | "graph">("list");
 
   const formatWeight = (kgString: string | null) => {
     if (!kgString) return "\u2014";
@@ -561,47 +573,81 @@ export default function PatientDetailPage() {
 
         {activeTab === "weight" && (
           <div>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
                 Stored in kilograms; toggle to display in pounds.
               </p>
-              <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+              <div className="flex items-center gap-2">
+                <div className="inline-flex overflow-hidden rounded-md border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setWeightView("list")}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors",
+                      weightView === "list"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    <List className="h-3.5 w-3.5" />
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeightView("graph")}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors",
+                      weightView === "graph"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    <LineChartIcon className="h-3.5 w-3.5" />
+                    Graph
+                  </button>
+                </div>
+                <UnitToggle unit={weightUnit} onChange={setWeightUnit} />
+              </div>
             </div>
             {patient.weights && patient.weights.length > 0 ? (
-              <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full min-w-[320px] text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/50">
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                        Date
-                      </th>
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                        Weight ({weightUnit})
-                      </th>
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                        Recorded By
-                      </th>
-                      {canManageClinicalRecords ? (
-                        <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                          Actions
+              weightView === "graph" ? (
+                <WeightChart weights={patient.weights} unit={weightUnit} />
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full min-w-[320px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                          Date
                         </th>
-                      ) : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {patient.weights.map((weight) => (
-                      <WeightRow
-                        key={weight.id}
-                        weight={weight}
-                        unit={weightUnit}
-                        formatWeight={formatWeight}
-                        canManage={canManageClinicalRecords}
-                        patientId={patient.id}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                          Weight ({weightUnit})
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                          Recorded By
+                        </th>
+                        {canManageClinicalRecords ? (
+                          <th className="px-4 py-3 text-right font-medium text-muted-foreground">
+                            Actions
+                          </th>
+                        ) : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {patient.weights.map((weight) => (
+                        <WeightRow
+                          key={weight.id}
+                          weight={weight}
+                          unit={weightUnit}
+                          formatWeight={formatWeight}
+                          canManage={canManageClinicalRecords}
+                          patientId={patient.id}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
             ) : (
               <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
                 <Activity className="mx-auto h-8 w-8 text-muted-foreground/50" />
@@ -722,7 +768,9 @@ function VaccinationsTab({
     vaccineName: "",
     lotNumber: "",
     manufacturer: "",
+    administeredAt: "",
     nextDueDate: "",
+    notes: "",
   });
 
   const invalidate = () =>
@@ -753,7 +801,11 @@ function VaccinationsTab({
       vaccineName: vax.vaccineName,
       lotNumber: vax.lotNumber ?? "",
       manufacturer: vax.manufacturer ?? "",
+      administeredAt: vax.administeredAt
+        ? new Date(vax.administeredAt).toISOString().slice(0, 10)
+        : "",
       nextDueDate: vax.nextDueDate ?? "",
+      notes: vax.notes ?? "",
     });
   };
 
@@ -764,7 +816,9 @@ function VaccinationsTab({
       vaccineName: form.vaccineName.trim(),
       lotNumber: form.lotNumber || undefined,
       manufacturer: form.manufacturer || undefined,
+      administeredAt: form.administeredAt || undefined,
       nextDueDate: form.nextDueDate || undefined,
+      notes: form.notes || undefined,
     });
   };
 
@@ -803,6 +857,9 @@ function VaccinationsTab({
               Lot Number
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Notes
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Administered By
             </th>
             <th className="px-4 py-3 text-right font-medium text-muted-foreground">
@@ -832,9 +889,22 @@ function VaccinationsTab({
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {vax.administeredAt
-                    ? new Date(vax.administeredAt).toLocaleDateString()
-                    : "\u2014"}
+                  {isEditing ? (
+                    <Input
+                      type="date"
+                      value={form.administeredAt}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          administeredAt: e.target.value,
+                        }))
+                      }
+                    />
+                  ) : vax.administeredAt ? (
+                    new Date(vax.administeredAt).toLocaleDateString()
+                  ) : (
+                    "\u2014"
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {isEditing ? (
@@ -874,6 +944,21 @@ function VaccinationsTab({
                     </div>
                   ) : (
                     vax.lotNumber ?? "\u2014"
+                  )}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {isEditing ? (
+                    <Input
+                      value={form.notes}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, notes: e.target.value }))
+                      }
+                      placeholder="Notes"
+                    />
+                  ) : (
+                    <span className="block max-w-[16rem] whitespace-pre-wrap break-words">
+                      {vax.notes || "\u2014"}
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
@@ -944,6 +1029,95 @@ type WeightHistoryItem = {
   recordedBy: string | null;
   updatedAt: Date | string | null;
 };
+
+function WeightChart({
+  weights,
+  unit,
+}: {
+  weights: WeightHistoryItem[];
+  unit: WeightUnit;
+}) {
+  // Recharts plots left-to-right; oldest first reads naturally over time.
+  const data = weights
+    .filter((w) => w.weightKg && w.recordedAt)
+    .map((w) => {
+      const kg = parseFloat(w.weightKg as string);
+      const value = unit === "lb" ? kgToLb(kg) : kg;
+      const date = new Date(w.recordedAt as string | Date);
+      return {
+        timestamp: date.getTime(),
+        label: date.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "2-digit",
+        }),
+        weight: Number.isFinite(value)
+          ? Number(value.toFixed(2))
+          : null,
+      };
+    })
+    .filter((d) => d.weight !== null)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (data.length < 2) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+        <LineChartIcon className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          At least two weight entries are needed to draw a graph.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="h-72 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 12 }}
+              stroke="currentColor"
+              className="text-muted-foreground"
+            />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              stroke="currentColor"
+              className="text-muted-foreground"
+              width={48}
+              label={{
+                value: unit,
+                angle: -90,
+                position: "insideLeft",
+                style: { fontSize: 12 },
+              }}
+            />
+            <Tooltip
+              formatter={(value: number) => [`${value} ${unit}`, "Weight"]}
+              contentStyle={{
+                fontSize: 12,
+                borderRadius: 8,
+                border: "1px solid hsl(var(--border))",
+                background: "hsl(var(--card))",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="weight"
+              stroke="#0d9488"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              activeDot={{ r: 5 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
 
 function WeightRow({
   weight,
