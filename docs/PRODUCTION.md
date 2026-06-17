@@ -29,6 +29,48 @@ Set these in your hosting provider's environment (never commit real values):
 
 Optional integrations: `RESEND_API_KEY`, `TWILIO_*`, `STRIPE_*`, `CRON_SECRET`.
 
+## Local dev vs production storage
+
+| | Local laptop (`.env`) | Hosted deploy |
+|--|----------------------|---------------|
+| Database | Neon or Docker Postgres | Neon (or other managed Postgres) |
+| File storage | MinIO at `localhost:9000` | Cloudflare R2 |
+| Config file | `.env` (gitignored) | Host dashboard env vars, or `.env.production` |
+
+Your laptop `.env` should **keep MinIO** for uploads. Do not point local dev at R2 unless you intentionally want to test against production storage.
+
+Copy `.env.production.example` to `.env.production` only when running a local production build (`NODE_ENV=production pnpm --filter @openpims/web build && ...`). For Vercel, set variables in the project dashboard instead.
+
+## Cloudflare R2 setup
+
+1. [Cloudflare dashboard](https://dash.cloudflare.com) → **R2 Object Storage** → enable R2 (payment method required; generous free tier).
+2. **Create bucket** — e.g. `vetflow-emr`. Keep it **private** (no public access).
+3. **R2** → **API** → **Manage API tokens** → **Create API token** with **Object Read & Write**, scoped to your bucket.
+4. Save the one-time values:
+   - Access Key ID → `S3_ACCESS_KEY`
+   - Secret Access Key → `S3_SECRET_KEY`
+   - Endpoint (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`) → `S3_ENDPOINT`
+5. Set `S3_BUCKET` to your bucket name and `S3_REGION` to `auto`.
+
+No code changes are required — `apps/web/lib/s3.ts` is already S3-compatible with `forcePathStyle: true`.
+
+## Vercel project setup
+
+1. Import the GitHub repo at [vercel.com/new](https://vercel.com/new).
+2. **Root Directory:** `apps/web` (the Next.js EMR app).
+3. Enable **Include source files outside of the Root Directory** (monorepo support for `packages/*`).
+4. **Build & Output Settings** — Vercel usually auto-detects Next.js; confirm:
+   - **Install Command:** `pnpm install` (runs from repo root)
+   - **Build Command:** `next build` (runs inside `apps/web`)
+5. **Environment Variables** — add every value from `.env.production.example` for the **Production** environment. Use your Neon pooled `DATABASE_URL`, R2 credentials, and `NEXTAUTH_URL` set to your live URL (e.g. `https://app.yourdomain.com`).
+6. Deploy, then run migrations against the production database (from your laptop with production `DATABASE_URL`, or a one-off Vercel/local command):
+   ```bash
+   DATABASE_URL="your-neon-url" pnpm db:migrate
+   ```
+7. Open `https://your-app.vercel.app/register`, create your practice, then set `ALLOW_REGISTRATION=false` in Vercel and redeploy (or update the env var without redeploy if your host supports runtime env refresh).
+
+`apps/web/vercel.json` configures daily appointment reminders and hourly SOAP auto-lockdown crons. Set `CRON_SECRET` in Vercel — Vercel sends it as `Authorization: Bearer …` on cron invocations.
+
 ## Bring-up sequence
 
 ### Option A: Fresh production database

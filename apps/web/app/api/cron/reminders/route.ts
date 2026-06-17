@@ -9,11 +9,10 @@ import {
   communications,
 } from "@openpims/db";
 import { sendAppointmentReminder } from "@/lib/email";
+import { isCronAuthorized } from "@/lib/cron-auth";
 
 export async function GET(request: Request) {
-  // Validate the cron secret to prevent unauthorized access
-  const cronSecret = request.headers.get("x-cron-secret");
-  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

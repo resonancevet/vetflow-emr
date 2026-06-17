@@ -45,7 +45,11 @@ Do not run `pnpm db:seed` unless `SEED_DEMO=true` and you intentionally want dem
 
 Use **one** `.env` at the **repo root** (not under `apps/web`). All apps load it via `@openpims/config/load-env`.
 
-Optional: `.env.local` at repo root for personal overrides (gitignored).
+- **`.env`** — local development (MinIO, local or Neon Postgres). Gitignored.
+- **`.env.local`** — personal overrides on top of `.env`. Gitignored.
+- **`.env.production.example`** — template for hosted deploy (R2, production URLs). Copy to `.env.production` only for local production builds; on Vercel, paste values into the project dashboard instead.
+
+Local dev should keep `S3_ENDPOINT="http://localhost:9000"` (MinIO). See [PRODUCTION.md](./PRODUCTION.md) for R2 and Vercel setup.
 
 ## Database migrations
 
