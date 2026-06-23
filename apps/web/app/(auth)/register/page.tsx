@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { APP_NAME } from "@/lib/nav-config";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -50,7 +51,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8">
         <div className="mb-6 text-center">
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            OpenVPM
+            {APP_NAME}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Register your practice
