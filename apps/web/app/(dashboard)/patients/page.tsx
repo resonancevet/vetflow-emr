@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, PawPrint, Clock } from "lucide-react";
+import { Search, Plus, PawPrint } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
-import { useRecentPatients, pruneRecentPatients } from "@/lib/recent-patients";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -45,23 +44,6 @@ export default function PatientsPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [species, setSpecies] = useState("");
-  const recentPatients = useRecentPatients();
-
-  // Validate the per-browser recent list against the current practice and drop
-  // stale entries (e.g. demo patients from another practice or deleted records).
-  const recentIds = useMemo(
-    () => recentPatients.map((p) => p.id),
-    [recentPatients]
-  );
-  const { data: validRecent } = trpc.patients.filterExisting.useQuery(
-    { ids: recentIds },
-    { enabled: recentIds.length > 0 }
-  );
-  useEffect(() => {
-    if (validRecent) {
-      pruneRecentPatients(validRecent.ids);
-    }
-  }, [validRecent]);
 
   const { data, isLoading, error } = trpc.patients.list.useQuery({
     search: search || undefined,
@@ -112,42 +94,6 @@ export default function PatientsPage() {
           </p>
         )}
       </div>
-
-      {!search && recentPatients.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            Recently viewed
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {recentPatients.map((p) => {
-              const owner = [p.clientFirstName, p.clientLastName]
-                .filter(Boolean)
-                .join(" ");
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => router.push(`/patients/${p.id}`)}
-                  className="flex min-h-[2.5rem] items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
-                >
-                  <span className="font-medium text-foreground">{p.name}</span>
-                  {p.species && (
-                    <span className="capitalize text-muted-foreground">
-                      {p.species}
-                    </span>
-                  )}
-                  {owner && (
-                    <span className="hidden text-muted-foreground sm:inline">
-                      &middot; {owner}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {error && (
         <div className="mt-6 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">

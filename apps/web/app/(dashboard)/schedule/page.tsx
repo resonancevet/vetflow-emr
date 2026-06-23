@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -547,22 +547,28 @@ function SendReminderButton({ appointmentId }: { appointmentId: string }) {
 
 // --- Time slot helpers for booking form ---
 
-function generateTimeSlots(): { label: string; value: string }[] {
-  const slots: { label: string; value: string }[] = [];
-  for (let hour = 8; hour <= 17; hour++) {
-    for (const min of [0, 30]) {
-      if (hour === 17 && min > 30) break;
-      const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-      const ampm = hour < 12 ? "AM" : "PM";
-      const label = `${h12}:${String(min).padStart(2, "0")} ${ampm}`;
-      const value = `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
-      slots.push({ label, value });
-    }
-  }
-  return slots;
+function formatTimeSlotLabel(hour: number, min: number): string {
+  const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const ampm = hour < 12 ? "AM" : "PM";
+  return `${h12}:${String(min).padStart(2, "0")} ${ampm}`;
 }
 
-const TIME_SLOTS = generateTimeSlots();
+function generateTimeSlots(
+  startHour: number,
+  endHour: number
+): { label: string; value: string }[] {
+  const slots: { label: string; value: string }[] = [];
+  const lastHour = Math.max(startHour, endHour - 1);
+
+  for (let hour = startHour; hour <= lastHour; hour++) {
+    for (const min of [0, 30]) {
+      const value = `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+      slots.push({ label: formatTimeSlotLabel(hour, min), value });
+    }
+  }
+
+  return slots;
+}
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -578,11 +584,15 @@ function BookingForm({
   defaultDate,
   defaultTime,
   editingAppointment,
+  startHour,
+  endHour,
 }: {
   onClose: () => void;
   defaultDate: Date;
   defaultTime?: string;
   editingAppointment?: Appointment | null;
+  startHour: number;
+  endHour: number;
 }) {
   const modalRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -637,6 +647,47 @@ function BookingForm({
   const [startTime, setStartTime] = useState(initial.startTime);
   const [duration, setDuration] = useState(initial.duration);
   const [notes, setNotes] = useState(editingAppointment?.notes ?? "");
+
+  const timeSlots = useMemo(
+    () => generateTimeSlots(startHour, endHour),
+    [startHour, endHour]
+  );
+
+  const selectableTimeSlots = useMemo(() => {
+    if (
+      !editingAppointment ||
+      timeSlots.some((slot) => slot.value === startTime)
+    ) {
+      return timeSlots;
+    }
+
+    const [hourPart, minutePart] = startTime.split(":");
+    const hour = Number(hourPart);
+    const minute = Number(minutePart);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return timeSlots;
+    }
+
+    return [
+      { label: formatTimeSlotLabel(hour, minute), value: startTime },
+      ...timeSlots,
+    ];
+  }, [editingAppointment, startTime, timeSlots]);
+
+  useEffect(() => {
+    if (timeSlots.some((slot) => slot.value === startTime)) {
+      return;
+    }
+
+    const preferred =
+      defaultTime && timeSlots.some((slot) => slot.value === defaultTime)
+        ? defaultTime
+        : timeSlots[0]?.value;
+
+    if (preferred && preferred !== startTime) {
+      setStartTime(preferred);
+    }
+  }, [defaultTime, startTime, timeSlots]);
 
   const debouncedSearch = useDebounce(patientSearch, 300);
 
@@ -927,7 +978,7 @@ function BookingForm({
               onChange={(e) => setStartTime(e.target.value)}
               className="mt-1 h-9 w-full appearance-none rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              {TIME_SLOTS.map((slot) => (
+              {selectableTimeSlots.map((slot) => (
                 <option key={slot.value} value={slot.value}>
                   {slot.label}
                 </option>
@@ -1234,6 +1285,8 @@ export default function SchedulePage() {
           defaultDate={currentDate}
           defaultTime={bookingDefaultTime}
           editingAppointment={editingAppointment}
+          startHour={startHour}
+          endHour={endHour}
         />
       )}
     </div>

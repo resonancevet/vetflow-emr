@@ -32,6 +32,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|register|api/auth|_next|favicon.ico|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
+    "/((?!login|register|api/auth|_next|favicon.ico|favicon.svg|logo.svg|manifest.webmanifest|sw.js|api/trpc|portal|api-docs|api/portal|api/webhooks|api/cron).*)",
   ],
 };

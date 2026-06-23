@@ -3,10 +3,12 @@ import {
   Calendar,
   Clipboard,
   DollarSign,
+  Inbox,
   LayoutDashboard,
   MessageSquare,
   Package,
   PawPrint,
+  Pill,
   Settings,
   Users,
   type LucideIcon,
@@ -29,18 +31,25 @@ export type NavItem = {
 export const v0NavItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/schedule", label: "Schedule", icon: Calendar, mobilePrimary: true },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/patients", label: "Patients", icon: PawPrint, mobilePrimary: true },
   { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
   { href: "/whiteboard", label: "Whiteboard", icon: Clipboard },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/billing", label: "Billing", icon: DollarSign },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  {
+    href: "/controlled-substances",
+    label: "Controlled Substance Log",
+    icon: Pill,
+  },
   { href: "/settings", label: "Settings", icon: Settings, mobilePrimary: true },
 ];
 
 export const routeLabels: Record<string, string> = {
   "/": "Dashboard",
   "/schedule": "Schedule",
+  "/inbox": "Inbox",
   "/patients": "Patients",
   "/settings": "Settings",
   "/clients": "Clients",
@@ -48,6 +57,7 @@ export const routeLabels: Record<string, string> = {
   "/inventory": "Inventory",
   "/billing": "Billing",
   "/reports": "Reports",
+  "/controlled-substances": "Controlled Substance Log",
   "/communications": "Communications",
 };
 

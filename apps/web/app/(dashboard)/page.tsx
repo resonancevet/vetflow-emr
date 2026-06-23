@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Calendar, PawPrint, DollarSign, FileText, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
+import { useRecentPatients, pruneRecentPatients } from "@/lib/recent-patients";
 import {
   BarChart,
   Bar,
@@ -145,22 +148,48 @@ function PieLabel({
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const stats = trpc.dashboard.getStats.useQuery();
   const charts = trpc.dashboard.getCharts.useQuery();
 
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const tomorrowStr = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() + 1
-  )
-    .toISOString()
-    .slice(0, 10);
+  const recentPatients = useRecentPatients();
+
+  // Validate the per-browser recent list against the current practice and drop
+  // stale entries (e.g. demo patients from another practice or deleted records).
+  const recentIds = useMemo(
+    () => recentPatients.map((p) => p.id),
+    [recentPatients]
+  );
+  const { data: validRecent } = trpc.patients.filterExisting.useQuery(
+    { ids: recentIds },
+    { enabled: recentIds.length > 0 }
+  );
+  useEffect(() => {
+    if (validRecent) {
+      pruneRecentPatients(validRecent.ids);
+    }
+  }, [validRecent]);
+
+  const recentlyViewed = recentPatients.slice(0, 5);
+
+  const scheduleHours = trpc.appointments.getScheduleHours.useQuery();
+  const endHour = scheduleHours.data?.endHour ?? 18;
+
+  const now = new Date();
+  // Once the clinic's configured end-of-day has passed, the rest of today's
+  // schedule is over, so surface tomorrow's appointments instead.
+  const showNextDay = now.getHours() >= endHour;
+
+  const toDateStr = (offsetDays: number) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays)
+      .toISOString()
+      .slice(0, 10);
+
+  const dayOffset = showNextDay ? 1 : 0;
 
   const upcoming = trpc.appointments.list.useQuery({
-    startDate: todayStr,
-    endDate: tomorrowStr,
+    startDate: toDateStr(dayOffset),
+    endDate: toDateStr(dayOffset + 1),
   });
 
   const upcomingAppointments = (upcoming.data ?? [])
@@ -207,11 +236,48 @@ export default function DashboardPage() {
             })}
       </div>
 
+      {/* Recently viewed patients */}
+      {recentlyViewed.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            Recently viewed
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recentlyViewed.map((p) => {
+              const owner = [p.clientFirstName, p.clientLastName]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => router.push(`/patients/${p.id}`)}
+                  className="flex min-h-[2.5rem] items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
+                >
+                  <span className="font-medium text-foreground">{p.name}</span>
+                  {p.species && (
+                    <span className="capitalize text-muted-foreground">
+                      {p.species}
+                    </span>
+                  )}
+                  {owner && (
+                    <span className="hidden text-muted-foreground sm:inline">
+                      &middot; {owner}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Recent Appointments */}
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-heading text-lg font-semibold">
-            Upcoming Appointments
+            {showNextDay ? "Tomorrow's Appointments" : "Upcoming Appointments"}
           </h2>
         </div>
         <div className="space-y-2 p-4">
@@ -221,7 +287,9 @@ export default function DashboardPage() {
             ))
           ) : upcomingAppointments.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No upcoming appointments today.
+              {showNextDay
+                ? "No appointments scheduled for tomorrow."
+                : "No upcoming appointments today."}
             </p>
           ) : (
             upcomingAppointments.map((appt) => (
