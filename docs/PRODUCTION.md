@@ -69,7 +69,7 @@ No code changes are required — `apps/web/lib/s3.ts` is already S3-compatible w
    ```
 7. Open `https://your-app.vercel.app/register`, create your practice, then set `ALLOW_REGISTRATION=false` in Vercel and redeploy (or update the env var without redeploy if your host supports runtime env refresh).
 
-`apps/web/vercel.json` configures daily appointment reminders and hourly SOAP auto-lockdown crons. Set `CRON_SECRET` in Vercel — Vercel sends it as `Authorization: Bearer …` on cron invocations.
+`apps/web/vercel.json` configures daily crons: appointment reminders at 8:00 UTC and SOAP auto-lockdown at 9:00 UTC. Vercel Hobby allows once-per-day schedules only (not hourly). SOAP notes are also auto-finalized when listed. Set `CRON_SECRET` in Vercel — Vercel sends it as `Authorization: Bearer …` on cron invocations.
 
 ## Bring-up sequence
 

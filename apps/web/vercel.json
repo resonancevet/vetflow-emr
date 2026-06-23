@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/lock-records",
-      "schedule": "0 * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
