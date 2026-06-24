@@ -48,6 +48,7 @@ import { PatientAllergiesSection } from "@/components/patients/patient-allergies
 import { PatientAlertsBanner } from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
 import { recordPatientView } from "@/lib/recent-patients";
+import { uploadFileToApi } from "@/lib/upload";
 import {
   kgToLb,
   toKgString,
@@ -144,6 +145,7 @@ export default function PatientDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [weightUnit, setWeightUnit] = useWeightUnit();
   const [weightView, setWeightView] = useState<"list" | "graph">("list");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const formatWeight = (kgString: string | null) => {
     if (!kgString) return "\u2014";
@@ -187,31 +189,26 @@ export default function PatientDetailPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("category", "patient-photos");
-
+    setUploadingPhoto(true);
     try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
+      const data = await uploadFileToApi(file, {
+        category: "patient-photos",
+        entityType: "patient",
+        entityId: params.id,
       });
-
-      if (!res.ok) {
-        throw new Error("Upload failed");
-      }
-
-      const data = await res.json();
-      updatePhotoMutation.mutate({ id: params.id, photoUrl: data.url });
+      const photoUrl = data.id ? `/api/files/${data.id}` : data.url;
+      updatePhotoMutation.mutate({ id: params.id, photoUrl });
     } catch {
       toast.error("Failed to upload photo");
-    }
-
-    // Reset file input so the same file can be re-selected
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   }
+
+  const triggerPhotoUpload = () => fileInputRef.current?.click();
 
   // Medical summary PDF data queries (lazy -- only fetched on demand)
   const problemsQuery = trpc.records.listProblems.useQuery(
@@ -344,34 +341,23 @@ export default function PatientDetailPage() {
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="group relative h-14 w-14">
-              {patient.photoUrl ? (
-                <img
-                  src={patient.photoUrl}
-                  alt={patient.name}
-                  className="h-14 w-14 rounded-full object-cover"
-                />
-              ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-2xl">
-                  {speciesEmoji[patient.species ?? "other"] ?? "\uD83D\uDC3E"}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-                title="Upload photo"
-              >
-                <Camera className="h-5 w-5 text-white" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                className="hidden"
-              />
-            </div>
+            <PatientPhoto
+              name={patient.name}
+              species={patient.species}
+              photoUrl={patient.photoUrl}
+              size="sm"
+              uploading={uploadingPhoto}
+              onUploadClick={
+                canManageClinicalRecords ? triggerPhotoUpload : undefined
+              }
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handlePhotoUpload}
+              className="hidden"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-heading text-xl font-semibold">
@@ -485,6 +471,45 @@ export default function PatientDetailPage() {
             <h3 className="font-heading text-base font-semibold mb-4">
               Basic Information
             </h3>
+            <div className="mb-6 flex flex-col items-start gap-2 border-b border-border pb-6">
+              <PatientPhoto
+                name={patient.name}
+                species={patient.species}
+                photoUrl={patient.photoUrl}
+                size="lg"
+                uploading={uploadingPhoto}
+              />
+              {canManageClinicalRecords && (
+                <div className="flex w-40 flex-col items-center gap-2">
+                  {!patient.photoUrl && (
+                    <>
+                      <p className="w-full text-center text-sm font-medium text-foreground">
+                        Patient photo
+                      </p>
+                      <p className="w-full text-center text-xs text-muted-foreground">
+                        JPEG, PNG, or WebP up to 10 MB. Shown on this chart and
+                        the whiteboard.
+                      </p>
+                    </>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={uploadingPhoto || updatePhotoMutation.isPending}
+                    onClick={triggerPhotoUpload}
+                  >
+                    <Camera className="mr-1.5 h-3.5 w-3.5" />
+                    {uploadingPhoto || updatePhotoMutation.isPending
+                      ? "Uploading..."
+                      : patient.photoUrl
+                        ? "Change photo"
+                        : "Upload photo"}
+                  </Button>
+                </div>
+              )}
+            </div>
             <dl className="grid gap-4 sm:grid-cols-2">
               <div>
                 <dt className="text-sm text-muted-foreground">Name</dt>
@@ -749,6 +774,73 @@ export default function PatientDetailPage() {
         )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PatientPhoto({
+  name,
+  species,
+  photoUrl,
+  size,
+  uploading,
+  onUploadClick,
+}: {
+  name: string;
+  species: string | null;
+  photoUrl: string | null;
+  size: "sm" | "lg";
+  uploading?: boolean;
+  onUploadClick?: () => void;
+}) {
+  const isSmall = size === "sm";
+  const frameClass = isSmall
+    ? "h-14 w-14 rounded-full"
+    : "h-40 w-40 rounded-lg";
+  const emojiClass = isSmall ? "text-2xl" : "text-5xl";
+
+  return (
+    <div className={cn("group relative shrink-0", frameClass)}>
+      {photoUrl ? (
+        <img
+          src={photoUrl}
+          alt={name}
+          className={cn("object-cover", frameClass)}
+        />
+      ) : (
+        <div
+          className={cn(
+            "flex items-center justify-center bg-muted",
+            frameClass,
+            emojiClass
+          )}
+        >
+          {speciesEmoji[species ?? "other"] ?? "\uD83D\uDC3E"}
+        </div>
+      )}
+      {uploading && (
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-medium text-white",
+            frameClass
+          )}
+        >
+          Uploading...
+        </div>
+      )}
+      {onUploadClick && !uploading && (
+        <button
+          type="button"
+          onClick={onUploadClick}
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
+            frameClass
+          )}
+          title="Upload photo"
+        >
+          <Camera className="h-5 w-5 text-white" />
+        </button>
+      )}
     </div>
   );
 }
