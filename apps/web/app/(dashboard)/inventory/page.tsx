@@ -42,7 +42,7 @@ const CSV_TEMPLATE_HEADERS = [
   "expirationDate",
 ] as const;
 
-const VALID_CATEGORIES = new Set(
+const VALID_CATEGORIES: Set<string> = new Set(
   CATEGORIES.slice(1).map((c) => c.value)
 );
 
