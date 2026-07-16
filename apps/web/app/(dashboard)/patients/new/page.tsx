@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone-format";
 
 const speciesOptions = [
   { value: "canine", label: "Canine" },
@@ -180,7 +181,7 @@ export default function NewPatientPage() {
                           {client.firstName} {client.lastName}
                         </span>
                         <span className="text-muted-foreground">
-                          {client.email || client.phone || ""}
+                          {client.email || formatPhoneDisplay(client.phone) || ""}
                         </span>
                       </button>
                     ))}
@@ -487,9 +488,14 @@ function QuickAddClientModal({
               Phone
             </label>
             <Input
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
+              placeholder="555-555-5555"
               className="mt-1"
+              maxLength={12}
             />
           </div>
           <p className="text-xs text-muted-foreground">

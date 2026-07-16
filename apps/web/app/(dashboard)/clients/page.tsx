@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
+import { formatPhoneDisplay } from "@/lib/phone-format";
 
 export default function ClientsPage() {
   const router = useRouter();
@@ -94,7 +95,7 @@ export default function ClientsPage() {
                     {client.email || "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {client.phone || "\u2014"}
+                    {formatPhoneDisplay(client.phone) || "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {client.city || "\u2014"}

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { formatPhoneDisplay } from "@/lib/phone-format";
 
 type FilterTab = "all" | "unread" | "sent";
 type Channel = "phone" | "sms" | "email" | "portal";
@@ -323,7 +324,9 @@ export default function InboxPage() {
                         {client.firstName} {client.lastName}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {client.email || client.phone || "No contact info"}
+                        {client.email ||
+                          formatPhoneDisplay(client.phone) ||
+                          "No contact info"}
                       </div>
                     </button>
                   ))

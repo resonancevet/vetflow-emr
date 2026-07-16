@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { LogCommunicationModal } from "@/components/communications/log-communication-modal";
+import { formatPhoneDisplay } from "@/lib/phone-format";
 
 export default function LogCommunicationPage() {
   return (
@@ -77,7 +78,9 @@ function LogCommunicationPageContent() {
               >
                 {c.firstName} {c.lastName}
                 {c.phone ? (
-                  <span className="ml-2 text-muted-foreground">{c.phone}</span>
+                  <span className="ml-2 text-muted-foreground">
+                    {formatPhoneDisplay(c.phone)}
+                  </span>
                 ) : null}
               </button>
             </li>

@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone-format";
 
 export default function EditClientPage() {
   const params = useParams<{ id: string }>();
@@ -34,7 +35,7 @@ export default function EditClientPage() {
         firstName: client.firstName ?? "",
         lastName: client.lastName ?? "",
         email: client.email ?? "",
-        phone: client.phone ?? "",
+        phone: formatPhoneDisplay(client.phone),
         address: client.address ?? "",
         city: client.city ?? "",
         state: client.state ?? "",
@@ -159,10 +160,16 @@ export default function EditClientPage() {
             </label>
             <Input
               id="phone"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               value={form.phone}
-              onChange={(e) => updateField("phone", e.target.value)}
-              placeholder="(555) 123-4567"
+              onChange={(e) =>
+                updateField("phone", formatPhoneInput(e.target.value))
+              }
+              placeholder="555-555-5555"
               className="mt-1"
+              maxLength={12}
             />
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
   type CommunicationListItem,
 } from "@/components/communications/log-communication-modal";
 import { ClientAlertsBanner } from "@/components/clients/client-alerts-banner";
+import { formatPhoneDisplay } from "@/lib/phone-format";
 
 const speciesEmoji: Record<string, string> = {
   canine: "\uD83D\uDC36",
@@ -90,7 +91,7 @@ export default function ClientDetailPage() {
               {client.phone && (
                 <span className="flex items-center gap-2">
                   <Phone className="h-4 w-4" />
-                  {client.phone}
+                  {formatPhoneDisplay(client.phone)}
                 </span>
               )}
               {address && (

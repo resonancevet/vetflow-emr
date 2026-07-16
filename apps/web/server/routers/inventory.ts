@@ -160,6 +160,67 @@ export const inventoryRouter = createRouter({
       return product;
     }),
 
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [product] = await ctx.db
+        .update(products)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(products.id, input.id),
+            eq(products.practiceId, ctx.practiceId),
+            isNull(products.deletedAt)
+          )
+        )
+        .returning();
+
+      if (!product) throw new Error("Product not found");
+      return product;
+    }),
+
+  importProducts: protectedProcedure
+    .input(
+      z.object({
+        products: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(255),
+              sku: z.string().max(64).optional(),
+              category: z.string().max(128).optional(),
+              unitPrice: z.string().refine(
+                (v) => !isNaN(parseFloat(v)) && parseFloat(v) >= 0,
+                "Must be a valid price"
+              ),
+              costPrice: z.string().optional(),
+              stockQuantity: z.number().int().min(0).default(0),
+              reorderPoint: z.number().int().min(0).default(10),
+              lotNumber: z.string().max(64).optional(),
+              expirationDate: z.string().optional(),
+            })
+          )
+          .min(1)
+          .max(500),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const toInsert = input.products.map((p) => ({
+        practiceId: ctx.practiceId,
+        name: p.name,
+        sku: p.sku || null,
+        category: p.category || null,
+        unitPrice: p.unitPrice,
+        costPrice: p.costPrice || null,
+        stockQuantity: p.stockQuantity,
+        reorderPoint: p.reorderPoint,
+        lotNumber: p.lotNumber || null,
+        expirationDate: p.expirationDate || null,
+      }));
+
+      await ctx.db.insert(products).values(toInsert);
+      return { imported: toInsert.length };
+    }),
+
   // --- Suppliers ---
 
   listSuppliers: protectedProcedure.query(async ({ ctx }) => {
