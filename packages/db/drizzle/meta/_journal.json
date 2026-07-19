@@ -29,6 +29,27 @@
       "when": 1781300000000,
       "tag": "0003_vax_lab_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781400000000,
+      "tag": "0004_inventory_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781500000000,
+      "tag": "0005_inventory_order_csv_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0006_inventory_item_sort_order",
+      "breakpoints": true
     }
   ]
 }
