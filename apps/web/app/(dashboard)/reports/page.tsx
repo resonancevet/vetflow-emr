@@ -6,10 +6,14 @@ import {
   Line,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 import {
@@ -37,6 +41,16 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: "inventory", label: "Inventory", icon: Package },
 ];
 
+const SPECIES_COLORS: Record<string, string> = {
+  Canine: "#3b82f6",
+  Feline: "#f59e0b",
+  Avian: "#10b981",
+  Rabbit: "#8b5cf6",
+  Reptile: "#ef4444",
+  Equine: "#06b6d4",
+  Other: "#6b7280",
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -44,6 +58,42 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function PieLabel({
+  cx,
+  cy,
+  midAngle,
+  innerRadius,
+  outerRadius,
+  percent,
+  name,
+}: {
+  cx: number;
+  cy: number;
+  midAngle: number;
+  innerRadius: number;
+  outerRadius: number;
+  percent: number;
+  name: string;
+}) {
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) * 1.4;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  if (percent < 0.03) return null;
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="currentColor"
+      className="text-xs fill-foreground"
+      textAnchor={x > cx ? "start" : "end"}
+      dominantBaseline="central"
+    >
+      {name} ({(percent * 100).toFixed(0)}%)
+    </text>
+  );
 }
 
 function KpiCard({
@@ -212,6 +262,59 @@ function AppointmentsTab() {
         </div>
       </div>
 
+      {/* Appointments This Week */}
+      <div className="rounded-lg border border-border bg-card p-5">
+        <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+          Appointments This Week
+        </h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={data.appointmentsByDay}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 12 }}
+              className="text-muted-foreground"
+            />
+            <YAxis
+              allowDecimals={false}
+              tick={{ fontSize: 12 }}
+              className="text-muted-foreground"
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--card))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: "0.5rem",
+                fontSize: "0.875rem",
+                color: "hsl(var(--foreground))",
+              }}
+              itemStyle={{ color: "hsl(var(--foreground))" }}
+              labelStyle={{ color: "hsl(var(--foreground))" }}
+            />
+            <Legend wrapperStyle={{ fontSize: "0.75rem" }} />
+            <Bar
+              dataKey="completed"
+              name="Completed"
+              stackId="a"
+              fill="#22c55e"
+            />
+            <Bar
+              dataKey="scheduled"
+              name="Scheduled"
+              stackId="a"
+              fill="#3b82f6"
+            />
+            <Bar
+              dataKey="cancelled"
+              name="Cancelled"
+              stackId="a"
+              fill="#ef4444"
+              radius={[4, 4, 0, 0]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
       {/* Doctor breakdown */}
       {data.byDoctor.length > 0 && (
         <div className="rounded-lg border border-border bg-card p-5">
@@ -252,11 +355,17 @@ function AppointmentsTab() {
 }
 
 function ServicesTab() {
-  const { data, isLoading } = trpc.reports.topServices.useQuery();
+  const services = trpc.reports.topServices.useQuery();
+  const species = trpc.reports.speciesDistribution.useQuery();
 
-  if (isLoading || !data) return <LoadingSkeleton />;
+  if (services.isLoading || species.isLoading || !services.data || !species.data) {
+    return <LoadingSkeleton />;
+  }
 
-  if (data.length === 0) {
+  const hasServices = services.data.length > 0;
+  const hasSpecies = species.data.length > 0;
+
+  if (!hasServices && !hasSpecies) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card p-12 text-center">
         <p className="text-muted-foreground">No service data available</p>
@@ -266,63 +375,105 @@ function ServicesTab() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-card p-5">
-        <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-          Top 10 Services by Count
-        </h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11 }}
-              className="text-muted-foreground"
-              angle={-25}
-              textAnchor="end"
-              height={60}
-            />
-            <YAxis
-              tick={{ fontSize: 12 }}
-              className="text-muted-foreground"
-              allowDecimals={false}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: "0.5rem",
-              }}
-            />
-            <Bar dataKey="count" fill="#0d9488" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="rounded-lg border border-border bg-card p-5">
-        <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-          Service Details
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="pb-2 font-medium">Service</th>
-                <th className="pb-2 font-medium text-right">Count</th>
-                <th className="pb-2 font-medium text-right">Total Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((svc) => (
-                <tr key={svc.name} className="border-b border-border last:border-0">
-                  <td className="py-2">{svc.name}</td>
-                  <td className="py-2 text-right">{svc.count}</td>
-                  <td className="py-2 text-right">{formatCurrency(svc.revenue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {hasSpecies && (
+        <div className="rounded-lg border border-border bg-card p-5">
+          <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+            Species Distribution
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={species.data}
+                cx="50%"
+                cy="50%"
+                outerRadius={100}
+                dataKey="value"
+                label={PieLabel}
+              >
+                {species.data.map((entry) => (
+                  <Cell
+                    key={entry.name}
+                    fill={SPECIES_COLORS[entry.name] ?? "#6b7280"}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "0.5rem",
+                  fontSize: "0.875rem",
+                  color: "hsl(var(--foreground))",
+                }}
+                itemStyle={{ color: "hsl(var(--foreground))" }}
+                labelStyle={{ color: "hsl(var(--foreground))" }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
-      </div>
+      )}
+
+      {hasServices && (
+        <>
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+              Top 10 Services by Count
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={services.data}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 11 }}
+                  className="text-muted-foreground"
+                  angle={-25}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  className="text-muted-foreground"
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "0.5rem",
+                  }}
+                />
+                <Bar dataKey="count" fill="#0d9488" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+              Service Details
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground">
+                    <th className="pb-2 font-medium">Service</th>
+                    <th className="pb-2 font-medium text-right">Count</th>
+                    <th className="pb-2 font-medium text-right">Total Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {services.data.map((svc) => (
+                    <tr key={svc.name} className="border-b border-border last:border-0">
+                      <td className="py-2">{svc.name}</td>
+                      <td className="py-2 text-right">{svc.count}</td>
+                      <td className="py-2 text-right">{formatCurrency(svc.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

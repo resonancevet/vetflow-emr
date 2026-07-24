@@ -1755,7 +1755,7 @@ function OrderItemRows({
                       save({ lotNumber: lotNumber || null });
                     }
                   }}
-                  className="mt-0.5 h-8 w-20 px-1.5 text-sm"
+                  className="mt-0.5 h-8 w-[calc(12ch+0.75rem)] px-1.5 text-sm"
                 />
               </div>
               <div className="flex flex-col">

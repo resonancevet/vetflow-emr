@@ -7,6 +7,7 @@ import {
   products,
   appointments,
   users,
+  patients,
 } from "@openpims/db";
 
 export const reportsRouter = createRouter({
@@ -74,53 +75,111 @@ export const reportsRouter = createRouter({
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
     const baseConds = [
       eq(appointments.practiceId, ctx.practiceId),
       isNull(appointments.deletedAt),
       gte(appointments.startTime, monthStart),
     ];
 
-    const [totalResult, completedResult, noShowResult, cancelledResult, byDoctor] =
-      await Promise.all([
-        ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(appointments)
-          .where(and(...baseConds)),
+    const [
+      totalResult,
+      completedResult,
+      noShowResult,
+      cancelledResult,
+      byDoctor,
+      appointmentsByDayRows,
+    ] = await Promise.all([
+      ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(appointments)
+        .where(and(...baseConds)),
 
-        ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(appointments)
-          .where(and(...baseConds, eq(appointments.status, "checked_out"))),
+      ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(appointments)
+        .where(and(...baseConds, eq(appointments.status, "checked_out"))),
 
-        ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(appointments)
-          .where(and(...baseConds, eq(appointments.status, "no_show"))),
+      ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(appointments)
+        .where(and(...baseConds, eq(appointments.status, "no_show"))),
 
-        ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(appointments)
-          .where(and(...baseConds, eq(appointments.status, "cancelled"))),
+      ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(appointments)
+        .where(and(...baseConds, eq(appointments.status, "cancelled"))),
 
-        // By doctor breakdown
-        ctx.db
-          .select({
-            doctorName: users.name,
-            total: sql<number>`count(*)::int`,
-            completed: sql<number>`count(*) filter (where ${appointments.status} = 'checked_out')::int`,
-          })
-          .from(appointments)
-          .leftJoin(users, eq(appointments.doctorId, users.id))
-          .where(and(...baseConds))
-          .groupBy(users.name)
-          .orderBy(sql`count(*) desc`),
-      ]);
+      // By doctor breakdown
+      ctx.db
+        .select({
+          doctorName: users.name,
+          total: sql<number>`count(*)::int`,
+          completed: sql<number>`count(*) filter (where ${appointments.status} = 'checked_out')::int`,
+        })
+        .from(appointments)
+        .leftJoin(users, eq(appointments.doctorId, users.id))
+        .where(and(...baseConds))
+        .groupBy(users.name)
+        .orderBy(sql`count(*) desc`),
+
+      // Appointments by day (last 7 days)
+      ctx.db
+        .select({
+          day: sql<string>`to_char(date_trunc('day', ${appointments.startTime}), 'Dy')`,
+          status: appointments.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.practiceId, ctx.practiceId),
+            isNull(appointments.deletedAt),
+            gte(appointments.startTime, sevenDaysAgo)
+          )
+        )
+        .groupBy(
+          sql`date_trunc('day', ${appointments.startTime})`,
+          appointments.status
+        )
+        .orderBy(sql`date_trunc('day', ${appointments.startTime})`),
+    ]);
 
     const total = Number(totalResult[0]?.count ?? 0);
     const completed = Number(completedResult[0]?.count ?? 0);
     const noShows = Number(noShowResult[0]?.count ?? 0);
     const cancelled = Number(cancelledResult[0]?.count ?? 0);
     const fillRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    const dayMap = new Map<
+      string,
+      { date: string; scheduled: number; completed: number; cancelled: number }
+    >();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgo);
+      d.setDate(d.getDate() + i);
+      const label = d.toLocaleDateString("en-US", { weekday: "short" });
+      dayMap.set(label, {
+        date: label,
+        scheduled: 0,
+        completed: 0,
+        cancelled: 0,
+      });
+    }
+    for (const row of appointmentsByDayRows) {
+      const entry = dayMap.get(row.day);
+      if (!entry) continue;
+      if (row.status === "scheduled" || row.status === "confirmed") {
+        entry.scheduled += Number(row.count);
+      } else if (row.status === "checked_out") {
+        entry.completed += Number(row.count);
+      } else if (row.status === "cancelled" || row.status === "no_show") {
+        entry.cancelled += Number(row.count);
+      }
+    }
 
     return {
       total,
@@ -133,7 +192,41 @@ export const reportsRouter = createRouter({
         total: Number(d.total),
         completed: Number(d.completed),
       })),
+      appointmentsByDay: Array.from(dayMap.values()),
     };
+  }),
+
+  speciesDistribution: protectedProcedure.query(async ({ ctx }) => {
+    const speciesRows = await ctx.db
+      .select({
+        species: patients.species,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.practiceId, ctx.practiceId),
+          isNull(patients.deletedAt),
+          eq(patients.status, "active")
+        )
+      )
+      .groupBy(patients.species)
+      .orderBy(sql`count(*) desc`);
+
+    const speciesLabels: Record<string, string> = {
+      canine: "Canine",
+      feline: "Feline",
+      avian: "Avian",
+      rabbit: "Rabbit",
+      reptile: "Reptile",
+      equine: "Equine",
+      other: "Other",
+    };
+
+    return speciesRows.map((r) => ({
+      name: speciesLabels[r.species] ?? r.species,
+      value: Number(r.count),
+    }));
   }),
 
   topServices: protectedProcedure.query(async ({ ctx }) => {
