@@ -257,11 +257,11 @@ export async function sendInvoiceEmail(
   },
   template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.invoiceEmail
 ): Promise<{ success: boolean; error?: string; id?: string }> {
-  const invoiceRows = [
-    { label: "Amount Due", value: data.invoiceTotal, large: true as const },
+  const invoiceRows: { label: string; value: string; large?: boolean }[] = [
+    { label: "Amount Due", value: data.invoiceTotal, large: true },
   ];
   if (data.dueDate) {
-    invoiceRows.push({ label: "Due Date", value: data.dueDate, large: false });
+    invoiceRows.push({ label: "Due Date", value: data.dueDate });
   }
 
   const textVars = {
