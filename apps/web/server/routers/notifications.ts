@@ -10,12 +10,14 @@ import {
   communications,
   invoices,
   vaccinationRecords,
+  practices,
 } from "@openpims/db";
 import {
   sendAppointmentReminder,
   sendInvoiceEmail,
   sendVaccinationReminder,
 } from "@/lib/email";
+import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
 
 function formatDate(d: Date | string): string {
   return new Date(d).toLocaleDateString("en-US", {
@@ -31,6 +33,29 @@ function formatTime(d: Date | string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+async function getPracticeEmailContext(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string
+) {
+  const [practice] = await db
+    .select({
+      name: practices.name,
+      phone: practices.phone,
+      address: practices.address,
+      settings: practices.settings,
+    })
+    .from(practices)
+    .where(eq(practices.id, practiceId))
+    .limit(1);
+  return {
+    practiceName: practice?.name ?? "",
+    practicePhone: practice?.phone ?? undefined,
+    practiceAddress: practice?.address ?? undefined,
+    templates: getEmailTemplatesFromSettings(practice?.settings),
+  };
 }
 
 export const notificationsRouter = createRouter({
@@ -67,14 +92,30 @@ export const notificationsRouter = createRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Client does not have an email address on file" });
       }
 
-      await sendAppointmentReminder({
-        to: appt.clientEmail,
-        clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
-        patientName: appt.patientName ?? "Unknown",
-        appointmentDate: formatDate(appt.startTime),
-        appointmentTime: formatTime(appt.startTime),
-        practiceName: "",
-      });
+      const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
+
+      const result = await sendAppointmentReminder(
+        {
+          to: appt.clientEmail,
+          clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
+          patientName: appt.patientName ?? "Unknown",
+          appointmentDate: formatDate(appt.startTime),
+          appointmentTime: formatTime(appt.startTime),
+          practiceName: emailCtx.practiceName,
+          practicePhone: emailCtx.practicePhone,
+          practiceAddress: emailCtx.practiceAddress,
+        },
+        emailCtx.templates.appointmentReminder
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            result.error ??
+            "Failed to send email. Check Resend domain/from address and server logs.",
+        });
+      }
 
       await ctx.db.insert(communications).values({
         practiceId: ctx.practiceId,
@@ -86,7 +127,7 @@ export const notificationsRouter = createRouter({
         status: "sent",
       });
 
-      return { success: true };
+      return { success: true, emailId: result.id ?? null };
     }),
 
   sendInvoiceEmail: protectedProcedure
@@ -121,13 +162,28 @@ export const notificationsRouter = createRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Client does not have an email address on file" });
       }
 
-      await sendInvoiceEmail({
-        to: invoice.clientEmail,
-        clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`,
-        invoiceTotal: `$${Number(invoice.total ?? 0).toFixed(2)}`,
-        dueDate: invoice.dueDate ?? undefined,
-        practiceName: "",
-      });
+      const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
+
+      const result = await sendInvoiceEmail(
+        {
+          to: invoice.clientEmail,
+          clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`,
+          invoiceTotal: `$${Number(invoice.total ?? 0).toFixed(2)}`,
+          dueDate: invoice.dueDate ?? undefined,
+          practiceName: emailCtx.practiceName,
+          practicePhone: emailCtx.practicePhone,
+        },
+        emailCtx.templates.invoiceEmail
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            result.error ??
+            "Failed to send email. Check Resend domain/from address and server logs.",
+        });
+      }
 
       await ctx.db.insert(communications).values({
         practiceId: ctx.practiceId,
@@ -139,7 +195,7 @@ export const notificationsRouter = createRouter({
         status: "sent",
       });
 
-      return { success: true };
+      return { success: true, emailId: result.id ?? null };
     }),
 
   getUpcomingReminders: protectedProcedure.query(async ({ ctx }) => {
@@ -203,18 +259,28 @@ export const notificationsRouter = createRouter({
 
       let sent = 0;
       let failed = 0;
+      const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
 
       for (const appt of appts) {
         if (!appt.clientEmail) { failed++; continue; }
         try {
-          await sendAppointmentReminder({
-            to: appt.clientEmail,
-            clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
-            patientName: appt.patientName ?? "Unknown",
-            appointmentDate: formatDate(appt.startTime),
-            appointmentTime: formatTime(appt.startTime),
-            practiceName: "",
-          });
+          const result = await sendAppointmentReminder(
+            {
+              to: appt.clientEmail,
+              clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
+              patientName: appt.patientName ?? "Unknown",
+              appointmentDate: formatDate(appt.startTime),
+              appointmentTime: formatTime(appt.startTime),
+              practiceName: emailCtx.practiceName,
+              practicePhone: emailCtx.practicePhone,
+              practiceAddress: emailCtx.practiceAddress,
+            },
+            emailCtx.templates.appointmentReminder
+          );
+          if (!result.success) {
+            failed++;
+            continue;
+          }
           await ctx.db.insert(communications).values({
             practiceId: ctx.practiceId,
             clientId: appt.clientId!,
@@ -347,20 +413,29 @@ export const notificationsRouter = createRouter({
 
       let sent = 0;
       let failed = 0;
+      const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
 
       for (const [, data] of grouped) {
         if (!data.clientEmail) { failed++; continue; }
         try {
           // Send one email per overdue vaccine (the email template handles a single vaccine)
           for (const vax of data.vaccines) {
-            await sendVaccinationReminder({
-              to: data.clientEmail,
-              clientName: data.clientName,
-              patientName: data.patientName,
-              vaccineName: vax.vaccineName,
-              dueDate: vax.nextDueDate ?? "overdue",
-              practiceName: "",
-            });
+            const result = await sendVaccinationReminder(
+              {
+                to: data.clientEmail,
+                clientName: data.clientName,
+                patientName: data.patientName,
+                vaccineName: vax.vaccineName,
+                dueDate: vax.nextDueDate ?? "overdue",
+                practiceName: emailCtx.practiceName,
+                practicePhone: emailCtx.practicePhone,
+              },
+              emailCtx.templates.vaccinationReminder
+            );
+            if (!result.success) {
+              failed++;
+              continue;
+            }
           }
           await ctx.db.insert(communications).values({
             practiceId: ctx.practiceId,

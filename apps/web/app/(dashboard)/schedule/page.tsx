@@ -520,8 +520,12 @@ function AppointmentDetailPopover({
 
 function SendReminderButton({ appointmentId }: { appointmentId: string }) {
   const sendReminder = trpc.notifications.sendAppointmentReminder.useMutation({
-    onSuccess: () => {
-      toast.success("Reminder sent");
+    onSuccess: (data) => {
+      toast.success(
+        data.emailId
+          ? `Reminder sent (Resend id: ${data.emailId})`
+          : "Reminder sent"
+      );
     },
     onError: (err) => {
       toast.error(err.message);

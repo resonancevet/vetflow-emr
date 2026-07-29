@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { calcTax, DEFAULT_TAX_RATE_PERCENT } from "@/lib/tax";
 
 interface LineItem {
   id: string;
@@ -62,6 +63,11 @@ export default function NewInvoicePage() {
   );
 
   const servicesQuery = trpc.billing.listServices.useQuery();
+  const billingSettings = trpc.settings.getBillingSettings.useQuery();
+  const taxEnabled = billingSettings.data?.taxEnabled ?? true;
+  const taxRatePercent =
+    billingSettings.data?.effectiveTaxRatePercent ??
+    (taxEnabled ? DEFAULT_TAX_RATE_PERCENT : 0);
 
   // Mutation
   const utils = trpc.useUtils();
@@ -82,13 +88,13 @@ export default function NewInvoicePage() {
       (sum, item) => sum + item.quantity * parseFloat(item.unitPrice || "0"),
       0
     );
-    const t = Math.round(sub * 0.08 * 100) / 100;
+    const t = calcTax(sub, taxRatePercent);
     return {
       subtotal: sub,
       tax: t,
       total: Math.round((sub + t) * 100) / 100,
     };
-  }, [items]);
+  }, [items, taxRatePercent]);
 
   function handleServiceSelect(serviceId: string) {
     setSelectedServiceId(serviceId);
@@ -388,7 +394,11 @@ export default function NewInvoicePage() {
               <span className="tabular-nums">${subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax (8%)</span>
+              <span className="text-muted-foreground">
+                {taxEnabled
+                  ? `Tax (${billingSettings.data?.taxRatePercent ?? taxRatePercent}%)`
+                  : "Tax (off)"}
+              </span>
               <span className="tabular-nums">${tax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-semibold border-t border-border pt-1">

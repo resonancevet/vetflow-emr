@@ -650,8 +650,12 @@ function InvoiceRow({
 
 function EmailInvoiceButton({ invoiceId }: { invoiceId: string }) {
   const sendInvoiceEmail = trpc.notifications.sendInvoiceEmail.useMutation({
-    onSuccess: () => {
-      toast.success("Invoice emailed");
+    onSuccess: (data) => {
+      toast.success(
+        data.emailId
+          ? `Invoice emailed (Resend id: ${data.emailId})`
+          : "Invoice emailed"
+      );
     },
     onError: (err) => {
       toast.error(err.message);

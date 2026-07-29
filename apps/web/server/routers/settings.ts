@@ -9,6 +9,18 @@ import {
   rooms,
 } from "@openpims/db";
 import { writeAudit } from "../lib/audit";
+import {
+  getEffectiveTaxRatePercent,
+  getTaxRatePercent,
+  isTaxEnabled,
+  type PracticeSettingsJson,
+} from "@/lib/tax";
+import {
+  DEFAULT_EMAIL_TEMPLATES,
+  EMAIL_TEMPLATE_META,
+  getEmailTemplatesFromSettings,
+  type EmailTemplateKey,
+} from "@/lib/email-templates";
 
 const adminProcedure = protectedProcedure.use(requireRole("admin"));
 
@@ -24,6 +36,20 @@ export const settingsRouter = createRouter({
     return practice ?? null;
   }),
 
+  /** Tax rate for invoice UI / anyone who can bill (not admin-only). */
+  getBillingSettings: protectedProcedure.query(async ({ ctx }) => {
+    const [practice] = await ctx.db
+      .select({ settings: practices.settings })
+      .from(practices)
+      .where(eq(practices.id, ctx.practiceId))
+      .limit(1);
+    return {
+      taxEnabled: isTaxEnabled(practice?.settings),
+      taxRatePercent: getTaxRatePercent(practice?.settings),
+      effectiveTaxRatePercent: getEffectiveTaxRatePercent(practice?.settings),
+    };
+  }),
+
   updatePractice: adminProcedure
     .input(
       z
@@ -36,6 +62,8 @@ export const settingsRouter = createRouter({
           timezone: z.string().optional(),
           scheduleStartHour: z.number().int().min(0).max(23).optional(),
           scheduleEndHour: z.number().int().min(1).max(24).optional(),
+          taxRatePercent: z.number().min(0).max(100).optional(),
+          taxEnabled: z.boolean().optional(),
         })
         .refine(
           (data) =>
@@ -49,12 +77,114 @@ export const settingsRouter = createRouter({
         )
     )
     .mutation(async ({ ctx, input }) => {
+      const { taxRatePercent, taxEnabled, ...practiceFields } = input;
+      const setValues: Record<string, unknown> = { ...practiceFields };
+
+      if (taxRatePercent !== undefined || taxEnabled !== undefined) {
+        const [current] = await ctx.db
+          .select({ settings: practices.settings })
+          .from(practices)
+          .where(eq(practices.id, ctx.practiceId))
+          .limit(1);
+        const existing =
+          (current?.settings as PracticeSettingsJson | null) ?? {};
+        setValues.settings = {
+          ...existing,
+          ...(taxRatePercent !== undefined ? { taxRatePercent } : {}),
+          ...(taxEnabled !== undefined ? { taxEnabled } : {}),
+        };
+      }
+
       const [updated] = await ctx.db
         .update(practices)
-        .set(input)
+        .set(setValues)
         .where(eq(practices.id, ctx.practiceId))
         .returning();
       return updated!;
+    }),
+
+  getEmailTemplates: adminProcedure.query(async ({ ctx }) => {
+    const [practice] = await ctx.db
+      .select({ settings: practices.settings })
+      .from(practices)
+      .where(eq(practices.id, ctx.practiceId))
+      .limit(1);
+    const templates = getEmailTemplatesFromSettings(practice?.settings);
+    return EMAIL_TEMPLATE_META.map((meta) => ({
+      ...meta,
+      subject: templates[meta.key].subject,
+      body: templates[meta.key].body,
+      isCustom:
+        JSON.stringify(templates[meta.key]) !==
+        JSON.stringify(DEFAULT_EMAIL_TEMPLATES[meta.key]),
+    }));
+  }),
+
+  updateEmailTemplate: adminProcedure
+    .input(
+      z.object({
+        key: z.enum([
+          "appointmentReminder",
+          "vaccinationReminder",
+          "invoiceEmail",
+        ]),
+        subject: z.string().min(1).max(500),
+        body: z.string().min(1).max(20000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [current] = await ctx.db
+        .select({ settings: practices.settings })
+        .from(practices)
+        .where(eq(practices.id, ctx.practiceId))
+        .limit(1);
+      const existing =
+        (current?.settings as PracticeSettingsJson | null) ?? {};
+      const emailTemplates = {
+        ...((existing.emailTemplates as Record<string, unknown>) ?? {}),
+        [input.key]: { subject: input.subject, body: input.body },
+      };
+      const [updated] = await ctx.db
+        .update(practices)
+        .set({
+          settings: { ...existing, emailTemplates },
+        })
+        .where(eq(practices.id, ctx.practiceId))
+        .returning({ settings: practices.settings });
+      return getEmailTemplatesFromSettings(updated?.settings)[
+        input.key as EmailTemplateKey
+      ];
+    }),
+
+  resetEmailTemplate: adminProcedure
+    .input(
+      z.object({
+        key: z.enum([
+          "appointmentReminder",
+          "vaccinationReminder",
+          "invoiceEmail",
+        ]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [current] = await ctx.db
+        .select({ settings: practices.settings })
+        .from(practices)
+        .where(eq(practices.id, ctx.practiceId))
+        .limit(1);
+      const existing =
+        (current?.settings as PracticeSettingsJson | null) ?? {};
+      const emailTemplates = {
+        ...((existing.emailTemplates as Record<string, unknown>) ?? {}),
+      };
+      delete emailTemplates[input.key];
+      await ctx.db
+        .update(practices)
+        .set({
+          settings: { ...existing, emailTemplates },
+        })
+        .where(eq(practices.id, ctx.practiceId));
+      return DEFAULT_EMAIL_TEMPLATES[input.key as EmailTemplateKey];
     }),
 
   // ── Staff / Users ─────────────────────────────────────────

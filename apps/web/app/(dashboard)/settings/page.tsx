@@ -169,9 +169,15 @@ function PracticeInfoTab() {
     timezone: string;
     scheduleStartHour: number;
     scheduleEndHour: number;
+    taxRatePercent: number;
+    taxEnabled: boolean;
   } | null>(null);
 
   // Initialize form when data loads
+  const settingsJson = (practice?.settings ?? {}) as {
+    taxRatePercent?: number;
+    taxEnabled?: boolean;
+  };
   const current = form ?? {
     name: practice?.name ?? "",
     address: practice?.address ?? "",
@@ -181,6 +187,11 @@ function PracticeInfoTab() {
     timezone: practice?.timezone ?? "America/New_York",
     scheduleStartHour: practice?.scheduleStartHour ?? 8,
     scheduleEndHour: practice?.scheduleEndHour ?? 18,
+    taxRatePercent:
+      typeof settingsJson.taxRatePercent === "number"
+        ? settingsJson.taxRatePercent
+        : 8,
+    taxEnabled: settingsJson.taxEnabled !== false,
   };
 
   if (isLoading) {
@@ -252,6 +263,47 @@ function PracticeInfoTab() {
             ))}
           </select>
         </label>
+
+        <div className="border-t border-border pt-4">
+          <h3 className="text-sm font-semibold">Billing</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Sales tax automatically applied to new invoices and estimates.
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={current.taxEnabled}
+              onChange={(e) =>
+                setForm({ ...current, taxEnabled: e.target.checked })
+              }
+              className="h-4 w-4 rounded border-input"
+            />
+            <span className="font-medium">Automatically add sales tax</span>
+          </label>
+          <label
+            className={cn(
+              "mt-3 block space-y-1.5",
+              !current.taxEnabled && "opacity-50"
+            )}
+          >
+            <span className="text-sm font-medium">Tax rate (%)</span>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              step={0.01}
+              disabled={!current.taxEnabled}
+              value={current.taxRatePercent}
+              onChange={(e) =>
+                handleChange(
+                  "taxRatePercent",
+                  parseFloat(e.target.value) || 0
+                )
+              }
+              className="max-w-[10rem]"
+            />
+          </label>
+        </div>
 
         <div className="border-t border-border pt-4">
           <h3 className="text-sm font-semibold">Schedule Hours</h3>
@@ -1571,6 +1623,209 @@ interface TemplateItem {
   sortOrder: number;
 }
 
+function EmailRemindersSection() {
+  const utils = trpc.useUtils();
+  const { data: emailTemplates, isLoading } =
+    trpc.settings.getEmailTemplates.useQuery();
+  const updateMutation = trpc.settings.updateEmailTemplate.useMutation({
+    onSuccess: () => {
+      utils.settings.getEmailTemplates.invalidate();
+      setEditingKey(null);
+      toast.success("Email template saved");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const resetMutation = trpc.settings.resetEmailTemplate.useMutation({
+    onSuccess: (data) => {
+      utils.settings.getEmailTemplates.invalidate();
+      if (editingKey) {
+        setEditForm({ subject: data.subject, body: data.body });
+      }
+      toast.success("Reset to default template");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const [editingKey, setEditingKey] = useState<
+    "appointmentReminder" | "vaccinationReminder" | "invoiceEmail" | null
+  >(null);
+  const [editForm, setEditForm] = useState({ subject: "", body: "" });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (editingKey) {
+    const meta = emailTemplates?.find((t) => t.key === editingKey);
+    return (
+      <div className="space-y-4 rounded-lg border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">
+              Edit: {meta?.label ?? editingKey}
+            </h3>
+            <p className="text-xs text-muted-foreground">{meta?.description}</p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditingKey(null)}
+          >
+            <X className="mr-1 h-4 w-4" />
+            Cancel
+          </Button>
+        </div>
+
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">Subject</span>
+          <Input
+            value={editForm.subject}
+            onChange={(e) =>
+              setEditForm({ ...editForm, subject: e.target.value })
+            }
+          />
+        </label>
+
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">Body</span>
+          <textarea
+            className="min-h-[220px] w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={editForm.body}
+            onChange={(e) =>
+              setEditForm({ ...editForm, body: e.target.value })
+            }
+          />
+        </label>
+
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            Merge fields — click to insert
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {meta?.mergeFields.map((f) => (
+              <button
+                key={f.token}
+                type="button"
+                title={f.meaning}
+                className="rounded border border-border bg-background px-2 py-0.5 font-mono text-[11px] hover:border-primary hover:text-primary"
+                onClick={() =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    body: prev.body + (prev.body.endsWith("\n") || !prev.body ? "" : " ") + f.token,
+                  }))
+                }
+              >
+                {f.token}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Use {"{{#field}}...{{/field}}"} to show text only when that field has
+            a value (e.g. practice phone).
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={updateMutation.isPending}
+            onClick={() =>
+              updateMutation.mutate({
+                key: editingKey,
+                subject: editForm.subject,
+                body: editForm.body,
+              })
+            }
+          >
+            {updateMutation.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={resetMutation.isPending}
+            onClick={() => resetMutation.mutate({ key: editingKey })}
+          >
+            Reset to default
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">Email reminders</h3>
+        <p className="text-xs text-muted-foreground">
+          Customize subject and body for appointment, vaccination, and invoice
+          emails.
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-3 text-left font-medium">Type</th>
+              <th className="px-4 py-3 text-left font-medium">Subject</th>
+              <th className="px-4 py-3 text-left font-medium">Status</th>
+              <th className="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(emailTemplates ?? []).map((t) => (
+              <tr key={t.key} className="border-b border-border last:border-0">
+                <td className="px-4 py-3">
+                  <div className="font-medium">{t.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.description}
+                  </div>
+                </td>
+                <td className="max-w-xs truncate px-4 py-3 text-muted-foreground">
+                  {t.subject}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                      t.isCustom
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {t.isCustom ? "Customized" : "Default"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingKey(t.key);
+                      setEditForm({ subject: t.subject, body: t.body });
+                    }}
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function TemplatesTab() {
   const utils = trpc.useUtils();
   const { data: templateList, isLoading } = trpc.templates.list.useQuery();
@@ -1742,8 +1997,17 @@ function TemplatesTab() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
+    <div className="space-y-8">
+      <EmailRemindersSection />
+
+      <div className="border-t border-border pt-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Treatment templates</h3>
+          <p className="text-xs text-muted-foreground">
+            Bundles of services/products for quick invoicing.
+          </p>
+        </div>
         <Button
           onClick={() => {
             setShowAdd(!showAdd);
@@ -1970,6 +2234,7 @@ function TemplatesTab() {
             )}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );

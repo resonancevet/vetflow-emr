@@ -7,9 +7,11 @@ import {
   clients,
   users,
   communications,
+  practices,
 } from "@openpims/db";
 import { sendAppointmentReminder } from "@/lib/email";
 import { isCronAuthorized } from "@/lib/cron-auth";
+import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
 
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -50,6 +52,29 @@ export async function GET(request: Request) {
 
     let sent = 0;
     let failed = 0;
+    const practiceCache = new Map<
+      string,
+      Awaited<ReturnType<typeof loadPracticeEmail>>
+    >();
+
+    async function loadPracticeEmail(practiceId: string) {
+      const [practice] = await db
+        .select({
+          name: practices.name,
+          phone: practices.phone,
+          address: practices.address,
+          settings: practices.settings,
+        })
+        .from(practices)
+        .where(eq(practices.id, practiceId))
+        .limit(1);
+      return {
+        practiceName: practice?.name ?? "",
+        practicePhone: practice?.phone ?? undefined,
+        practiceAddress: practice?.address ?? undefined,
+        templates: getEmailTemplatesFromSettings(practice?.settings),
+      };
+    }
 
     for (const appt of upcomingAppointments) {
       if (!appt.clientEmail || !appt.clientId) {
@@ -58,23 +83,39 @@ export async function GET(request: Request) {
       }
 
       try {
+        let emailCtx = practiceCache.get(appt.practiceId);
+        if (!emailCtx) {
+          emailCtx = await loadPracticeEmail(appt.practiceId);
+          practiceCache.set(appt.practiceId, emailCtx);
+        }
+
         const startDate = new Date(appt.startTime);
-        await sendAppointmentReminder({
-          to: appt.clientEmail,
-          clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
-          patientName: appt.patientName ?? "Unknown",
-          appointmentDate: startDate.toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-          }),
-          appointmentTime: startDate.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          }),
-          practiceName: "",
-        });
+        const result = await sendAppointmentReminder(
+          {
+            to: appt.clientEmail,
+            clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
+            patientName: appt.patientName ?? "Unknown",
+            appointmentDate: startDate.toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            }),
+            appointmentTime: startDate.toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+            practiceName: emailCtx.practiceName,
+            practicePhone: emailCtx.practicePhone,
+            practiceAddress: emailCtx.practiceAddress,
+          },
+          emailCtx.templates.appointmentReminder
+        );
+
+        if (!result.success) {
+          failed++;
+          continue;
+        }
 
         await db.insert(communications).values({
           practiceId: appt.practiceId,
