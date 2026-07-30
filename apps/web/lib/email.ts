@@ -24,7 +24,9 @@ function getResend(): Resend | null {
 
 /** Prefer EMAIL_FROM (e.g. "NH Mobile Vet <noreply@mail.nhmobilevet.com>"). */
 function getDefaultFrom(): string {
-  return process.env.EMAIL_FROM?.trim() || "noreply@openpims.dev";
+  const raw = process.env.EMAIL_FROM?.trim() || "noreply@openpims.dev";
+  // Vercel/env UIs sometimes store values with surrounding quotes copied from .env
+  return raw.replace(/^['"]|['"]$/g, "").trim() || "noreply@openpims.dev";
 }
 
 // ---------------------------------------------------------------------------
