@@ -393,6 +393,14 @@ export const portalRouter = createRouter({
         templates.portalMagicLink
       );
 
+      if (!result.success) {
+        console.error("[Portal] Magic-link email failed", {
+          clientId: client.id,
+          email,
+          error: result.error,
+        });
+      }
+
       await writeAudit({
         practiceId: client.practiceId,
         action: "portal.magic_link.requested",
@@ -402,6 +410,7 @@ export const portalRouter = createRouter({
           email,
           matched: true,
           emailed: result.success,
+          emailError: result.error ?? null,
           ambiguous: matches.length > 1,
         },
         ipAddress: ctx.ipAddress,
