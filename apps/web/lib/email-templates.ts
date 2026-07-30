@@ -4,6 +4,7 @@ export type EmailTemplateKey =
   | "appointmentReminder"
   | "appointmentConfirmation"
   | "appointmentRequestDeclined"
+  | "portalMagicLink"
   | "vaccinationReminder"
   | "invoiceEmail";
 
@@ -69,6 +70,22 @@ export const EMAIL_TEMPLATE_META: {
       {
         token: "{{requestCard}}",
         meaning: "Styled preferred date/time box when available (HTML)",
+      },
+    ],
+  },
+  {
+    key: "portalMagicLink",
+    label: "Portal magic link",
+    description:
+      "One-time sign-in link emailed when a client requests access at /portal/login.",
+    mergeFields: [
+      { token: "{{clientName}}", meaning: "Client full name" },
+      { token: "{{practiceName}}", meaning: "Practice name" },
+      { token: "{{practicePhone}}", meaning: "Practice phone" },
+      { token: "{{expiresInMinutes}}", meaning: "Link lifetime in minutes" },
+      {
+        token: "{{magicLinkButton}}",
+        meaning: "Open-portal button (HTML)",
       },
     ],
   },
@@ -157,6 +174,16 @@ We received your appointment request for {{patientName}}, but we were not able t
 {{staffMessage}}
 
 Please reply to this email or call us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}} if you would like to choose another time.`,
+  },
+  portalMagicLink: {
+    subject: "Your pet portal sign-in link — {{practiceName}}",
+    body: `Hi {{clientName}},
+
+Use the button below to open your pet portal at {{practiceName}}. This link expires in {{expiresInMinutes}} minutes and can only be used once.
+
+{{magicLinkButton}}
+
+If you did not request this email, you can ignore it.`,
   },
   vaccinationReminder: {
     subject: "Vaccination Reminder: {{vaccineName}} for {{patientName}}",

@@ -1696,6 +1696,7 @@ function EmailRemindersSection() {
     | "appointmentReminder"
     | "appointmentConfirmation"
     | "appointmentRequestDeclined"
+    | "portalMagicLink"
     | "vaccinationReminder"
     | "invoiceEmail"
     | null

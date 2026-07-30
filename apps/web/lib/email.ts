@@ -447,3 +447,48 @@ export async function sendPortalInviteEmail(data: {
     html,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Portal magic link (client self-serve login)
+// ---------------------------------------------------------------------------
+
+export async function sendPortalMagicLinkEmail(
+  data: {
+    to: string;
+    clientName: string;
+    practiceName: string;
+    practicePhone?: string;
+    practiceAddress?: string;
+    magicLinkUrl: string;
+    expiresInMinutes: number;
+  },
+  template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.portalMagicLink
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  const textVars = {
+    clientName: data.clientName,
+    practiceName: data.practiceName,
+    practicePhone: data.practicePhone ?? "",
+    expiresInMinutes: String(data.expiresInMinutes),
+  };
+  const htmlVars = {
+    magicLinkButton: ctaButtonHtml("Open pet portal", data.magicLinkUrl),
+  };
+  const body = bodyToHtml(template.body, textVars, htmlVars);
+  const html = emailLayout(
+    data.practiceName,
+    body,
+    practiceFooter({
+      practiceName: data.practiceName,
+      practicePhone: data.practicePhone,
+      practiceAddress: data.practiceAddress,
+    })
+  );
+
+  const result = await sendEmail({
+    to: data.to,
+    subject: subjectFromTemplate(template.subject, textVars),
+    html,
+  });
+
+  return { success: result.success, error: result.error, id: result.id };
+}

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, isNotNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, publicProcedure } from "../trpc";
 import {
@@ -15,11 +15,22 @@ import {
   communications,
   practices,
   users,
+  portalLoginTokens,
 } from "@openpims/db";
 import {
   buildAppointmentRequestContent,
   buildAppointmentRequestSubject,
 } from "@/lib/appointment-request";
+import {
+  buildPortalMagicLinkUrl,
+  generatePortalMagicLinkToken,
+  hashPortalMagicLinkToken,
+  PORTAL_MAGIC_LINK_TTL_MS,
+} from "@/lib/portal-token";
+import { sendPortalMagicLinkEmail } from "@/lib/email";
+import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
+import { rateLimit } from "@/lib/rate-limit";
+import { writeAudit } from "../lib/audit";
 
 async function getClientByToken(db: any, token: string) {
   const [client] = await db
@@ -280,5 +291,123 @@ export const portalRouter = createRouter({
         message:
           "Your appointment request has been sent! The clinic will confirm your appointment.",
       };
+    }),
+
+  /**
+   * Request a one-time portal magic link by email.
+   * Always returns the same generic message (no email enumeration).
+   */
+  requestMagicLink: publicProcedure
+    .input(z.object({ email: z.string().email().max(255) }))
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email.trim().toLowerCase();
+      const ip = ctx.ipAddress ?? "unknown";
+
+      const ipLimit = rateLimit({
+        key: `portal-magic:ip:${ip}`,
+        limit: 10,
+        windowMs: 60 * 60 * 1000,
+      });
+      const emailLimit = rateLimit({
+        key: `portal-magic:email:${email}`,
+        limit: 5,
+        windowMs: 60 * 60 * 1000,
+      });
+
+      const generic = {
+        success: true as const,
+        message:
+          "If we have an account for that email, we sent a sign-in link. Check your inbox (and spam folder).",
+      };
+
+      if (!ipLimit.success || !emailLimit.success) {
+        return generic;
+      }
+
+      const matches = await ctx.db
+        .select({
+          id: clients.id,
+          practiceId: clients.practiceId,
+          firstName: clients.firstName,
+          lastName: clients.lastName,
+          email: clients.email,
+          accessToken: clients.accessToken,
+          updatedAt: clients.updatedAt,
+        })
+        .from(clients)
+        .where(
+          and(
+            sql`lower(${clients.email}) = ${email}`,
+            isNull(clients.deletedAt),
+            isNotNull(clients.accessToken)
+          )
+        )
+        .orderBy(desc(clients.updatedAt))
+        .limit(5);
+
+      const client = matches[0];
+      if (!client?.accessToken || !client.email) {
+        await writeAudit({
+          action: "portal.magic_link.requested",
+          entityType: "client",
+          changes: { email, matched: false },
+          ipAddress: ctx.ipAddress,
+        });
+        return generic;
+      }
+
+      const rawToken = generatePortalMagicLinkToken();
+      const tokenHash = hashPortalMagicLinkToken(rawToken);
+      const expiresAt = new Date(Date.now() + PORTAL_MAGIC_LINK_TTL_MS);
+
+      await ctx.db.insert(portalLoginTokens).values({
+        practiceId: client.practiceId,
+        clientId: client.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      const [practice] = await ctx.db
+        .select({
+          name: practices.name,
+          phone: practices.phone,
+          address: practices.address,
+          settings: practices.settings,
+        })
+        .from(practices)
+        .where(eq(practices.id, client.practiceId))
+        .limit(1);
+
+      const templates = getEmailTemplatesFromSettings(practice?.settings);
+      const magicLinkUrl = buildPortalMagicLinkUrl(rawToken);
+      const result = await sendPortalMagicLinkEmail(
+        {
+          to: client.email,
+          clientName: `${client.firstName} ${client.lastName}`.trim(),
+          practiceName: practice?.name ?? "Your veterinary clinic",
+          practicePhone: practice?.phone ?? undefined,
+          practiceAddress: practice?.address ?? undefined,
+          magicLinkUrl,
+          expiresInMinutes: Math.round(PORTAL_MAGIC_LINK_TTL_MS / 60_000),
+        },
+        templates.portalMagicLink
+      );
+
+      await writeAudit({
+        practiceId: client.practiceId,
+        action: "portal.magic_link.requested",
+        entityType: "client",
+        entityId: client.id,
+        changes: {
+          email,
+          matched: true,
+          emailed: result.success,
+          ambiguous: matches.length > 1,
+        },
+        ipAddress: ctx.ipAddress,
+      });
+
+      // Still return generic success even if Resend failed (avoid enumeration).
+      return generic;
     }),
 });

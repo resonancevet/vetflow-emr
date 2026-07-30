@@ -95,7 +95,11 @@ function PortalHomePageContent() {
           This portal link is invalid or has been disabled.
         </p>
         <p className="text-sm text-gray-400 mt-2">
-          Please contact your veterinary clinic for a new link.
+          Please contact your veterinary clinic for a new link, or{" "}
+          <a href="/portal/login" className="text-teal-700 underline">
+            request a sign-in email
+          </a>
+          .
         </p>
       </div>
     );
