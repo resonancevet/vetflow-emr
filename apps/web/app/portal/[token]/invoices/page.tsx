@@ -32,32 +32,50 @@ function formatCurrency(amount: string | number | null): string {
 
 function PayButton({ token, invoiceId }: { token: string; invoiceId: string }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handlePay = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/portal/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, invoiceId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Unable to start checkout. Please try again or contact the clinic."
+        );
+        setLoading(false);
+        return;
+      }
       if (data.url) {
         window.location.href = data.url;
+        return;
       }
+      setError("Checkout is unavailable right now.");
+      setLoading(false);
     } catch {
+      setError("Network error. Please try again.");
       setLoading(false);
     }
   };
 
   return (
-    <button
-      onClick={handlePay}
-      disabled={loading}
-      className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
-    >
-      {loading ? "Redirecting..." : "Pay Online"}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={handlePay}
+        disabled={loading}
+        className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
+      >
+        {loading ? "Redirecting..." : "Pay Online"}
+      </button>
+      {error && <p className="max-w-[12rem] text-right text-xs text-red-600">{error}</p>}
+    </div>
   );
 }
 

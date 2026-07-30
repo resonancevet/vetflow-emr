@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -1034,6 +1034,20 @@ function BookingForm({
 // --- Main Page ---
 
 export default function SchedulePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      }
+    >
+      <SchedulePageContent />
+    </Suspense>
+  );
+}
+
+function SchedulePageContent() {
   const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT_DEFAULT);
 
   useEffect(() => {
@@ -1045,7 +1059,25 @@ export default function SchedulePage() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  const [currentDate, setCurrentDate] = useState(() => startOfDay(new Date()));
+  const searchParams = useSearchParams();
+  const [currentDate, setCurrentDate] = useState(() => {
+    const raw = searchParams.get("date");
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const parsed = startOfDay(new Date(`${raw}T12:00:00`));
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return startOfDay(new Date());
+  });
+
+  useEffect(() => {
+    const raw = searchParams.get("date");
+    if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return;
+    const parsed = startOfDay(new Date(`${raw}T12:00:00`));
+    if (Number.isNaN(parsed.getTime())) return;
+    setCurrentDate((prev) =>
+      toISODate(prev) === toISODate(parsed) ? prev : parsed
+    );
+  }, [searchParams]);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingDefaultTime, setBookingDefaultTime] = useState<string | undefined>(undefined);

@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { CommandSearch } from "@/components/common/command-search";
 import { ErrorBoundary } from "@/components/common/error-boundary";
+import { CallbackPanelProvider } from "@/components/dashboard/callback-panel-context";
 
 export default function DashboardLayout({
   children,
@@ -30,22 +31,24 @@ export default function DashboardLayout({
   }, [handleKeyDown]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar onSearchOpen={() => setSearchOpen(true)} />
-        <main
-          id="main-content"
-          className="flex-1 overflow-y-auto bg-surface p-4 pb-20 md:p-6 md:pb-6"
-        >
-          <ErrorBoundary>{children}</ErrorBoundary>
-        </main>
+    <CallbackPanelProvider>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TopBar onSearchOpen={() => setSearchOpen(true)} />
+          <main
+            id="main-content"
+            className="flex-1 overflow-y-auto bg-surface p-4 pb-20 md:p-6 md:pb-6"
+          >
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </main>
+        </div>
+        <BottomNav />
+        <CommandSearch
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+        />
       </div>
-      <BottomNav />
-      <CommandSearch
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-      />
-    </div>
+    </CallbackPanelProvider>
   );
 }

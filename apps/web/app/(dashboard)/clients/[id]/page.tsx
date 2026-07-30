@@ -11,6 +11,7 @@ import {
   type CommunicationListItem,
 } from "@/components/communications/log-communication-modal";
 import { ClientAlertsBanner } from "@/components/clients/client-alerts-banner";
+import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { formatPhoneDisplay } from "@/lib/phone-format";
 
 const speciesEmoji: Record<string, string> = {
@@ -114,6 +115,13 @@ export default function ClientDetailPage() {
       </div>
 
       <ClientAlertsBanner clientId={client.id} canManage />
+
+      <ClientPortalAccess
+        clientId={client.id}
+        clientEmail={client.email}
+        portalEnabled={client.portalEnabled}
+        portalUrl={client.portalUrl}
+      />
 
       <div className="mt-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

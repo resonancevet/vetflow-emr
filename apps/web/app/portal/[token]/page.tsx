@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -29,7 +29,22 @@ function calculateAge(dob: string | null): string {
 }
 
 export default function PortalHomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-600 border-t-transparent" />
+        </div>
+      }
+    >
+      <PortalHomePageContent />
+    </Suspense>
+  );
+}
+
+function PortalHomePageContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const token = params.token as string;
 
   const { data, isLoading, error } = trpc.portal.getClient.useQuery({ token });
@@ -40,6 +55,15 @@ export default function PortalHomePage() {
   const [apptTime, setApptTime] = useState("morning");
   const [apptReason, setApptReason] = useState("");
   const [apptSuccess, setApptSuccess] = useState("");
+
+  useEffect(() => {
+    const payment = searchParams.get("payment");
+    if (payment === "success") {
+      toast.success("Payment received — thank you!");
+    } else if (payment === "cancelled") {
+      toast.message("Payment cancelled. You can try again from Invoices anytime.");
+    }
+  }, [searchParams]);
 
   const requestAppt = trpc.portal.requestAppointment.useMutation({
     onSuccess: (result) => {
@@ -68,7 +92,7 @@ export default function PortalHomePage() {
     return (
       <div className="text-center py-20">
         <p className="text-lg text-gray-500">
-          This portal link is invalid or has expired.
+          This portal link is invalid or has been disabled.
         </p>
         <p className="text-sm text-gray-400 mt-2">
           Please contact your veterinary clinic for a new link.
@@ -86,7 +110,7 @@ export default function PortalHomePage() {
           Welcome, {data.firstName}!
         </h1>
         <p className="text-gray-500 mt-1">
-          Here is everything about your pets in one place.
+          Here is everything about your pets at {data.practiceName}.
         </p>
       </div>
 

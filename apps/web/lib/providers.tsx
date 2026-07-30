@@ -59,7 +59,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <SessionProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
             {children}
-            <Toaster richColors position="bottom-right" />
+            <Toaster richColors position="top-center" closeButton className="!z-[100]" />
           </ThemeProvider>
         </SessionProvider>
       </QueryClientProvider>

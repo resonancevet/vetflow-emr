@@ -2,6 +2,8 @@ import type { PracticeSettingsJson } from "@/lib/tax";
 
 export type EmailTemplateKey =
   | "appointmentReminder"
+  | "appointmentConfirmation"
+  | "appointmentRequestDeclined"
   | "vaccinationReminder"
   | "invoiceEmail";
 
@@ -30,6 +32,43 @@ export const EMAIL_TEMPLATE_META: {
       {
         token: "{{appointmentCard}}",
         meaning: "Styled date/time summary box (HTML)",
+      },
+    ],
+  },
+  {
+    key: "appointmentConfirmation",
+    label: "Appointment confirmation",
+    description:
+      "Sent when staff approve a portal appointment request from the dashboard.",
+    mergeFields: [
+      { token: "{{clientName}}", meaning: "Client full name" },
+      { token: "{{patientName}}", meaning: "Patient name" },
+      { token: "{{appointmentDate}}", meaning: "Appointment date" },
+      { token: "{{appointmentTime}}", meaning: "Appointment time" },
+      { token: "{{practiceName}}", meaning: "Practice name" },
+      { token: "{{practicePhone}}", meaning: "Practice phone" },
+      {
+        token: "{{appointmentCard}}",
+        meaning: "Styled date/time summary box (HTML)",
+      },
+    ],
+  },
+  {
+    key: "appointmentRequestDeclined",
+    label: "Appointment request declined",
+    description:
+      "Sent when staff decline a portal appointment request from the dashboard.",
+    mergeFields: [
+      { token: "{{clientName}}", meaning: "Client full name" },
+      { token: "{{patientName}}", meaning: "Patient name" },
+      { token: "{{preferredDate}}", meaning: "Client's preferred date" },
+      { token: "{{preferredTime}}", meaning: "Client's preferred time" },
+      { token: "{{staffMessage}}", meaning: "Message entered when declining" },
+      { token: "{{practiceName}}", meaning: "Practice name" },
+      { token: "{{practicePhone}}", meaning: "Practice phone" },
+      {
+        token: "{{requestCard}}",
+        meaning: "Styled preferred date/time box when available (HTML)",
       },
     ],
   },
@@ -93,6 +132,31 @@ This is a friendly reminder about an upcoming appointment for {{patientName}}.
 If you need to cancel or reschedule, please call us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}} as soon as possible.
 
 We look forward to seeing you and {{patientName}}!`,
+  },
+  appointmentConfirmation: {
+    subject:
+      "Appointment Confirmed for {{patientName}} – {{appointmentDate}}",
+    body: `Hi {{clientName}},
+
+Your appointment request for {{patientName}} has been confirmed.
+
+{{appointmentCard}}
+
+If you need to cancel or reschedule, please call us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}} as soon as possible.
+
+We look forward to seeing you and {{patientName}}!`,
+  },
+  appointmentRequestDeclined: {
+    subject: "Update on your appointment request for {{patientName}}",
+    body: `Hi {{clientName}},
+
+We received your appointment request for {{patientName}}, but we were not able to book that time.
+
+{{requestCard}}
+
+{{staffMessage}}
+
+Please reply to this email or call us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}} if you would like to choose another time.`,
   },
   vaccinationReminder: {
     subject: "Vaccination Reminder: {{vaccineName}} for {{patientName}}",

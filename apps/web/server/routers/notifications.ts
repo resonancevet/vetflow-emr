@@ -18,6 +18,10 @@ import {
   sendVaccinationReminder,
 } from "@/lib/email";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
+import {
+  buildPortalUrl,
+  generatePortalAccessToken,
+} from "@/lib/portal-token";
 
 function formatDate(d: Date | string): string {
   return new Date(d).toLocaleDateString("en-US", {
@@ -143,6 +147,7 @@ export const notificationsRouter = createRouter({
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
+          clientAccessToken: clients.accessToken,
         })
         .from(invoices)
         .leftJoin(clients, eq(invoices.clientId, clients.id))
@@ -164,6 +169,18 @@ export const notificationsRouter = createRouter({
 
       const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
 
+      let portalUrl: string | undefined;
+      if (invoice.clientAccessToken) {
+        portalUrl = buildPortalUrl(invoice.clientAccessToken);
+      } else if (invoice.clientId) {
+        const token = generatePortalAccessToken();
+        await ctx.db
+          .update(clients)
+          .set({ accessToken: token })
+          .where(eq(clients.id, invoice.clientId));
+        portalUrl = buildPortalUrl(token);
+      }
+
       const result = await sendInvoiceEmail(
         {
           to: invoice.clientEmail,
@@ -172,6 +189,7 @@ export const notificationsRouter = createRouter({
           dueDate: invoice.dueDate ?? undefined,
           practiceName: emailCtx.practiceName,
           practicePhone: emailCtx.practicePhone,
+          portalUrl,
         },
         emailCtx.templates.invoiceEmail
       );

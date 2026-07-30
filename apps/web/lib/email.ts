@@ -185,6 +185,121 @@ export async function sendAppointmentReminder(
 }
 
 // ---------------------------------------------------------------------------
+// Appointment confirmation (portal request approved)
+// ---------------------------------------------------------------------------
+
+export async function sendAppointmentConfirmation(
+  data: {
+    to: string;
+    clientName: string;
+    patientName: string;
+    appointmentDate: string;
+    appointmentTime: string;
+    practiceName: string;
+    practicePhone?: string;
+    practiceAddress?: string;
+  },
+  template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.appointmentConfirmation
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  const textVars = {
+    clientName: data.clientName,
+    patientName: data.patientName,
+    appointmentDate: data.appointmentDate,
+    appointmentTime: data.appointmentTime,
+    practiceName: data.practiceName,
+    practicePhone: data.practicePhone ?? "",
+  };
+  const htmlVars = {
+    appointmentCard: infoCardHtml(
+      [
+        { label: "Date", value: data.appointmentDate },
+        { label: "Time", value: data.appointmentTime },
+      ],
+      "teal"
+    ),
+  };
+  const body = bodyToHtml(template.body, textVars, htmlVars);
+  const html = emailLayout(
+    data.practiceName,
+    body,
+    practiceFooter({
+      practiceName: data.practiceName,
+      practicePhone: data.practicePhone,
+      practiceAddress: data.practiceAddress,
+    })
+  );
+
+  const result = await sendEmail({
+    to: data.to,
+    subject: subjectFromTemplate(template.subject, textVars),
+    html,
+  });
+
+  return { success: result.success, error: result.error, id: result.id };
+}
+
+// ---------------------------------------------------------------------------
+// Appointment request declined / unavailable
+// ---------------------------------------------------------------------------
+
+export async function sendAppointmentRequestDeclined(
+  data: {
+    to: string;
+    clientName: string;
+    patientName: string;
+    preferredDate?: string | null;
+    preferredTime?: string | null;
+    staffMessage: string;
+    practiceName: string;
+    practicePhone?: string;
+    practiceAddress?: string;
+  },
+  template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.appointmentRequestDeclined
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  const preferredDate = data.preferredDate?.trim() || "";
+  const preferredTime = data.preferredTime?.trim() || "";
+  const requestRows: { label: string; value: string }[] = [];
+  if (preferredDate) {
+    requestRows.push({ label: "Preferred date", value: preferredDate });
+  }
+  if (preferredTime) {
+    requestRows.push({ label: "Preferred time", value: preferredTime });
+  }
+
+  const textVars = {
+    clientName: data.clientName,
+    patientName: data.patientName,
+    preferredDate,
+    preferredTime,
+    staffMessage: data.staffMessage,
+    practiceName: data.practiceName,
+    practicePhone: data.practicePhone ?? "",
+  };
+  const htmlVars = {
+    requestCard:
+      requestRows.length > 0 ? infoCardHtml(requestRows, "amber") : "",
+  };
+  const body = bodyToHtml(template.body, textVars, htmlVars);
+  const html = emailLayout(
+    data.practiceName,
+    body,
+    practiceFooter({
+      practiceName: data.practiceName,
+      practicePhone: data.practicePhone,
+      practiceAddress: data.practiceAddress,
+    })
+  );
+
+  const result = await sendEmail({
+    to: data.to,
+    subject: subjectFromTemplate(template.subject, textVars),
+    html,
+  });
+
+  return { success: result.success, error: result.error, id: result.id };
+}
+
+// ---------------------------------------------------------------------------
 // Vaccination reminder
 // ---------------------------------------------------------------------------
 
@@ -295,4 +410,40 @@ export async function sendInvoiceEmail(
   });
 
   return { success: result.success, error: result.error, id: result.id };
+}
+
+// ---------------------------------------------------------------------------
+// Portal invite (staff → client)
+// ---------------------------------------------------------------------------
+
+export async function sendPortalInviteEmail(data: {
+  to: string;
+  clientName: string;
+  practiceName: string;
+  practicePhone?: string;
+  practiceAddress?: string;
+  portalUrl: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  const body = `
+    <p style="margin:0 0 16px;color:#111827;font-size:15px;line-height:1.6;">Hi ${data.clientName},</p>
+    <p style="margin:0 0 24px;color:#111827;font-size:15px;line-height:1.6;">You can view your pets' records, appointments, and invoices anytime in the ${data.practiceName} pet portal.</p>
+    ${ctaButtonHtml("Open pet portal", data.portalUrl)}
+    <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">Keep this link private. If you did not expect this email, you can ignore it.</p>
+  `;
+
+  const html = emailLayout(
+    data.practiceName,
+    body,
+    practiceFooter({
+      practiceName: data.practiceName,
+      practicePhone: data.practicePhone,
+      practiceAddress: data.practiceAddress,
+    })
+  );
+
+  return sendEmail({
+    to: data.to,
+    subject: `Your pet portal — ${data.practiceName}`,
+    html,
+  });
 }

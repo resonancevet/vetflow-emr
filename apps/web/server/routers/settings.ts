@@ -125,6 +125,8 @@ export const settingsRouter = createRouter({
       z.object({
         key: z.enum([
           "appointmentReminder",
+          "appointmentConfirmation",
+          "appointmentRequestDeclined",
           "vaccinationReminder",
           "invoiceEmail",
         ]),
@@ -161,6 +163,8 @@ export const settingsRouter = createRouter({
       z.object({
         key: z.enum([
           "appointmentReminder",
+          "appointmentConfirmation",
+          "appointmentRequestDeclined",
           "vaccinationReminder",
           "invoiceEmail",
         ]),

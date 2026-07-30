@@ -13,8 +13,13 @@ import {
   appointmentTypes,
   invoices,
   communications,
+  practices,
+  users,
 } from "@openpims/db";
-import { users } from "@openpims/db";
+import {
+  buildAppointmentRequestContent,
+  buildAppointmentRequestSubject,
+} from "@/lib/appointment-request";
 
 async function getClientByToken(db: any, token: string) {
   const [client] = await db
@@ -38,6 +43,12 @@ export const portalRouter = createRouter({
     .input(z.object({ token: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const client = await getClientByToken(ctx.db, input.token);
+
+      const [practice] = await ctx.db
+        .select({ name: practices.name })
+        .from(practices)
+        .where(eq(practices.id, client.practiceId))
+        .limit(1);
 
       const clientPatients = await ctx.db
         .select({
@@ -66,6 +77,7 @@ export const portalRouter = createRouter({
         lastName: client.lastName,
         email: client.email,
         phone: client.phone,
+        practiceName: practice?.name ?? "Pet Portal",
         patients: clientPatients,
       };
     }),
@@ -250,15 +262,16 @@ export const portalRouter = createRouter({
       await ctx.db.insert(communications).values({
         practiceId: client.practiceId,
         clientId: client.id,
+        patientId: patient.id,
         channel: "portal",
         direction: "inbound",
-        subject: `Appointment request for ${patient.name}`,
-        content: [
-          `Pet: ${patient.name}`,
-          `Preferred date: ${input.preferredDate}`,
-          `Preferred time: ${input.preferredTime}`,
-          `Reason: ${input.reason}`,
-        ].join("\n"),
+        subject: buildAppointmentRequestSubject(patient.name),
+        content: buildAppointmentRequestContent({
+          patientName: patient.name,
+          preferredDate: input.preferredDate,
+          preferredTime: input.preferredTime,
+          reason: input.reason,
+        }),
         status: "pending",
       });
 

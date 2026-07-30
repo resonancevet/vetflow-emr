@@ -1,11 +1,27 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, PawPrint, FileText, Clock, History } from "lucide-react";
+import {
+  Calendar,
+  PawPrint,
+  FileText,
+  Clock,
+  History,
+  Phone,
+  Check,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { useRecentPatients, pruneRecentPatients } from "@/lib/recent-patients";
+import { Button } from "@/components/ui/button";
+import {
+  ApproveAppointmentRequestModal,
+  DeclineAppointmentRequestModal,
+} from "@/components/dashboard/appointment-request-modals";
+import { useCallbackPanel } from "@/components/dashboard/callback-panel-context";
+import { formatPhoneDisplay } from "@/lib/phone-format";
 
 function formatTime(date: Date | string) {
   return new Date(date).toLocaleTimeString("en-US", {
@@ -90,14 +106,38 @@ function AppointmentRowSkeleton() {
   );
 }
 
+type RequestActionTarget = {
+  id: string;
+  patientId: string | null;
+  clientId: string | null;
+  clientName: string;
+  clientPhone: string | null;
+  patientName: string | null;
+  patientSpecies: string | null;
+  patientBreed: string | null;
+  patientSex: string | null;
+  patientDob: string | Date | null;
+  preferredDate: string | null;
+  preferredTime: string | null;
+  reason: string | null;
+  clientEmail: string | null;
+  needsCallback: boolean;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
+  const { openCallback } = useCallbackPanel();
   const stats = trpc.dashboard.getStats.useQuery();
+  const requests = trpc.dashboard.listAppointmentRequests.useQuery();
+  const [approveTarget, setApproveTarget] = useState<RequestActionTarget | null>(
+    null
+  );
+  const [declineTarget, setDeclineTarget] = useState<RequestActionTarget | null>(
+    null
+  );
 
   const recentPatients = useRecentPatients();
 
-  // Validate the per-browser recent list against the current practice and drop
-  // stale entries (e.g. demo patients from another practice or deleted records).
   const recentIds = useMemo(
     () => recentPatients.map((p) => p.id),
     [recentPatients]
@@ -118,8 +158,6 @@ export default function DashboardPage() {
   const endHour = scheduleHours.data?.endHour ?? 18;
 
   const now = new Date();
-  // Once the clinic's configured end-of-day has passed, the rest of today's
-  // schedule is over, so surface tomorrow's appointments instead.
   const showNextDay = now.getHours() >= endHour;
 
   const toDateStr = (offsetDays: number) =>
@@ -143,9 +181,10 @@ export default function DashboardPage() {
     )
     .slice(0, 5);
 
+  const pendingRequests = requests.data ?? [];
+
   return (
     <div className="space-y-8">
-      {/* KPI Cards + Recently Viewed */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.isLoading ? (
           Array.from({ length: 4 }).map((_, i) => <KpiSkeleton key={i} />)
@@ -214,7 +253,125 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Upcoming Appointments */}
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div>
+            <h2 className="font-heading text-lg font-semibold">
+              Appointment requests
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              From the pet portal — approve to schedule, or mark for callback /
+              decline if the slot isn&apos;t available.
+            </p>
+          </div>
+          {(stats.data?.pendingAppointmentRequests ?? 0) > 0 && (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+              {stats.data?.pendingAppointmentRequests} open
+            </span>
+          )}
+        </div>
+        <div className="space-y-2 p-4">
+          {requests.isLoading ? (
+            Array.from({ length: 2 }).map((_, i) => (
+              <AppointmentRowSkeleton key={i} />
+            ))
+          ) : requests.isError ? (
+            <p className="py-6 text-center text-sm text-destructive">
+              {requests.error.message}
+            </p>
+          ) : pendingRequests.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No open appointment requests.
+            </p>
+          ) : (
+            pendingRequests.map((req) => {
+              const actionTarget: RequestActionTarget = {
+                id: req.id,
+                patientId: req.patientId,
+                clientId: req.clientId,
+                clientName: req.clientName,
+                clientPhone: req.clientPhone,
+                patientName: req.patientName,
+                patientSpecies: req.patientSpecies,
+                patientBreed: req.patientBreed,
+                patientSex: req.patientSex,
+                patientDob: req.patientDob,
+                preferredDate: req.preferredDate,
+                preferredTime: req.preferredTime,
+                reason: req.reason,
+                clientEmail: req.clientEmail,
+                needsCallback: req.needsCallback,
+              };
+              return (
+                <div
+                  key={req.id}
+                  className="flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">
+                        {req.patientName ?? "Pet"}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          ({req.clientName || "Client"})
+                        </span>
+                      </p>
+                      {req.needsCallback && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          Needs callback
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Preferred:{" "}
+                      {[req.preferredDate, req.preferredTime]
+                        .filter(Boolean)
+                        .join(" · ") || "not specified"}
+                      {req.reason ? ` — ${req.reason}` : ""}
+                    </p>
+                    {req.clientPhone && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {formatPhoneDisplay(req.clientPhone)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-10"
+                      onClick={() => setApproveTarget(actionTarget)}
+                    >
+                      <Check className="mr-1.5 h-4 w-4" />
+                      Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="min-h-10"
+                      onClick={() => openCallback(actionTarget)}
+                    >
+                      <Phone className="mr-1.5 h-4 w-4" />
+                      {req.needsCallback ? "Log call" : "Call back"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="min-h-10"
+                      onClick={() => setDeclineTarget(actionTarget)}
+                    >
+                      <X className="mr-1.5 h-4 w-4" />
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-heading text-lg font-semibold">
@@ -277,6 +434,15 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      <ApproveAppointmentRequestModal
+        request={approveTarget}
+        onClose={() => setApproveTarget(null)}
+      />
+      <DeclineAppointmentRequestModal
+        request={declineTarget}
+        onClose={() => setDeclineTarget(null)}
+      />
     </div>
   );
 }

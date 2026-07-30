@@ -364,6 +364,52 @@ function PracticeInfoTab() {
         )}
         Save Changes
       </Button>
+
+      <PortalTokenBackfill />
+    </div>
+  );
+}
+
+function PortalTokenBackfill() {
+  const backfill = trpc.clients.backfillPortalTokens.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        data.updated === 0
+          ? "All clients already have portal access"
+          : `Enabled portal access for ${data.updated} client${data.updated === 1 ? "" : "s"}`
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <div className="border-t border-border pt-6">
+      <h3 className="text-sm font-semibold">Pet portal</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        New clients get a portal link automatically. Use this once to enable
+        access for existing clients who do not have a link yet.
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-3 min-h-11"
+        disabled={backfill.isPending}
+        onClick={() => {
+          if (
+            !window.confirm(
+              "Generate portal links for all clients missing one?"
+            )
+          ) {
+            return;
+          }
+          backfill.mutate();
+        }}
+      >
+        {backfill.isPending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : null}
+        Backfill portal links
+      </Button>
     </div>
   );
 }
@@ -1647,7 +1693,12 @@ function EmailRemindersSection() {
   });
 
   const [editingKey, setEditingKey] = useState<
-    "appointmentReminder" | "vaccinationReminder" | "invoiceEmail" | null
+    | "appointmentReminder"
+    | "appointmentConfirmation"
+    | "appointmentRequestDeclined"
+    | "vaccinationReminder"
+    | "invoiceEmail"
+    | null
   >(null);
   const [editForm, setEditForm] = useState({ subject: "", body: "" });
 
