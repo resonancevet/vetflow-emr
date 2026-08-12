@@ -995,6 +995,42 @@ export const inventoryRouter = createRouter({
       return { ok: true as const, order: archived! };
     }),
 
+  reopenOrder: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [order] = await ctx.db
+        .select()
+        .from(inventoryOrders)
+        .where(
+          and(
+            eq(inventoryOrders.id, input.id),
+            eq(inventoryOrders.practiceId, ctx.practiceId),
+            eq(inventoryOrders.status, "archived"),
+            isNull(inventoryOrders.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!order) throw new Error("Archived order not found");
+
+      const [reopened] = await ctx.db
+        .update(inventoryOrders)
+        .set({
+          status: "active",
+          archivedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(inventoryOrders.id, order.id),
+            eq(inventoryOrders.practiceId, ctx.practiceId)
+          )
+        )
+        .returning();
+
+      return reopened!;
+    }),
+
   // --- Suppliers ---
 
   listSuppliers: protectedProcedure.query(async ({ ctx }) => {

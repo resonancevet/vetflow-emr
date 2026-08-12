@@ -577,6 +577,7 @@ function OrdersTab() {
         orders={ordersQuery.data ?? []}
         isLoading={ordersQuery.isLoading}
         onBack={() => setShowArchive(false)}
+        onReopened={() => setShowArchive(false)}
       />
     );
   }
@@ -662,6 +663,7 @@ function ArchivedOrdersView({
   orders,
   isLoading,
   onBack,
+  onReopened,
 }: {
   orders: {
     id: string;
@@ -685,8 +687,24 @@ function ArchivedOrdersView({
   }[];
   isLoading: boolean;
   onBack: () => void;
+  onReopened: () => void;
 }) {
+  const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [reopeningId, setReopeningId] = useState<string | null>(null);
+
+  const reopenMutation = trpc.inventory.reopenOrder.useMutation({
+    onSuccess: () => {
+      utils.inventory.listOrders.invalidate();
+      toast.success("Order moved back to active");
+      setReopeningId(null);
+      onReopened();
+    },
+    onError: (err) => {
+      setReopeningId(null);
+      toast.error(err.message);
+    },
+  });
 
   return (
     <div className="mt-4">
@@ -707,29 +725,48 @@ function ArchivedOrdersView({
                 key={order.id}
                 className="rounded-lg border border-border bg-card overflow-hidden"
               >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/40"
-                  onClick={() => setExpanded(isOpen ? null : order.id)}
-                >
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0" />
-                  )}
-                  <span className="font-medium">
-                    Ordered {order.dateOrdered}
-                  </span>
-                  <span className="text-muted-foreground">
-                    Received {order.dateReceived || "—"}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {order.supplierName || "No supplier"}
-                  </span>
-                  <span className="ml-auto">
-                    <StatusBadge status={order.completionStatus} />
-                  </span>
-                </button>
+                <div className="flex items-center gap-2 px-4 py-3">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left text-sm hover:opacity-80"
+                    onClick={() => setExpanded(isOpen ? null : order.id)}
+                  >
+                    {isOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0" />
+                    )}
+                    <span className="font-medium">
+                      Ordered {order.dateOrdered}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Received {order.dateReceived || "—"}
+                    </span>
+                    <span className="truncate text-muted-foreground">
+                      {order.supplierName || "No supplier"}
+                    </span>
+                    <span className="ml-auto shrink-0">
+                      <StatusBadge status={order.completionStatus} />
+                    </span>
+                  </button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={reopenMutation.isPending && reopeningId === order.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReopeningId(order.id);
+                      reopenMutation.mutate({ id: order.id });
+                    }}
+                  >
+                    {reopenMutation.isPending && reopeningId === order.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Reopen"
+                    )}
+                  </Button>
+                </div>
                 {isOpen && (
                   <div className="border-t border-border px-4 py-3 overflow-x-auto">
                     <table className="w-full text-sm">
