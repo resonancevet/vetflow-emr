@@ -47,6 +47,7 @@ const UNIT_OPTIONS = [
   "L",
   "mL",
   "oz",
+  "gal",
 ] as const;
 
 type MainTab = "products" | "orders" | "suppliers";
@@ -1791,6 +1792,7 @@ function OrderItemRows({
 function SuppliersTab() {
   const utils = trpc.useUtils();
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const suppliersQuery = trpc.inventory.listSuppliers.useQuery();
 
   return (
@@ -1804,7 +1806,10 @@ function SuppliersTab() {
         )}
         <Button
           size="sm"
-          onClick={() => setShowAdd(true)}
+          onClick={() => {
+            setEditingId(null);
+            setShowAdd(true);
+          }}
           className="ml-auto"
         >
           <Plus className="h-4 w-4 mr-1" /> Add Supplier
@@ -1823,7 +1828,7 @@ function SuppliersTab() {
       {suppliersQuery.isLoading ? (
         <div className="mt-6 text-center text-muted-foreground">Loading...</div>
       ) : suppliersQuery.data && suppliersQuery.data.length > 0 ? (
-        <div className="mt-4 overflow-hidden rounded-lg border border-border">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -1839,26 +1844,57 @@ function SuppliersTab() {
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                   Address
                 </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Notes
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              {suppliersQuery.data.map((supplier) => (
-                <tr
-                  key={supplier.id}
-                  className="border-b border-border last:border-0 hover:bg-muted/30"
-                >
-                  <td className="px-4 py-3 font-medium">{supplier.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {supplier.contactEmail || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {supplier.phone || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {supplier.address || "—"}
-                  </td>
-                </tr>
-              ))}
+              {suppliersQuery.data.map((supplier) =>
+                editingId === supplier.id ? (
+                  <EditSupplierRow
+                    key={supplier.id}
+                    supplier={supplier}
+                    onClose={() => setEditingId(null)}
+                  />
+                ) : (
+                  <tr
+                    key={supplier.id}
+                    className="border-b border-border last:border-0 hover:bg-muted/30"
+                  >
+                    <td className="px-4 py-3 font-medium">{supplier.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {supplier.contactEmail || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {supplier.phone || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {supplier.address || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground max-w-[12rem] truncate">
+                      {supplier.notes || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        onClick={() => {
+                          setShowAdd(false);
+                          setEditingId(supplier.id);
+                        }}
+                        title="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              )}
             </tbody>
           </table>
         </div>
@@ -1869,6 +1905,115 @@ function SuppliersTab() {
         </div>
       )}
     </>
+  );
+}
+
+function EditSupplierRow({
+  supplier,
+  onClose,
+}: {
+  supplier: {
+    id: string;
+    name: string;
+    contactEmail: string | null;
+    phone: string | null;
+    address: string | null;
+    notes: string | null;
+  };
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const updateMutation = trpc.inventory.updateSupplier.useMutation({
+    onSuccess: () => {
+      utils.inventory.listSuppliers.invalidate();
+      utils.inventory.list.invalidate();
+      utils.inventory.listOrders.invalidate();
+      onClose();
+      toast.success("Supplier updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const [form, setForm] = useState({
+    name: supplier.name,
+    contactEmail: supplier.contactEmail ?? "",
+    phone: supplier.phone ?? "",
+    address: supplier.address ?? "",
+    notes: supplier.notes ?? "",
+  });
+
+  return (
+    <tr className="border-b border-border bg-muted/20">
+      <td className="px-3 py-2">
+        <Input
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          className="h-8 text-sm"
+          required
+        />
+      </td>
+      <td className="px-3 py-2">
+        <Input
+          type="email"
+          value={form.contactEmail}
+          onChange={(e) => setForm({ ...form, contactEmail: e.target.value })}
+          className="h-8 text-sm"
+        />
+      </td>
+      <td className="px-3 py-2">
+        <Input
+          value={form.phone}
+          onChange={(e) => setForm({ ...form, phone: e.target.value })}
+          className="h-8 text-sm"
+        />
+      </td>
+      <td className="px-3 py-2">
+        <Input
+          value={form.address}
+          onChange={(e) => setForm({ ...form, address: e.target.value })}
+          className="h-8 text-sm"
+        />
+      </td>
+      <td className="px-3 py-2">
+        <Input
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          className="h-8 text-sm"
+        />
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            disabled={updateMutation.isPending || !form.name.trim()}
+            onClick={() =>
+              updateMutation.mutate({
+                id: supplier.id,
+                name: form.name.trim(),
+                contactEmail: form.contactEmail.trim() || "",
+                phone: form.phone.trim() || null,
+                address: form.address.trim() || null,
+                notes: form.notes.trim() || null,
+              })
+            }
+            title="Save"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={onClose}
+            title="Cancel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </td>
+    </tr>
   );
 }
 

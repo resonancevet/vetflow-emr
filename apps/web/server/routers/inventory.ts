@@ -23,7 +23,7 @@ const categoryEnum = z.enum([
   "supply",
 ]);
 
-const unitsEnum = z.enum(["doses", "tablets", "capsules", "L", "mL", "oz"]);
+const unitsEnum = z.enum(["doses", "tablets", "capsules", "L", "mL", "oz", "gal"]);
 
 function totalsMismatch(
   unitPrice: string,
@@ -989,6 +989,98 @@ export const inventoryRouter = createRouter({
           notes: input.notes ?? null,
         })
         .returning();
+      return supplier!;
+    }),
+
+  updateSupplier: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(255),
+        contactEmail: z
+          .union([z.string().email().max(255), z.literal("")])
+          .nullable()
+          .optional(),
+        phone: z.string().max(32).nullable().optional(),
+        address: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+
+      const [existing] = await ctx.db
+        .select()
+        .from(suppliers)
+        .where(
+          and(
+            eq(suppliers.id, id),
+            eq(suppliers.practiceId, ctx.practiceId),
+            isNull(suppliers.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new Error("Supplier not found");
+      }
+
+      const name = fields.name.trim();
+      const contactEmail =
+        fields.contactEmail === undefined
+          ? undefined
+          : fields.contactEmail?.trim() || null;
+      const phone =
+        fields.phone === undefined ? undefined : fields.phone?.trim() || null;
+      const address =
+        fields.address === undefined
+          ? undefined
+          : fields.address?.trim() || null;
+      const notes =
+        fields.notes === undefined ? undefined : fields.notes?.trim() || null;
+
+      const [supplier] = await ctx.db
+        .update(suppliers)
+        .set({
+          name,
+          ...(contactEmail !== undefined ? { contactEmail } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+          ...(address !== undefined ? { address } : {}),
+          ...(notes !== undefined ? { notes } : {}),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(suppliers.id, id),
+            eq(suppliers.practiceId, ctx.practiceId),
+            isNull(suppliers.deletedAt)
+          )
+        )
+        .returning();
+
+      if (existing.name !== name) {
+        await ctx.db
+          .update(products)
+          .set({ supplierName: name, updatedAt: new Date() })
+          .where(
+            and(
+              eq(products.practiceId, ctx.practiceId),
+              eq(products.supplierId, id),
+              isNull(products.deletedAt)
+            )
+          );
+
+        await ctx.db
+          .update(inventoryOrders)
+          .set({ supplierName: name, updatedAt: new Date() })
+          .where(
+            and(
+              eq(inventoryOrders.practiceId, ctx.practiceId),
+              eq(inventoryOrders.supplierId, id)
+            )
+          );
+      }
+
       return supplier!;
     }),
 });
