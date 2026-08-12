@@ -66,6 +66,72 @@ function formatCurrency(value: string | number | null | undefined): string {
 const dateSelectClass =
   "h-8 rounded-md border border-input bg-background px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
+/** Uncontrolled digits input — commits on blur so typing isn't raced by refetches. */
+function DigitsField({
+  value,
+  onCommit,
+  className,
+  allowEmpty = false,
+  emptyAs,
+}: {
+  value: number | null;
+  onCommit: (next: number | null) => void;
+  className?: string;
+  allowEmpty?: boolean;
+  /** Used when the field is cleared and allowEmpty is false. */
+  emptyAs?: number;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (document.activeElement === el) return;
+    el.value = value != null ? String(value) : "";
+  }, [value]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      defaultValue={value != null ? String(value) : ""}
+      className={cn(
+        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      onBlur={() => {
+        const el = inputRef.current;
+        if (!el) return;
+        const raw = el.value.replace(/[^\d]/g, "").trim();
+        if (raw === "") {
+          if (allowEmpty) {
+            el.value = "";
+            if (valueRef.current != null) onCommit(null);
+            return;
+          }
+          const fallback = emptyAs ?? valueRef.current ?? 0;
+          el.value = String(fallback);
+          if (fallback !== valueRef.current) onCommit(fallback);
+          return;
+        }
+        const next = parseInt(raw, 10);
+        if (isNaN(next)) {
+          el.value = valueRef.current != null ? String(valueRef.current) : "";
+          return;
+        }
+        el.value = String(next);
+        if (next !== valueRef.current) onCommit(next);
+      }}
+    />
+  );
+}
+
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
@@ -583,7 +649,7 @@ function OrdersTab() {
   }
 
   return (
-    <>
+    <div className="pb-[50vh]">
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
           size="sm"
@@ -655,7 +721,7 @@ function OrdersTab() {
           </p>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -707,7 +773,7 @@ function ArchivedOrdersView({
   });
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 pb-[50vh]">
       <Button size="sm" variant="ghost" onClick={onBack} className="mb-3">
         <ArrowLeft className="h-4 w-4 mr-1" /> Back to active orders
       </Button>
@@ -1512,8 +1578,22 @@ function OrderItemRows({
   ]);
 
   const updateMutation = trpc.inventory.updateOrderItem.useMutation({
-    onSuccess: () => {
-      utils.inventory.listOrders.invalidate();
+    onSuccess: (updated) => {
+      // Patch cache in place so typing isn't interrupted by a full list refetch.
+      utils.inventory.listOrders.setData({ status: "active" }, (prev) => {
+        if (!prev) return prev;
+        return prev.map((order) => ({
+          ...order,
+          items: order.items.map((it) =>
+            it.id === updated.id
+              ? {
+                  ...it,
+                  ...updated,
+                }
+              : it
+          ),
+        }));
+      });
       utils.inventory.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -1603,15 +1683,13 @@ function OrderItemRows({
           {csvLocked ? (
             <span className="tabular-nums text-sm">{item.quantity}</span>
           ) : (
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={1}
+            <DigitsField
               value={item.quantity}
-              onChange={(e) =>
-                save({ quantity: parseInt(e.target.value, 10) || 1 })
-              }
-              className="h-8 text-sm w-16"
+              emptyAs={1}
+              onCommit={(next) => {
+                if (next != null && next >= 1) save({ quantity: next });
+              }}
+              className="h-8 w-16 px-1.5 text-sm"
             />
           )}
         </td>
@@ -1715,29 +1793,21 @@ function OrderItemRows({
                 <label className="text-[11px] text-muted-foreground">
                   Qty Recv
                 </label>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
+                <DigitsField
                   value={item.qtyReceived ?? item.quantity}
-                  onChange={(e) =>
-                    save({
-                      qtyReceived: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
+                  emptyAs={item.quantity}
+                  onCommit={(next) => {
+                    if (next != null) save({ qtyReceived: next });
+                  }}
                   className="mt-0.5 h-8 w-14 px-1.5 text-sm"
                 />
               </div>
               <div className="flex flex-col">
                 <label className="text-[11px] text-muted-foreground">Count</label>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={item.count ?? ""}
-                  onChange={(e) =>
-                    save({ count: parseInt(e.target.value, 10) || 0 })
-                  }
+                <DigitsField
+                  value={item.count}
+                  allowEmpty
+                  onCommit={(next) => save({ count: next })}
                   className="mt-0.5 h-8 w-14 px-1.5 text-sm"
                 />
               </div>
@@ -1776,16 +1846,10 @@ function OrderItemRows({
                 <label className="text-[11px] text-muted-foreground">
                   Reorder
                 </label>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={item.reorderPoint ?? ""}
-                  onChange={(e) =>
-                    save({
-                      reorderPoint: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
+                <DigitsField
+                  value={item.reorderPoint}
+                  allowEmpty
+                  onCommit={(next) => save({ reorderPoint: next })}
                   className="mt-0.5 h-8 w-14 px-1.5 text-sm"
                 />
               </div>

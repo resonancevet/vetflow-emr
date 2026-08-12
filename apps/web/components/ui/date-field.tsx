@@ -106,7 +106,10 @@ export function DateField({
     const total = daysInMonth(viewYear, viewMonth);
     const blanks = Array.from({ length: firstDow }, () => null as number | null);
     const days = Array.from({ length: total }, (_, i) => i + 1);
-    return [...blanks, ...days];
+    // Always 6 weeks so day-view height stays stable across months
+    const filled = [...blanks, ...days];
+    while (filled.length < 42) filled.push(null);
+    return filled;
   }, [viewYear, viewMonth]);
 
   const shiftMonth = (delta: number) => {
@@ -152,166 +155,173 @@ export function DateField({
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
+          side="bottom"
           align="start"
           sideOffset={4}
+          avoidCollisions={false}
           className="z-50 w-[17.5rem] rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-md outline-none"
         >
-          {view === "days" && (
-            <>
-              <div className="mb-2 flex items-center gap-1">
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted"
-                  onClick={() => shiftMonth(-1)}
-                  aria-label="Previous month"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className="h-7 min-w-0 flex-1 rounded-md px-1 text-sm font-medium hover:bg-muted"
-                  onClick={() => setView("years")}
-                  aria-label="Choose month and year"
-                >
-                  {MONTHS[viewMonth - 1]} {viewYear}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted"
-                  onClick={() => shiftMonth(1)}
-                  aria-label="Next month"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+          <div className="flex h-[19.5rem] flex-col">
+            <div className="mb-2 flex h-7 shrink-0 items-center gap-1">
+              {view === "days" ? (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted"
+                    onClick={() => shiftMonth(-1)}
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 min-w-0 flex-1 rounded-md px-1 text-sm font-medium hover:bg-muted"
+                    onClick={() => setView("years")}
+                    aria-label="Choose month and year"
+                  >
+                    {MONTHS[viewMonth - 1]} {viewYear}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted"
+                    onClick={() => shiftMonth(1)}
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </>
+              ) : view === "years" ? (
+                <>
+                  <p className="flex-1 text-sm font-medium">Select year</p>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setView("days")}
+                  >
+                    Back
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="text-sm font-medium hover:underline"
+                    onClick={() => setView("years")}
+                  >
+                    {viewYear}
+                  </button>
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setView("years")}
+                  >
+                    Change year
+                  </button>
+                </>
+              )}
+            </div>
 
-              <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[11px] text-muted-foreground">
-                {WEEKDAYS.map((d) => (
-                  <div key={d} className="py-1">
-                    {d}
+            <div className="min-h-0 flex-1">
+              {view === "days" && (
+                <>
+                  <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[11px] text-muted-foreground">
+                    {WEEKDAYS.map((d) => (
+                      <div key={d} className="py-1">
+                        {d}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-0.5">
-                {cells.map((day, idx) => {
-                  if (!day) {
-                    return <div key={`e-${idx}`} className="h-8" />;
-                  }
-                  const isSelected =
-                    selected?.y === viewYear &&
-                    selected?.m === viewMonth &&
-                    selected?.d === day;
-                  const isToday =
-                    today.y === viewYear &&
-                    today.m === viewMonth &&
-                    today.d === day;
-                  return (
+                  <div className="grid grid-cols-7 gap-0.5">
+                    {cells.map((day, idx) => {
+                      if (!day) {
+                        return <div key={`e-${idx}`} className="h-8" />;
+                      }
+                      const isSelected =
+                        selected?.y === viewYear &&
+                        selected?.m === viewMonth &&
+                        selected?.d === day;
+                      const isToday =
+                        today.y === viewYear &&
+                        today.m === viewMonth &&
+                        today.d === day;
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          className={cn(
+                            "h-8 rounded-md text-sm hover:bg-muted",
+                            isSelected &&
+                              "bg-primary text-primary-foreground hover:bg-primary/90",
+                            !isSelected && isToday && "ring-1 ring-primary/40"
+                          )}
+                          onClick={() => {
+                            onChange(toYmd(viewYear, viewMonth, day));
+                            setOpen(false);
+                          }}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {view === "years" && (
+                <div className="grid h-full grid-cols-3 content-start gap-1 overflow-y-auto">
+                  {yearOptions.map((y) => (
                     <button
-                      key={day}
+                      key={y}
                       type="button"
                       className={cn(
-                        "h-8 rounded-md text-sm hover:bg-muted",
-                        isSelected &&
+                        "h-9 rounded-md text-sm hover:bg-muted",
+                        y === viewYear &&
                           "bg-primary text-primary-foreground hover:bg-primary/90",
-                        !isSelected && isToday && "ring-1 ring-primary/40"
+                        y === today.y &&
+                          y !== viewYear &&
+                          "ring-1 ring-primary/40"
                       )}
                       onClick={() => {
-                        onChange(toYmd(viewYear, viewMonth, day));
-                        setOpen(false);
+                        setViewYear(y);
+                        setView("months");
                       }}
                     >
-                      {day}
+                      {y}
                     </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                  ))}
+                </div>
+              )}
 
-          {view === "years" && (
-            <>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium">Select year</p>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setView("days")}
-                >
-                  Back
-                </button>
-              </div>
-              <div className="grid max-h-56 grid-cols-3 gap-1 overflow-y-auto">
-                {yearOptions.map((y) => (
-                  <button
-                    key={y}
-                    type="button"
-                    className={cn(
-                      "h-9 rounded-md text-sm hover:bg-muted",
-                      y === viewYear &&
-                        "bg-primary text-primary-foreground hover:bg-primary/90",
-                      y === today.y &&
-                        y !== viewYear &&
-                        "ring-1 ring-primary/40"
-                    )}
-                    onClick={() => {
-                      setViewYear(y);
-                      setView("months");
-                    }}
-                  >
-                    {y}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+              {view === "months" && (
+                <div className="grid h-full grid-cols-3 content-start gap-1">
+                  {MONTHS_SHORT.map((label, i) => {
+                    const month = i + 1;
+                    const isSelected =
+                      selected?.y === viewYear && selected?.m === month;
+                    const isCurrent =
+                      today.y === viewYear && today.m === month;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={cn(
+                          "h-10 rounded-md text-sm hover:bg-muted",
+                          isSelected &&
+                            "bg-primary text-primary-foreground hover:bg-primary/90",
+                          !isSelected && isCurrent && "ring-1 ring-primary/40"
+                        )}
+                        onClick={() => resetToDays(viewYear, month)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-          {view === "months" && (
-            <>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  className="text-sm font-medium hover:underline"
-                  onClick={() => setView("years")}
-                >
-                  {viewYear}
-                </button>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setView("years")}
-                >
-                  Change year
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                {MONTHS_SHORT.map((label, i) => {
-                  const month = i + 1;
-                  const isSelected =
-                    selected?.y === viewYear && selected?.m === month;
-                  const isCurrent =
-                    today.y === viewYear && today.m === month;
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      className={cn(
-                        "h-10 rounded-md text-sm hover:bg-muted",
-                        isSelected &&
-                          "bg-primary text-primary-foreground hover:bg-primary/90",
-                        !isSelected && isCurrent && "ring-1 ring-primary/40"
-                      )}
-                      onClick={() => resetToDays(viewYear, month)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {view === "days" && (
-            <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+            <div className="mt-2 flex shrink-0 items-center justify-between gap-2 border-t border-border pt-2">
               <button
                 type="button"
                 className="text-xs text-muted-foreground hover:text-foreground"
@@ -338,7 +348,7 @@ export function DateField({
                 <span />
               )}
             </div>
-          )}
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
