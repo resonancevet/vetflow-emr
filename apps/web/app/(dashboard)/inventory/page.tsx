@@ -22,6 +22,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -60,34 +61,6 @@ function formatCurrency(value: string | number | null | undefined): string {
 
 const dateSelectClass =
   "h-8 rounded-md border border-input bg-background px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
-
-/** Native date picker (calendar popup). */
-function DateField({
-  value,
-  onChange,
-  className,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-  disabled?: boolean;
-  /** Accepted for API compatibility; native input already supports empty. */
-  allowEmpty?: boolean;
-}) {
-  return (
-    <Input
-      type="date"
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        "h-8 w-[9.25rem] min-w-0 cursor-pointer px-2 text-sm",
-        className
-      )}
-    />
-  );
-}
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
