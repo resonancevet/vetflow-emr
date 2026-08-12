@@ -49,6 +49,7 @@ const UNIT_OPTIONS = [
   "mL",
   "oz",
   "gal",
+  "pieces",
 ] as const;
 
 type MainTab = "products" | "orders" | "suppliers";

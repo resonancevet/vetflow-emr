@@ -23,7 +23,16 @@ const categoryEnum = z.enum([
   "supply",
 ]);
 
-const unitsEnum = z.enum(["doses", "tablets", "capsules", "L", "mL", "oz", "gal"]);
+const unitsEnum = z.enum([
+  "doses",
+  "tablets",
+  "capsules",
+  "L",
+  "mL",
+  "oz",
+  "gal",
+  "pieces",
+]);
 
 function totalsMismatch(
   unitPrice: string,
