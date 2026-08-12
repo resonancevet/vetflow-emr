@@ -50,6 +50,9 @@ const UNIT_OPTIONS = [
   "oz",
   "gal",
   "pieces",
+  "g",
+  "mg",
+  "IU",
 ] as const;
 
 type MainTab = "products" | "orders" | "suppliers";
@@ -1200,6 +1203,19 @@ function ActiveOrderCard({
             }
           />
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Date Received</span>
+          <DateField
+            allowEmpty
+            value={order.dateReceived ?? ""}
+            onChange={(dateReceived) =>
+              updateOrder.mutate({
+                id: order.id,
+                dateReceived: dateReceived || null,
+              })
+            }
+          />
+        </div>
         <div className="w-48">
           <SupplierAutocomplete
             value={order.supplierName ?? ""}
@@ -1327,6 +1343,7 @@ function ActiveOrderCard({
                   key={item.id}
                   item={item}
                   csvLocked={csvLocked}
+                  orderDateReceived={order.dateReceived}
                 />
               ))}
           </tbody>
@@ -1423,16 +1440,18 @@ function AddLineForm({
 function OrderItemRows({
   item,
   csvLocked,
+  orderDateReceived,
 }: {
   item: OrderItem;
   csvLocked: boolean;
+  orderDateReceived: string | null;
 }) {
   const utils = trpc.useUtils();
   const [name, setName] = useState(item.name);
   const [unitPrice, setUnitPrice] = useState(item.unitPrice);
   const [lotNumber, setLotNumber] = useState(item.lotNumber ?? "");
   const [dateReceived, setDateReceived] = useState(
-    item.dateReceived ?? todayDateString()
+    item.dateReceived ?? orderDateReceived ?? todayDateString()
   );
   const [expirationDate, setExpirationDate] = useState(
     item.expirationDate ?? ""
@@ -1442,7 +1461,9 @@ function OrderItemRows({
     setName(item.name);
     setUnitPrice(item.unitPrice);
     setLotNumber(item.lotNumber ?? "");
-    setDateReceived(item.dateReceived ?? todayDateString());
+    setDateReceived(
+      item.dateReceived ?? orderDateReceived ?? todayDateString()
+    );
     setExpirationDate(item.expirationDate ?? "");
   }, [
     item.name,
@@ -1450,6 +1471,7 @@ function OrderItemRows({
     item.lotNumber,
     item.dateReceived,
     item.expirationDate,
+    orderDateReceived,
   ]);
 
   const updateMutation = trpc.inventory.updateOrderItem.useMutation({
@@ -1577,7 +1599,17 @@ function OrderItemRows({
             <input
               type="checkbox"
               checked={item.isReceived}
-              onChange={(e) => save({ isReceived: e.target.checked })}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                if (checked) {
+                  const next =
+                    orderDateReceived || todayDateString();
+                  setDateReceived(next);
+                  save({ isReceived: true, dateReceived: next });
+                } else {
+                  save({ isReceived: false });
+                }
+              }}
             />
             Received
           </label>

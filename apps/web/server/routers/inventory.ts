@@ -32,6 +32,9 @@ const unitsEnum = z.enum([
   "oz",
   "gal",
   "pieces",
+  "g",
+  "mg",
+  "IU",
 ]);
 
 function totalsMismatch(
@@ -653,6 +656,20 @@ export const inventoryRouter = createRouter({
           );
       }
 
+      // Apply order-level received date to all already-received lines
+      if (input.dateReceived) {
+        await ctx.db
+          .update(inventoryOrderItems)
+          .set({ dateReceived: input.dateReceived })
+          .where(
+            and(
+              eq(inventoryOrderItems.orderId, id),
+              eq(inventoryOrderItems.isReceived, true),
+              isNull(inventoryOrderItems.deletedAt)
+            )
+          );
+      }
+
       return order;
     }),
 
@@ -753,10 +770,27 @@ export const inventoryRouter = createRouter({
       }
 
       if (updates.isReceived === true && !existing.isReceived) {
-        setValues.dateReceived =
-          updates.dateReceived ?? existing.dateReceived ?? todayDateString();
+        const dateReceived =
+          updates.dateReceived ??
+          existing.dateReceived ??
+          order.dateReceived ??
+          todayDateString();
+        setValues.dateReceived = dateReceived;
         setValues.qtyReceived =
           updates.qtyReceived ?? existing.qtyReceived ?? existing.quantity;
+
+        if (!order.dateReceived) {
+          await ctx.db
+            .update(inventoryOrders)
+            .set({ dateReceived })
+            .where(
+              and(
+                eq(inventoryOrders.id, order.id),
+                eq(inventoryOrders.practiceId, ctx.practiceId),
+                isNull(inventoryOrders.deletedAt)
+              )
+            );
+        }
       }
 
       const unitPrice = String(
