@@ -23,6 +23,8 @@ export const inventoryKits = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     /** How this kit appears in the SOAP plan, if different from inventory. */
     planName: varchar("plan_name", { length: 255 }),
+    /** Where the kit appears: vaccine form vs lab test form. */
+    kind: varchar("kind", { length: 16 }).notNull().default("vaccine"),
     isActive: boolean("is_active").notNull().default(true),
     /** Optional protocol: next vaccine due date = administered date + this interval. */
     dueIntervalValue: integer("due_interval_value"),

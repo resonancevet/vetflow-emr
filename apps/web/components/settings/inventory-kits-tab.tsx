@@ -15,6 +15,7 @@ import {
   formatDueInterval,
   type DueIntervalUnit,
 } from "@/lib/due-interval";
+import { kitKindLabel, type KitKind } from "@/lib/kit-kind";
 
 type KitItemDraft = {
   product: CatalogProduct | null;
@@ -34,6 +35,7 @@ export function InventoryKitsTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<KitKind>("vaccine");
   const [planName, setPlanName] = useState("");
   const [items, setItems] = useState<KitItemDraft[]>([emptyItem()]);
   const [showProtocol, setShowProtocol] = useState(false);
@@ -76,6 +78,7 @@ export function InventoryKitsTab() {
     setEditingId(null);
     setShowForm(false);
     setName("");
+    setKind("vaccine");
     setPlanName("");
     setItems([emptyItem()]);
     setShowProtocol(false);
@@ -92,6 +95,7 @@ export function InventoryKitsTab() {
     setEditingId(kit.id);
     setShowForm(true);
     setName(kit.name);
+    setKind(kit.kind === "lab" ? "lab" : "vaccine");
     setPlanName(kit.planName ?? "");
     setItems(
       kit.items.length > 0
@@ -140,9 +144,11 @@ export function InventoryKitsTab() {
       return;
     }
     const interval = Number(dueIntervalValue);
-    const hasProtocol = Number.isFinite(interval) && interval >= 1;
+    const hasProtocol =
+      kind === "vaccine" && Number.isFinite(interval) && interval >= 1;
     const payload = {
       name: name.trim(),
+      kind,
       planName: planName.trim() || null,
       dueIntervalValue: hasProtocol ? interval : null,
       dueIntervalUnit: hasProtocol ? dueIntervalUnit : null,
@@ -176,8 +182,8 @@ export function InventoryKitsTab() {
         <div>
           <h3 className="text-sm font-semibold">Inventory kits</h3>
           <p className="text-xs text-muted-foreground">
-            Bundles deducted from inventory together, such as a vaccine dose plus
-            syringe and needle.
+            Bundles deducted from inventory together. Tag as Vaccine or Lab so
+            they only appear under + Vaccine or + Lab test.
           </p>
         </div>
         <Button size="sm" onClick={startCreate}>
@@ -205,6 +211,22 @@ export function InventoryKitsTab() {
             />
           </div>
           <div>
+            <label className="mb-1 block text-xs font-medium">Type</label>
+            <select
+              value={kind}
+              onChange={(e) =>
+                setKind(e.target.value === "lab" ? "lab" : "vaccine")
+              }
+              className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="vaccine">Vaccine</option>
+              <option value="lab">Lab</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Vaccine kits show on + Vaccine. Lab kits show on + Lab test.
+            </p>
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-medium">Plan name</label>
             <Input
               value={planName}
@@ -217,6 +239,7 @@ export function InventoryKitsTab() {
             </p>
           </div>
 
+          {kind === "vaccine" && (
           <div className="rounded-md border border-border">
             <button
               type="button"
@@ -289,6 +312,7 @@ export function InventoryKitsTab() {
               </div>
             )}
           </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -399,6 +423,7 @@ export function InventoryKitsTab() {
                 <td className="px-4 py-3">
                   <p className="font-medium">{kit.name}</p>
                   <p className="text-xs text-muted-foreground">
+                    {kitKindLabel(kit.kind)} ·{" "}
                     {kit.isActive ? "Active" : "Inactive"}
                     {kit.planName ? ` · Plan: ${kit.planName}` : ""}
                     {formatDueInterval(

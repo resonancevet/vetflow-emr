@@ -732,14 +732,17 @@ export default function NewSoapNotePage() {
             <LabTestForm
               onSubmit={async (data) => {
                 try {
-                  await createLabResult.mutateAsync({
+                  const result = await createLabResult.mutateAsync({
                     patientId: params.patientId,
                     testName: data.testName,
                     notes: data.notes,
                     resultDate: data.resultDate,
                     status: "pending",
+                    kitId: data.kitId,
+                    extraItems: data.extraItems,
                   });
                   toast.success("Lab test ordered");
+                  toastStock(result);
                   utils.records.listLabResults.invalidate({
                     patientId: params.patientId,
                   });

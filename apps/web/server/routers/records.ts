@@ -556,6 +556,7 @@ export const recordsRouter = createRouter({
       let nextDueDate = inputNextDue || null;
       let kit: {
         id: string;
+        kind?: string | null;
         dueIntervalValue: number | null;
         dueIntervalUnit: string | null;
       } | null = null;
@@ -564,6 +565,7 @@ export const recordsRouter = createRouter({
         const [found] = await ctx.db
           .select({
             id: inventoryKits.id,
+            kind: inventoryKits.kind,
             dueIntervalValue: inventoryKits.dueIntervalValue,
             dueIntervalUnit: inventoryKits.dueIntervalUnit,
           })
@@ -577,6 +579,9 @@ export const recordsRouter = createRouter({
           )
           .limit(1);
         if (!found) throw new Error("Inventory kit not found");
+        if (found.kind && found.kind !== "vaccine") {
+          throw new Error("That kit is not a vaccine kit");
+        }
         kit = found;
         if (!nextDueDate && found.dueIntervalValue && found.dueIntervalUnit) {
           nextDueDate = addDueInterval(
@@ -1093,20 +1098,114 @@ export const recordsRouter = createRouter({
         status: z.enum(["pending", "completed", "reviewed"]).default("pending"),
         resultDate: z.string().optional(),
         notes: z.string().optional(),
+        kitId: z.string().uuid().optional(),
+        extraItems: z
+          .array(
+            z.object({
+              productId: z.string().uuid(),
+              quantity: z.number().int().min(1),
+              note: z.string().optional(),
+            })
+          )
+          .max(20)
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { kitId, extraItems, ...fields } = input;
       const [result] = await ctx.db
         .insert(labResults)
         .values({
-          ...input,
-          resultDate: input.resultDate || null,
-          notes: input.notes || null,
+          ...fields,
+          resultDate: fields.resultDate || null,
+          notes: fields.notes || null,
           orderedBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
         .returning();
-      return result!;
+
+      const deductions: Array<{
+        productId: string;
+        quantity: number;
+        note?: string;
+      }> = [];
+
+      if (kitId) {
+        const [kit] = await ctx.db
+          .select({ id: inventoryKits.id, kind: inventoryKits.kind })
+          .from(inventoryKits)
+          .where(
+            and(
+              eq(inventoryKits.id, kitId),
+              eq(inventoryKits.practiceId, ctx.practiceId),
+              isNull(inventoryKits.deletedAt)
+            )
+          )
+          .limit(1);
+        if (!kit) throw new Error("Inventory kit not found");
+        if (kit.kind && kit.kind !== "lab") {
+          throw new Error("That kit is not a lab kit");
+        }
+
+        const kitItems = await ctx.db
+          .select({
+            productId: inventoryKitItems.productId,
+            quantity: inventoryKitItems.quantity,
+            note: inventoryKitItems.note,
+          })
+          .from(inventoryKitItems)
+          .where(
+            and(
+              eq(inventoryKitItems.kitId, kitId),
+              isNull(inventoryKitItems.deletedAt)
+            )
+          );
+        deductions.push(
+          ...kitItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            note: item.note ?? undefined,
+          }))
+        );
+      }
+
+      for (const extra of extraItems ?? []) {
+        deductions.push({
+          productId: extra.productId,
+          quantity: extra.quantity,
+          note: extra.note,
+        });
+      }
+
+      let stockWarned = false;
+      let stockBalanceAfter: number | undefined;
+      const stockWarnings: Array<{ name: string; balanceAfter: number }> = [];
+
+      for (const item of deductions) {
+        const stock = await recordProductUsage(ctx, {
+          patientId: input.patientId,
+          productId: item.productId,
+          quantity: item.quantity,
+          sourceType: "supply",
+          sourceId: result!.id,
+          note: item.note,
+        });
+        if (stock.warned) {
+          stockWarned = true;
+          stockWarnings.push({
+            name: stock.product.name,
+            balanceAfter: stock.balanceAfter,
+          });
+        }
+        stockBalanceAfter = stock.balanceAfter;
+      }
+
+      return {
+        ...result!,
+        stockWarned,
+        stockBalanceAfter,
+        stockWarnings,
+      };
     }),
 
   updateLabResultStatus: protectedProcedure

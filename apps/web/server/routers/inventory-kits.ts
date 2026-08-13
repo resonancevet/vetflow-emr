@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import { inventoryKits, inventoryKitItems, products } from "@openpims/db";
 import { DUE_INTERVAL_UNITS } from "@/lib/due-interval";
+import { KIT_KINDS } from "@/lib/kit-kind";
 
 const dueIntervalUnitSchema = z.enum(DUE_INTERVAL_UNITS);
 
@@ -11,6 +12,7 @@ const dueIntervalFields = {
   dueIntervalValue: z.number().int().min(1).max(3650).nullable().optional(),
   dueIntervalUnit: dueIntervalUnitSchema.nullable().optional(),
   planName: z.string().max(255).nullable().optional(),
+  kind: z.enum(KIT_KINDS).optional(),
 };
 
 const itemInput = z.object({
@@ -151,6 +153,7 @@ export const inventoryKitsRouter = createRouter({
           dueIntervalValue: input.dueIntervalValue ?? null,
           dueIntervalUnit: input.dueIntervalUnit ?? null,
           planName: input.planName?.trim() || null,
+          kind: input.kind ?? "vaccine",
         })
         .returning();
 
@@ -212,6 +215,7 @@ export const inventoryKitsRouter = createRouter({
       if (fields.planName !== undefined) {
         updateValues.planName = fields.planName?.trim() || null;
       }
+      if (fields.kind !== undefined) updateValues.kind = fields.kind;
 
       if (Object.keys(updateValues).length > 0) {
         await ctx.db
