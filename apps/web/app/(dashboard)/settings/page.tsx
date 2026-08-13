@@ -22,6 +22,7 @@ import {
   Layers,
   ScrollText,
   Package,
+  DollarSign,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { InventoryKitsTab } from "@/components/settings/inventory-kits-tab";
+import { ServicesCatalogTab } from "@/components/settings/services-catalog-tab";
 
 // ── Types ───────────────────────────────────────────────────
 type Tab =
@@ -38,6 +40,7 @@ type Tab =
   | "rooms"
   | "data"
   | "templates"
+  | "services"
   | "inventoryKits"
   | "audit";
 
@@ -48,6 +51,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "rooms", label: "Rooms", icon: DoorOpen },
   { id: "data", label: "Data", icon: Database },
   { id: "templates", label: "Templates", icon: Layers },
+  { id: "services", label: "Services", icon: DollarSign },
   { id: "inventoryKits", label: "Inventory Kits", icon: Package },
   { id: "audit", label: "Audit Log", icon: ScrollText },
 ];
@@ -122,7 +126,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mt-6 flex gap-1 border-b border-border">
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b border-border">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -151,6 +155,7 @@ export default function SettingsPage() {
         {activeTab === "rooms" && <RoomsTab />}
         {activeTab === "data" && <DataTab />}
         {activeTab === "templates" && <TemplatesTab />}
+        {activeTab === "services" && <ServicesCatalogTab />}
         {activeTab === "inventoryKits" && <InventoryKitsTab />}
         {activeTab === "audit" && <AuditLogTab />}
       </div>

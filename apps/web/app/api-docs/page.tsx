@@ -557,6 +557,40 @@ const sections: Section[] = [
         response: `Service[]`,
       },
       {
+        name: "billing.createService",
+        method: "POST",
+        description: "Add a service to the practice fee schedule.",
+        input: `{
+  name: string,
+  code?: string | null,
+  category?: string | null,
+  defaultPrice: string,
+  taxable?: boolean
+}`,
+        response: `Service`,
+      },
+      {
+        name: "billing.updateService",
+        method: "POST",
+        description: "Update a service name, code, category, or price.",
+        input: `{
+  id: string,
+  name?: string,
+  code?: string | null,
+  category?: string | null,
+  defaultPrice?: string,
+  taxable?: boolean
+}`,
+        response: `Service`,
+      },
+      {
+        name: "billing.deleteService",
+        method: "POST",
+        description: "Soft-delete a service from the catalog.",
+        input: `{ id: string }`,
+        response: `{ ok: true }`,
+      },
+      {
         name: "billing.listProducts",
         method: "GET",
         description: "List products available for invoicing.",

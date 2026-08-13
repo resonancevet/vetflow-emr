@@ -394,10 +394,17 @@ export default function NewInvoicePage() {
                     value={selectedServiceId}
                     onChange={(e) => handleServiceSelect(e.target.value)}
                   >
-                    <option value="">Select a service...</option>
+                    <option value="">
+                      {servicesQuery.data && servicesQuery.data.length === 0
+                        ? "No services yet — add them in Settings → Services"
+                        : "Select a service..."}
+                    </option>
                     {servicesQuery.data?.map((service) => (
                       <option key={service.id} value={service.id}>
-                        {service.name} - ${service.defaultPrice}
+                        {service.category
+                          ? `${service.category}: ${service.name}`
+                          : service.name}{" "}
+                        - ${service.defaultPrice}
                       </option>
                     ))}
                   </select>

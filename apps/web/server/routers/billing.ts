@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { eq, and, isNull, desc, sql, sum } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, sql, sum } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
   invoices,
@@ -15,6 +16,17 @@ import {
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
 import { applyStockChange } from "../lib/stock";
+
+function parseMoney(value: string): string {
+  const n = parseFloat(value.replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(n) || n < 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Price must be a non-negative number",
+    });
+  }
+  return n.toFixed(2);
+}
 
 export const billingRouter = createRouter({
   listInvoices: protectedProcedure
@@ -156,8 +168,117 @@ export const billingRouter = createRouter({
           isNull(services.deletedAt)
         )
       )
-      .orderBy(services.name);
+      .orderBy(asc(services.category), asc(services.name));
   }),
+
+  createService: protectedProcedure
+    .use(requireRole("admin"))
+    .input(
+      z.object({
+        name: z.string().min(1).max(255),
+        code: z.string().max(32).nullable().optional(),
+        category: z.string().max(128).nullable().optional(),
+        defaultPrice: z.string().min(1),
+        taxable: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const price = parseMoney(input.defaultPrice);
+      const [service] = await ctx.db
+        .insert(services)
+        .values({
+          practiceId: ctx.practiceId,
+          name: input.name.trim(),
+          code: input.code?.trim() || null,
+          category: input.category?.trim() || null,
+          defaultPrice: price,
+          taxable: input.taxable ?? true,
+        })
+        .returning();
+      return service!;
+    }),
+
+  updateService: protectedProcedure
+    .use(requireRole("admin"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(255).optional(),
+        code: z.string().max(32).nullable().optional(),
+        category: z.string().max(128).nullable().optional(),
+        defaultPrice: z.string().min(1).optional(),
+        taxable: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const [existing] = await ctx.db
+        .select({ id: services.id })
+        .from(services)
+        .where(
+          and(
+            eq(services.id, id),
+            eq(services.practiceId, ctx.practiceId),
+            isNull(services.deletedAt)
+          )
+        )
+        .limit(1);
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Service not found",
+        });
+      }
+
+      const updateValues: Record<string, unknown> = {};
+      if (fields.name !== undefined) updateValues.name = fields.name.trim();
+      if (fields.code !== undefined) {
+        updateValues.code = fields.code?.trim() || null;
+      }
+      if (fields.category !== undefined) {
+        updateValues.category = fields.category?.trim() || null;
+      }
+      if (fields.defaultPrice !== undefined) {
+        updateValues.defaultPrice = parseMoney(fields.defaultPrice);
+      }
+      if (fields.taxable !== undefined) updateValues.taxable = fields.taxable;
+
+      const [service] = await ctx.db
+        .update(services)
+        .set(updateValues)
+        .where(
+          and(
+            eq(services.id, id),
+            eq(services.practiceId, ctx.practiceId)
+          )
+        )
+        .returning();
+      return service!;
+    }),
+
+  deleteService: protectedProcedure
+    .use(requireRole("admin"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [service] = await ctx.db
+        .update(services)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(services.id, input.id),
+            eq(services.practiceId, ctx.practiceId),
+            isNull(services.deletedAt)
+          )
+        )
+        .returning();
+      if (!service) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Service not found",
+        });
+      }
+      return { ok: true };
+    }),
 
   patientsByClient: protectedProcedure
     .input(z.object({ clientId: z.string().uuid() }))
