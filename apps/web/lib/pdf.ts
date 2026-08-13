@@ -456,8 +456,6 @@ export interface MedicalSummaryData {
     objective?: string;
     assessment?: string;
     plan?: string;
-    diagnosis?: string;
-    prognosis?: string;
   }>;
   prescriptions: Array<{
     medication: string;
@@ -694,8 +692,6 @@ export function generateMedicalSummaryPdf(data: MedicalSummaryData): jsPDF {
         ["S: ", note.subjective],
         ["O: ", note.objective],
         ["A: ", note.assessment],
-        ["Dx: ", note.diagnosis],
-        ["Px: ", note.prognosis],
         ["P: ", note.plan],
       ];
 

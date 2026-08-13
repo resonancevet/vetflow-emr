@@ -17,6 +17,8 @@ const TABLES = [
   "api_keys",
   "treatment_template_items",
   "treatment_templates",
+  "inventory_kit_items",
+  "inventory_kits",
   "invoice_items",
   "invoices",
   "lab_results",

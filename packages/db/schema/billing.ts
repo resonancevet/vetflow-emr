@@ -113,6 +113,8 @@ export const products = pgTable("products", {
   supplierId: uuid("supplier_id"),
   supplierName: varchar("supplier_name", { length: 255 }),
   name: varchar("name", { length: 255 }).notNull(),
+  /** How this item appears in the SOAP plan, if different from inventory. */
+  planName: varchar("plan_name", { length: 255 }),
   sku: varchar("sku", { length: 64 }),
   category: varchar("category", { length: 128 }),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),

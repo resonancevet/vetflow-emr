@@ -300,7 +300,7 @@ export const inventoryRouter = createRouter({
 
       if (input.search) {
         conditions.push(
-          sql`(${ilike(products.name, `%${input.search}%`)} OR ${ilike(products.sku, `%${input.search}%`)})`
+          sql`(${ilike(products.name, `%${input.search}%`)} OR ${ilike(products.sku, `%${input.search}%`)} OR ${ilike(products.planName, `%${input.search}%`)})`
         );
       }
 
@@ -347,6 +347,7 @@ export const inventoryRouter = createRouter({
         lotNumber: z.string().max(64).nullable().optional(),
         expirationDate: z.string().nullable().optional(),
         units: z.string().max(32).nullable().optional(),
+        planName: z.string().max(255).nullable().optional(),
         needsReview: z.boolean().optional(),
       })
     )

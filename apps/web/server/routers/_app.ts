@@ -23,6 +23,7 @@ import { patientAlertsRouter } from "./patient-alerts";
 import { clientAlertsRouter } from "./client-alerts";
 import { auditRouter } from "./audit";
 import { complianceRouter } from "./compliance";
+import { inventoryKitsRouter } from "./inventory-kits";
 
 export const appRouter = createRouter({
   auth: authRouter,
@@ -49,6 +50,7 @@ export const appRouter = createRouter({
   clientAlerts: clientAlertsRouter,
   audit: auditRouter,
   compliance: complianceRouter,
+  inventoryKits: inventoryKitsRouter,
 });
 
 export type AppRouter = typeof appRouter;

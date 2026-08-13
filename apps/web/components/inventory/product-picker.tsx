@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 export type CatalogProduct = {
   id: string;
   name: string;
+  planName?: string | null;
   sku: string | null;
   unitPrice: string;
   stockQuantity: number;
@@ -68,6 +69,7 @@ export function ProductPicker({
                 onChange({
                   id: p.id,
                   name: p.name,
+                  planName: p.planName,
                   sku: p.sku,
                   unitPrice: p.unitPrice,
                   stockQuantity: p.stockQuantity,

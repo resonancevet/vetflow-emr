@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { autoFinalizeStaleSoapNotes } from "@/lib/record-lockdown";
 import {
@@ -13,14 +13,20 @@ import {
   patients,
   users,
   files,
+  inventoryKits,
+  inventoryKitItems,
+  examVitals,
 } from "@openpims/db";
 import { recordProductUsage } from "../lib/stock";
+import { addProblemsFromDiagnosis, diagnosisDate } from "../lib/problems";
 import { deleteFile as deleteFileFromS3 } from "@/lib/s3";
 import {
   assertNotStale,
   clientUpdatedAtSchema,
 } from "../lib/optimistic-update";
 import { writeAudit } from "../lib/audit";
+import { soapFormDraftSchema } from "@/lib/soap-form";
+import { addDueInterval, toDateInput } from "@/lib/due-interval";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 
 export const recordsRouter = createRouter({
@@ -64,6 +70,57 @@ export const recordsRouter = createRouter({
         .orderBy(desc(soapNotes.createdAt));
     }),
 
+  getSoapNote: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      await autoFinalizeStaleSoapNotes(ctx.db);
+
+      const [note] = await ctx.db
+        .select({
+          id: soapNotes.id,
+          patientId: soapNotes.patientId,
+          subjective: soapNotes.subjective,
+          objective: soapNotes.objective,
+          assessment: soapNotes.assessment,
+          plan: soapNotes.plan,
+          diagnosis: soapNotes.diagnosis,
+          prognosis: soapNotes.prognosis,
+          reasonForVisit: soapNotes.reasonForVisit,
+          formDraft: soapNotes.formDraft,
+          finalizedAt: soapNotes.finalizedAt,
+          autoFinalized: soapNotes.autoFinalized,
+          createdAt: soapNotes.createdAt,
+          updatedAt: soapNotes.updatedAt,
+        })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.id, input.id),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!note) throw new Error("SOAP note not found");
+
+      const [vitals] = await ctx.db
+        .select({
+          weightKg: examVitals.weightKg,
+        })
+        .from(examVitals)
+        .where(
+          and(
+            eq(examVitals.soapNoteId, note.id),
+            eq(examVitals.practiceId, ctx.practiceId),
+            isNull(examVitals.deletedAt)
+          )
+        )
+        .limit(1);
+
+      return { ...note, vitalsWeightKg: vitals?.weightKg ?? null };
+    }),
+
   createSoapNote: protectedProcedure
     .use(requireRole("admin", "veterinarian"))
     .input(
@@ -77,17 +134,28 @@ export const recordsRouter = createRouter({
         diagnosis: z.string().optional(),
         prognosis: z.string().optional(),
         reasonForVisit: z.string().optional(),
+        formDraft: soapFormDraftSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { formDraft, ...fields } = input;
       const [note] = await ctx.db
         .insert(soapNotes)
         .values({
-          ...input,
+          ...fields,
+          formDraft: formDraft ?? null,
           authorId: ctx.user.id,
           practiceId: ctx.practiceId,
         })
         .returning();
+      if (note?.assessment?.trim()) {
+        await addProblemsFromDiagnosis(ctx.db, {
+          practiceId: ctx.practiceId,
+          patientId: input.patientId,
+          assessment: note.assessment,
+          onsetDate: diagnosisDate(note.createdAt),
+        });
+      }
       return note!;
     }),
 
@@ -103,11 +171,12 @@ export const recordsRouter = createRouter({
         diagnosis: z.string().optional(),
         prognosis: z.string().optional(),
         reasonForVisit: z.string().optional(),
+        formDraft: soapFormDraftSchema.optional(),
         clientUpdatedAt: clientUpdatedAtSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, clientUpdatedAt, ...fields } = input;
+      const { id, clientUpdatedAt, formDraft, ...fields } = input;
 
       const [existing] = await ctx.db
         .select({
@@ -134,7 +203,16 @@ export const recordsRouter = createRouter({
 
       // Empty string is a valid "clear this section" value, so we let it
       // through; only undefined fields are skipped.
-      const updateValues: Record<string, string> = {};
+      const updateValues: {
+        subjective?: string;
+        objective?: string;
+        assessment?: string;
+        plan?: string;
+        diagnosis?: string;
+        prognosis?: string;
+        reasonForVisit?: string;
+        formDraft?: z.infer<typeof soapFormDraftSchema>;
+      } = {};
       for (const key of [
         "subjective",
         "objective",
@@ -147,6 +225,7 @@ export const recordsRouter = createRouter({
         const value = fields[key];
         if (value !== undefined) updateValues[key] = value;
       }
+      if (formDraft !== undefined) updateValues.formDraft = formDraft;
       const [note] = await ctx.db
         .update(soapNotes)
         .set(updateValues)
@@ -159,6 +238,14 @@ export const recordsRouter = createRouter({
         )
         .returning();
       if (!note) throw new Error("SOAP note not found");
+      if (note.assessment?.trim()) {
+        await addProblemsFromDiagnosis(ctx.db, {
+          practiceId: ctx.practiceId,
+          patientId: note.patientId,
+          assessment: note.assessment,
+          onsetDate: diagnosisDate(note.createdAt),
+        });
+      }
       await writeAudit({
         practiceId: ctx.practiceId,
         userId: ctx.user.id,
@@ -438,45 +525,154 @@ export const recordsRouter = createRouter({
         administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
         notes: z.string().optional(),
+        kitId: z.string().uuid().optional(),
         productId: z.string().uuid().optional(),
         quantity: z.number().int().min(1).optional(),
         stockNote: z.string().optional(),
+        extraItems: z
+          .array(
+            z.object({
+              productId: z.string().uuid(),
+              quantity: z.number().int().min(1),
+              note: z.string().optional(),
+            })
+          )
+          .max(20)
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const {
         administeredAt,
+        kitId,
         productId,
         quantity,
         stockNote,
+        extraItems,
+        nextDueDate: inputNextDue,
         ...rest
       } = input;
+
+      let nextDueDate = inputNextDue || null;
+      let kit: {
+        id: string;
+        dueIntervalValue: number | null;
+        dueIntervalUnit: string | null;
+      } | null = null;
+
+      if (kitId) {
+        const [found] = await ctx.db
+          .select({
+            id: inventoryKits.id,
+            dueIntervalValue: inventoryKits.dueIntervalValue,
+            dueIntervalUnit: inventoryKits.dueIntervalUnit,
+          })
+          .from(inventoryKits)
+          .where(
+            and(
+              eq(inventoryKits.id, kitId),
+              eq(inventoryKits.practiceId, ctx.practiceId),
+              isNull(inventoryKits.deletedAt)
+            )
+          )
+          .limit(1);
+        if (!found) throw new Error("Inventory kit not found");
+        kit = found;
+        if (!nextDueDate && found.dueIntervalValue && found.dueIntervalUnit) {
+          nextDueDate = addDueInterval(
+            administeredAt || toDateInput(new Date()),
+            found.dueIntervalValue,
+            found.dueIntervalUnit
+          );
+        }
+      }
+
       const [record] = await ctx.db
         .insert(vaccinationRecords)
         .values({
           ...rest,
+          nextDueDate,
+          kitId: kitId ?? null,
           ...(administeredAt ? { administeredAt: new Date(administeredAt) } : {}),
           administeredBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
         .returning();
 
-      let stockWarned = false;
-      let stockBalanceAfter: number | undefined;
-      if (productId) {
-        const stock = await recordProductUsage(ctx, {
-          patientId: input.patientId,
+      const deductions: Array<{
+        productId: string;
+        quantity: number;
+        note?: string;
+      }> = [];
+
+      if (kitId) {
+        if (!kit) throw new Error("Inventory kit not found");
+
+        const kitItems = await ctx.db
+          .select({
+            productId: inventoryKitItems.productId,
+            quantity: inventoryKitItems.quantity,
+            note: inventoryKitItems.note,
+          })
+          .from(inventoryKitItems)
+          .where(
+            and(
+              eq(inventoryKitItems.kitId, kitId),
+              isNull(inventoryKitItems.deletedAt)
+            )
+          );
+        deductions.push(
+          ...kitItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            note: item.note ?? stockNote,
+          }))
+        );
+      } else if (productId) {
+        deductions.push({
           productId,
           quantity: quantity ?? 1,
-          sourceType: "vaccination",
-          sourceId: record!.id,
           note: stockNote,
         });
-        stockWarned = stock.warned;
+      }
+
+      for (const extra of extraItems ?? []) {
+        deductions.push({
+          productId: extra.productId,
+          quantity: extra.quantity,
+          note: extra.note ?? stockNote,
+        });
+      }
+
+      let stockWarned = false;
+      let stockBalanceAfter: number | undefined;
+      const stockWarnings: Array<{ name: string; balanceAfter: number }> = [];
+
+      for (const item of deductions) {
+        const stock = await recordProductUsage(ctx, {
+          patientId: input.patientId,
+          productId: item.productId,
+          quantity: item.quantity,
+          sourceType: "vaccination",
+          sourceId: record!.id,
+          note: item.note,
+        });
+        if (stock.warned) {
+          stockWarned = true;
+          stockWarnings.push({
+            name: stock.product.name,
+            balanceAfter: stock.balanceAfter,
+          });
+        }
         stockBalanceAfter = stock.balanceAfter;
       }
 
-      return { ...record!, stockWarned, stockBalanceAfter };
+      return {
+        ...record!,
+        stockWarned,
+        stockBalanceAfter,
+        stockWarnings,
+      };
     }),
 
   updateVaccination: protectedProcedure
@@ -557,7 +753,10 @@ export const recordsRouter = createRouter({
             isNull(problemList.deletedAt)
           )
         )
-        .orderBy(desc(problemList.createdAt));
+        .orderBy(
+          sql`${problemList.onsetDate} desc nulls last`,
+          desc(problemList.createdAt)
+        );
     }),
 
   createProblem: protectedProcedure
@@ -575,6 +774,7 @@ export const recordsRouter = createRouter({
         .insert(problemList)
         .values({
           ...input,
+          onsetDate: input.onsetDate || diagnosisDate(new Date()),
           practiceId: ctx.practiceId,
         })
         .returning();

@@ -64,6 +64,34 @@
       "when": 1786600000000,
       "tag": "0008_stock_movements",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0009_inventory_kits",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0010_soap_form_draft",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0011_kit_due_interval",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0012_plan_name",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
   integer,
   numeric,
   date,
+  jsonb,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -17,6 +18,7 @@ import { practices } from "./practices";
 import { users } from "./users";
 import { patients } from "./patients";
 import { appointments } from "./scheduling";
+import { inventoryKits } from "./inventory-kits";
 
 export const problemStatusEnum = pgEnum("problem_status", [
   "active",
@@ -66,6 +68,8 @@ export const soapNotes = pgTable(
     diagnosis: varchar("diagnosis", { length: 500 }),
     prognosis: text("prognosis"),
     reasonForVisit: varchar("reason_for_visit", { length: 500 }),
+    /** Structured New SOAP form fields so a draft can be resumed. */
+    formDraft: jsonb("form_draft"),
     finalizedAt: timestamp("finalized_at", { withTimezone: true }),
     finalizedBy: uuid("finalized_by").references(() => users.id),
     autoFinalized: boolean("auto_finalized").notNull().default(false),
@@ -118,6 +122,7 @@ export const vaccinationRecords = pgTable("vaccination_records", {
   nextDueDate: date("next_due_date"),
   certificateUrl: varchar("certificate_url", { length: 512 }),
   notes: text("notes"),
+  kitId: uuid("kit_id").references(() => inventoryKits.id),
 });
 
 export const labResults = pgTable("lab_results", {
@@ -277,6 +282,10 @@ export const vaccinationRecordsRelations = relations(
     administeredByUser: one(users, {
       fields: [vaccinationRecords.administeredBy],
       references: [users.id],
+    }),
+    kit: one(inventoryKits, {
+      fields: [vaccinationRecords.kitId],
+      references: [inventoryKits.id],
     }),
   })
 );

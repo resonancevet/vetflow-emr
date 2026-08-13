@@ -67,6 +67,15 @@ const speciesEmoji: Record<string, string> = {
   other: "\uD83D\uDC3E",
 };
 
+type ChartSection =
+  | "medical"
+  | "weight"
+  | "communication"
+  | "vaccines"
+  | "prescriptions"
+  | "labs"
+  | "compliance";
+
 function formatSex(sex: string | null): string {
   if (!sex) return "Unknown";
   const labels: Record<string, string> = {
@@ -108,6 +117,7 @@ export default function PatientDetailPage() {
     userRole === "admin" || userRole === "veterinarian";
   const [weightUnit, setWeightUnit] = useWeightUnit();
   const [weightView, setWeightView] = useState<"list" | "graph">("list");
+  const [chartSection, setChartSection] = useState<ChartSection>("medical");
 
   const formatWeight = (kgString: string | null) => {
     if (!kgString) return "\u2014";
@@ -211,8 +221,6 @@ export default function PatientDetailPage() {
           objective: n.objective ?? undefined,
           assessment: n.assessment ?? undefined,
           plan: n.plan ?? undefined,
-          diagnosis: n.diagnosis ?? undefined,
-          prognosis: n.prognosis ?? undefined,
         })),
         prescriptions: prescriptions.map((rx) => ({
           medication: rx.medicationName,
@@ -250,6 +258,27 @@ export default function PatientDetailPage() {
       : patient.status === "deceased"
         ? "bg-gray-400"
         : "bg-amber-500";
+
+  const chartNav: { id: ChartSection; label: string }[] = [
+    ...(userRole !== "front_desk"
+      ? [{ id: "medical" as const, label: "Medical Record" }]
+      : []),
+    { id: "weight", label: "Weight History" },
+    ...(patient.clientId
+      ? [{ id: "communication" as const, label: "Communication Log" }]
+      : []),
+    { id: "vaccines", label: "Vaccine History" },
+    ...(userRole !== "front_desk"
+      ? [
+          { id: "prescriptions" as const, label: "Prescriptions" },
+          { id: "labs" as const, label: "Lab Results" },
+          { id: "compliance" as const, label: "Compliance" },
+        ]
+      : []),
+  ];
+  const activeChartSection = chartNav.some((item) => item.id === chartSection)
+    ? chartSection
+    : (chartNav[0]?.id ?? "weight");
 
   return (
     <div>
@@ -429,11 +458,35 @@ export default function PatientDetailPage() {
 
       <PatientAlerts patientId={patient.id} />
 
+      <nav
+        className="mt-4 border-b border-border"
+        aria-label="Patient records"
+      >
+        <div className="flex flex-wrap gap-1">
+          {chartNav.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setChartSection(item.id)}
+              className={cn(
+                "-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                activeChartSection === item.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
       <div className="mt-4">
         <PatientClinicalAdd patientId={patient.id} />
       </div>
 
       <div className="mt-6 space-y-10">
+        {activeChartSection === "weight" && (
         <section>
           <h3 className="mb-3 font-heading text-base font-semibold">Weight</h3>
           <div>
@@ -522,8 +575,9 @@ export default function PatientDetailPage() {
             )}
           </div>
         </section>
+        )}
 
-        {patient.clientId && (
+        {activeChartSection === "communication" && patient.clientId && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               Communication
@@ -536,6 +590,7 @@ export default function PatientDetailPage() {
           </section>
         )}
 
+        {activeChartSection === "vaccines" && (
         <section>
           <h3 className="mb-3 font-heading text-base font-semibold">
             Vaccinations
@@ -545,8 +600,25 @@ export default function PatientDetailPage() {
             canManage={canManageClinicalRecords}
           />
         </section>
+        )}
 
-        {userRole !== "front_desk" && (
+        {activeChartSection === "medical" && (
+        <section>
+          <h3 className="mb-3 font-heading text-base font-semibold">Problems</h3>
+          <ProblemsTab
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              species: patient.species ?? null,
+              clientFirstName: patient.clientFirstName ?? null,
+              clientLastName: patient.clientLastName ?? null,
+            }}
+            canManage={canManageClinicalRecords}
+          />
+        </section>
+        )}
+
+        {activeChartSection === "medical" && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               SOAP Notes
@@ -564,7 +636,7 @@ export default function PatientDetailPage() {
           </section>
         )}
 
-        {userRole !== "front_desk" && (
+        {activeChartSection === "prescriptions" && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               Prescriptions
@@ -582,21 +654,7 @@ export default function PatientDetailPage() {
           </section>
         )}
 
-        <section>
-          <h3 className="mb-3 font-heading text-base font-semibold">Problems</h3>
-          <ProblemsTab
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-            }}
-            canManage={canManageClinicalRecords}
-          />
-        </section>
-
-        {userRole !== "front_desk" && (
+        {activeChartSection === "labs" && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               Lab Results
@@ -614,7 +672,7 @@ export default function PatientDetailPage() {
           </section>
         )}
 
-        {userRole !== "front_desk" && (
+        {activeChartSection === "medical" && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               Procedures
@@ -632,7 +690,7 @@ export default function PatientDetailPage() {
           </section>
         )}
 
-        {userRole !== "front_desk" && (
+        {activeChartSection === "compliance" && (
           <section>
             <h3 className="mb-3 font-heading text-base font-semibold">
               Compliance

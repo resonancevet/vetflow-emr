@@ -102,26 +102,6 @@ export function SoapNotesTab({
     patientId: patient.id,
   });
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    subjective: "",
-    objective: "",
-    assessment: "",
-    plan: "",
-    diagnosis: "",
-    prognosis: "",
-    reasonForVisit: "",
-  });
-  const [editUpdatedAt, setEditUpdatedAt] = useState<Date | undefined>();
-
-  const updateNote = trpc.records.updateSoapNote.useMutation({
-    onSuccess: () => {
-      toast.success("SOAP note updated");
-      utils.records.listSoapNotes.invalidate({ patientId: patient.id });
-      setEditingNoteId(null);
-    },
-    onError: (err) => toast.error(err.message),
-  });
 
   const finalizeNote = trpc.records.finalizeSoapNote.useMutation({
     onSuccess: () => {
@@ -148,50 +128,6 @@ export function SoapNotesTab({
     });
   };
 
-  const startEdit = (note: {
-    id: string;
-    subjective: string | null;
-    objective: string | null;
-    assessment: string | null;
-    plan: string | null;
-    diagnosis?: string | null;
-    prognosis?: string | null;
-    reasonForVisit?: string | null;
-    updatedAt?: Date | string | null;
-  }) => {
-    setEditingNoteId(note.id);
-    setExpandedNoteId(note.id);
-    setEditForm({
-      subjective: note.subjective ?? "",
-      objective: note.objective ?? "",
-      assessment: note.assessment ?? "",
-      plan: note.plan ?? "",
-      diagnosis: note.diagnosis ?? "",
-      prognosis: note.prognosis ?? "",
-      reasonForVisit: note.reasonForVisit ?? "",
-    });
-    setEditUpdatedAt(
-      note.updatedAt ? new Date(note.updatedAt) : undefined
-    );
-  };
-
-  const cancelEdit = () => setEditingNoteId(null);
-
-  const saveEdit = () => {
-    if (!editingNoteId) return;
-    updateNote.mutate({
-      id: editingNoteId,
-      subjective: editForm.subjective,
-      objective: editForm.objective,
-      assessment: editForm.assessment,
-      plan: editForm.plan,
-      diagnosis: editForm.diagnosis || undefined,
-      prognosis: editForm.prognosis || undefined,
-      reasonForVisit: editForm.reasonForVisit || undefined,
-      clientUpdatedAt: editUpdatedAt,
-    });
-  };
-
   return (
     <div>
       {canCreate && (
@@ -210,24 +146,18 @@ export function SoapNotesTab({
         <div className="space-y-3">
           {soapNotes.map((note) => {
             const isExpanded = expandedNoteId === note.id;
-            const isEditing = editingNoteId === note.id;
             const isFinalized = !!note.finalizedAt;
             return (
               <div
                 key={note.id}
                 className="rounded-lg border border-border bg-card"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Don't collapse while editing — clicking the header should
-                    // stay benign if the user is mid-edit.
-                    if (isEditing) return;
-                    setExpandedNoteId(isExpanded ? null : note.id);
-                  }}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
-                >
-                  <div className="flex items-center gap-4 min-w-0">
+                <div className="flex w-full items-center gap-2 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedNoteId(isExpanded ? null : note.id)}
+                    className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                  >
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -258,135 +188,63 @@ export function SoapNotesTab({
                     <p className="line-clamp-1 max-w-md text-sm text-muted-foreground">
                       {note.assessment || "No assessment recorded"}
                     </p>
-                  </div>
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                  {canCreate && !isFinalized && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          router.push(
+                            `/records/new-soap/${patient.id}?noteId=${note.id}`
+                          )
+                        }
+                      >
+                        <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleFinalize(note)}
+                        disabled={finalizeNote.isPending}
+                      >
+                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        {finalizeNote.isPending ? "Finalizing..." : "Finalize"}
+                      </Button>
+                    </div>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? "Collapse SOAP note" : "Expand SOAP note"}
+                    onClick={() => setExpandedNoteId(isExpanded ? null : note.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    {isExpanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
                 {isExpanded && (
                   <div className="space-y-4 border-t border-border px-4 py-4">
-                    {isEditing ? (
-                      <>
-                        <SoapEditField
-                          label="Subjective"
-                          value={editForm.subjective}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, subjective: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Objective"
-                          value={editForm.objective}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, objective: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Assessment"
-                          value={editForm.assessment}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, assessment: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Reason for visit"
-                          value={editForm.reasonForVisit}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, reasonForVisit: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Diagnosis"
-                          value={editForm.diagnosis}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, diagnosis: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Prognosis"
-                          value={editForm.prognosis}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, prognosis: v }))
-                          }
-                        />
-                        <SoapEditField
-                          label="Plan"
-                          value={editForm.plan}
-                          onChange={(v) =>
-                            setEditForm((f) => ({ ...f, plan: v }))
-                          }
-                        />
-                        <div className="flex justify-end gap-2 pt-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={cancelEdit}
-                            disabled={updateNote.isPending}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={saveEdit}
-                            disabled={updateNote.isPending}
-                          >
-                            {updateNote.isPending ? "Saving..." : "Save changes"}
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {isFinalized && (
-                          <p className="text-xs text-muted-foreground">
-                            {note.autoFinalized ? "Auto-locked" : "Signed"} by{" "}
-                            {note.finalizedByName ?? "Unknown"} on{" "}
-                            {note.finalizedAt
-                              ? new Date(note.finalizedAt).toLocaleString()
-                              : "unknown date"}
-                            {note.autoFinalized &&
-                              " (24-hour record lock per NH Vet 701.01(c))"}
-                          </p>
-                        )}
-                        {canCreate && !isFinalized && (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => startEdit(note)}
-                            >
-                              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => handleFinalize(note)}
-                              disabled={finalizeNote.isPending}
-                            >
-                              <Check className="mr-1.5 h-3.5 w-3.5" />
-                              {finalizeNote.isPending
-                                ? "Finalizing..."
-                                : "Finalize"}
-                            </Button>
-                          </div>
-                        )}
-                        <SoapField
-                          label="Reason for visit"
-                          value={note.reasonForVisit}
-                        />
-                        <SoapField label="Subjective" value={note.subjective} />
-                        <SoapField label="Objective" value={note.objective} />
-                        <SoapField label="Assessment" value={note.assessment} />
-                        <SoapField label="Diagnosis" value={note.diagnosis} />
-                        <SoapField label="Prognosis" value={note.prognosis} />
-                        <SoapField label="Plan" value={note.plan} />
-                      </>
+                    {isFinalized && (
+                      <p className="text-xs text-muted-foreground">
+                        {note.autoFinalized ? "Auto-locked" : "Signed"} by{" "}
+                        {note.finalizedByName ?? "Unknown"} on{" "}
+                        {note.finalizedAt
+                          ? new Date(note.finalizedAt).toLocaleString()
+                          : "unknown date"}
+                        {note.autoFinalized &&
+                          " (24-hour record lock per NH Vet 701.01(c))"}
+                      </p>
                     )}
+                    <SoapField label="Subjective" value={note.subjective} />
+                    <SoapField label="Objective" value={note.objective} />
+                    <SoapField label="Assessment" value={note.assessment} />
+                    <SoapField label="Plan" value={note.plan} />
                     <SoapAttachments entityId={note.id} canUpload={canCreate && !isFinalized} />
                     {isFinalized && (
                       <SoapAddenda noteId={note.id} canAdd={canCreate} />
@@ -969,30 +827,6 @@ function SoapField({
   );
 }
 
-function SoapEditField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </label>
-      <textarea
-        rows={3}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="min-h-[4rem] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-      />
-    </div>
-  );
-}
-
 export function PrescriptionsTab({
   patient,
   canManage,
@@ -1360,6 +1194,30 @@ export function PrescriptionsTab({
   );
 }
 
+function formatProblemDate(value: string | Date | null | undefined) {
+  if (!value) return null;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString();
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString();
+}
+
+function problemOnsetInput(value: string | Date | null | undefined) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function ProblemsTab({
   patient,
   canManage,
@@ -1372,6 +1230,7 @@ export function ProblemsTab({
     patientId: patient.id,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [inactiveOpen, setInactiveOpen] = useState(false);
   const [form, setForm] = useState({
     description: "",
     status: "active" as "active" | "resolved" | "chronic",
@@ -1390,9 +1249,9 @@ export function ProblemsTab({
     onError: (err) => toast.error(err.message),
   });
 
-  const deleteProblem = trpc.records.deleteProblem.useMutation({
+  const updateStatus = trpc.records.updateProblemStatus.useMutation({
     onSuccess: () => {
-      toast.success("Problem removed");
+      toast.success("Problem resolved");
       invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -1403,12 +1262,12 @@ export function ProblemsTab({
     setForm({
       description: problem.description,
       status: (problem.status ?? "active") as typeof form.status,
-      onsetDate: problem.onsetDate ?? "",
+      onsetDate: problemOnsetInput(problem.onsetDate),
     });
   };
 
   const saveProblem = () => {
-    if (!editingId) return;
+    if (!editingId || !form.description.trim()) return;
     updateProblem.mutate({
       id: editingId,
       description: form.description.trim(),
@@ -1417,146 +1276,196 @@ export function ProblemsTab({
     });
   };
 
+  const activeProblems = (problems ?? []).filter(
+    (problem) => problem.status !== "resolved"
+  );
+  const inactiveProblems = (problems ?? []).filter(
+    (problem) => problem.status === "resolved"
+  );
+
   if (!problems || problems.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
         <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/50" />
         <p className="mt-2 text-sm text-muted-foreground">
-          No problems recorded
+          No problems recorded. Diagnoses from SOAP notes appear here.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {problems.map((problem) => {
-        const isEditing = editingId === problem.id;
-        return (
-          <div
-            key={problem.id}
-            className="rounded-lg border border-border bg-card px-4 py-3"
-          >
-            {isEditing ? (
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-                <div>
-                  <label className="mb-1 block text-xs font-medium">
-                    Description
-                  </label>
-                  <Input
-                    value={form.description}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, description: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Status</label>
-                  <select
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        status: e.target.value as typeof form.status,
-                      }))
-                    }
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="active">Active</option>
-                    <option value="chronic">Chronic</option>
-                    <option value="resolved">Resolved</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Onset</label>
-                  <Input
-                    type="date"
-                    value={form.onsetDate}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, onsetDate: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="flex gap-2 sm:col-span-3">
-                  <Button
-                    size="sm"
-                    disabled={updateProblem.isPending}
-                    onClick={saveProblem}
-                  >
-                    {updateProblem.isPending ? "Saving..." : "Save"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={updateProblem.isPending}
-                    onClick={() => setEditingId(null)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p
-                    className={cn(
-                      "text-sm",
-                      problem.status === "active" ? "font-semibold" : "font-normal"
-                    )}
-                  >
-                    {problem.description}
-                  </p>
-                  {problem.onsetDate && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Onset: {new Date(problem.onsetDate).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                      problem.status === "active"
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                        : problem.status === "chronic"
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    )}
-                  >
-                    {problem.status ?? "active"}
-                  </span>
-                  {canManage && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => startEditProblem(problem)}
-                      >
-                        <Pencil className="mr-1 h-3.5 w-3.5" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={deleteProblem.isPending}
-                        onClick={() => {
-                          if (confirm("Remove this problem?")) {
-                            deleteProblem.mutate({ id: problem.id });
-                          }
-                        }}
-                      >
-                        <Trash2 className="mr-1 h-3.5 w-3.5" />
-                        Delete
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
+    <div className="space-y-6">
+      <div>
+        <h4 className="mb-2 text-sm font-medium">Active problems</h4>
+        {activeProblems.length > 0 ? (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="w-36 px-4 py-3 text-left font-medium text-muted-foreground">
+                    Date
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                    Diagnosis
+                  </th>
+                  <th className="w-28 px-4 py-3 text-right font-medium text-muted-foreground">
+                    Resolved
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeProblems.map((problem) => {
+                  const isEditing = editingId === problem.id;
+                  return (
+                    <tr key={problem.id} className="border-b border-border last:border-0">
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                        {isEditing ? (
+                          <Input
+                            type="date"
+                            value={form.onsetDate}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, onsetDate: e.target.value }))
+                            }
+                          />
+                        ) : (
+                          formatProblemDate(problem.onsetDate) ?? "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <Input
+                            value={form.description}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                description: e.target.value,
+                              }))
+                            }
+                            required
+                          />
+                        ) : (
+                          <span className="font-medium">{problem.description}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              disabled={updateProblem.isPending}
+                              onClick={saveProblem}
+                            >
+                              {updateProblem.isPending ? "Saving..." : "Save"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={updateProblem.isPending}
+                              onClick={() => setEditingId(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            {canManage && (
+                              <>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Mark ${problem.description} resolved`}
+                                  className="h-4 w-4 rounded border-input"
+                                  checked={false}
+                                  disabled={updateStatus.isPending}
+                                  onChange={() =>
+                                    updateStatus.mutate({
+                                      id: problem.id,
+                                      status: "resolved",
+                                    })
+                                  }
+                                />
+                                <button
+                                  type="button"
+                                  aria-label="Edit problem"
+                                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  onClick={() => startEditProblem(problem)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        );
-      })}
+        ) : (
+          <p className="text-sm text-muted-foreground">No active problems.</p>
+        )}
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setInactiveOpen((open) => !open)}
+          className="mb-2 flex w-full items-center justify-between gap-2 text-left"
+          aria-expanded={inactiveOpen}
+        >
+          <h4 className="text-sm font-medium">
+            Inactive problems
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              ({inactiveProblems.length})
+            </span>
+          </h4>
+          {inactiveOpen ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        {inactiveOpen &&
+          (inactiveProblems.length > 0 ? (
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full min-w-[420px] text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="w-36 px-4 py-3 text-left font-medium text-muted-foreground">
+                      Date
+                    </th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                      Diagnosis
+                    </th>
+                    <th className="w-36 px-4 py-3 text-right font-medium text-muted-foreground">
+                      Resolved
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inactiveProblems.map((problem) => (
+                    <tr
+                      key={problem.id}
+                      className="border-b border-border last:border-0 text-muted-foreground"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {formatProblemDate(problem.onsetDate) ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">{problem.description}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        {formatProblemDate(problem.resolvedDate) ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No inactive problems.</p>
+          ))}
+      </div>
     </div>
   );
 }

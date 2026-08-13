@@ -21,15 +21,25 @@ import {
   Check,
   Layers,
   ScrollText,
+  Package,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { InventoryKitsTab } from "@/components/settings/inventory-kits-tab";
 
 // ── Types ───────────────────────────────────────────────────
-type Tab = "practice" | "staff" | "appointmentTypes" | "rooms" | "data" | "templates" | "audit";
+type Tab =
+  | "practice"
+  | "staff"
+  | "appointmentTypes"
+  | "rooms"
+  | "data"
+  | "templates"
+  | "inventoryKits"
+  | "audit";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "practice", label: "Practice Info", icon: Settings },
@@ -38,6 +48,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "rooms", label: "Rooms", icon: DoorOpen },
   { id: "data", label: "Data", icon: Database },
   { id: "templates", label: "Templates", icon: Layers },
+  { id: "inventoryKits", label: "Inventory Kits", icon: Package },
   { id: "audit", label: "Audit Log", icon: ScrollText },
 ];
 
@@ -140,6 +151,7 @@ export default function SettingsPage() {
         {activeTab === "rooms" && <RoomsTab />}
         {activeTab === "data" && <DataTab />}
         {activeTab === "templates" && <TemplatesTab />}
+        {activeTab === "inventoryKits" && <InventoryKitsTab />}
         {activeTab === "audit" && <AuditLogTab />}
       </div>
     </div>

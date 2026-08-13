@@ -668,6 +668,7 @@ function EditProductRow({
   product: {
     id: string;
     name: string;
+    planName?: string | null;
     sku: string | null;
     category: string | null;
     supplierName: string | null;
@@ -693,6 +694,7 @@ function EditProductRow({
 
   const [form, setForm] = useState({
     name: product.name,
+    planName: product.planName ?? "",
     sku: product.sku ?? "",
     category: product.category ?? "",
     supplierName: product.supplierName ?? "",
@@ -711,6 +713,12 @@ function EditProductRow({
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           className="h-8 text-sm"
+        />
+        <Input
+          value={form.planName}
+          onChange={(e) => setForm({ ...form, planName: e.target.value })}
+          className="mt-1 h-8 text-sm"
+          placeholder="Plan name (optional)"
         />
       </td>
       <td className="px-3 py-2">
@@ -803,6 +811,7 @@ function EditProductRow({
               updateMutation.mutate({
                 id: product.id,
                 name: form.name,
+                planName: form.planName.trim() || null,
                 sku: form.sku || null,
                 category: form.category || null,
                 supplierName: form.supplierName || null,

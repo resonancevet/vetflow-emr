@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toKgString, useWeightUnit, type WeightUnit } from "@/lib/weight-units";
+import { addDueInterval, formatDueInterval } from "@/lib/due-interval";
+import { planDisplayName } from "@/lib/plan-name";
 import {
   ProductPicker,
   StockUseFields,
@@ -23,12 +25,21 @@ type FormKind =
   | "supply"
   | null;
 
-function toastStock(result?: {
+export function toastStock(result?: {
   stockWarned?: boolean;
   stockBalanceAfter?: number;
   warned?: boolean;
   balanceAfter?: number;
+  stockWarnings?: Array<{ name: string; balanceAfter: number }>;
 }) {
+  if (result?.stockWarnings && result.stockWarnings.length > 0) {
+    for (const warning of result.stockWarnings) {
+      toast.warning(
+        `${warning.name} stock is now ${warning.balanceAfter} (below zero)`
+      );
+    }
+    return;
+  }
   const warned = result?.stockWarned || result?.warned;
   const balance = result?.stockBalanceAfter ?? result?.balanceAfter;
   if (warned) {
@@ -291,7 +302,13 @@ export function UnitToggle({
   );
 }
 
-function VaccinationForm({
+type ExtraStockItem = {
+  key: string;
+  product: CatalogProduct | null;
+  quantity: number;
+};
+
+export function VaccinationForm({
   onSubmit,
   loading,
 }: {
@@ -301,14 +318,25 @@ function VaccinationForm({
     administeredAt?: string;
     nextDueDate?: string;
     notes?: string;
+    manufacturer?: string;
+    kitId?: string;
     productId?: string;
     quantity?: number;
     stockNote?: string;
+    extraItems?: Array<{
+      productId: string;
+      quantity: number;
+      note?: string;
+    }>;
   }) => void;
   loading: boolean;
 }) {
+  const { data: kits } = trpc.inventoryKits.list.useQuery();
+  const activeKits = (kits ?? []).filter((kit) => kit.isActive);
+  const [kitId, setKitId] = useState("");
   const [vaccineName, setVaccineName] = useState("");
   const [lotNumber, setLotNumber] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
   const [administeredAt, setAdministeredAt] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -317,6 +345,62 @@ function VaccinationForm({
   const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [stockNote, setStockNote] = useState("");
+  const [extras, setExtras] = useState<ExtraStockItem[]>([]);
+
+  const selectedKit = activeKits.find((kit) => kit.id === kitId);
+  const kitDueLabel = selectedKit
+    ? formatDueInterval(selectedKit.dueIntervalValue, selectedKit.dueIntervalUnit)
+    : null;
+
+  useEffect(() => {
+    if (!selectedKit?.dueIntervalValue || !selectedKit.dueIntervalUnit) return;
+    const due = addDueInterval(
+      administeredAt,
+      selectedKit.dueIntervalValue,
+      selectedKit.dueIntervalUnit
+    );
+    if (due) setNextDueDate(due);
+  }, [
+    administeredAt,
+    selectedKit?.id,
+    selectedKit?.dueIntervalValue,
+    selectedKit?.dueIntervalUnit,
+  ]);
+
+  function applyKit(id: string) {
+    setKitId(id);
+    const kit = activeKits.find((row) => row.id === id);
+    if (!kit) {
+      setProduct(null);
+      return;
+    }
+    const first = kit.items[0];
+    if (first) {
+      setVaccineName(
+        planDisplayName(
+          kit.planName,
+          planDisplayName(first.productPlanName, first.productName)
+        )
+      );
+      if (first.productLotNumber) setLotNumber(first.productLotNumber);
+    } else if (kit.planName) {
+      setVaccineName(kit.planName);
+    }
+    setProduct(null);
+    const due = addDueInterval(
+      administeredAt,
+      kit.dueIntervalValue,
+      kit.dueIntervalUnit
+    );
+    setNextDueDate(due ?? "");
+  }
+
+  function addExtra() {
+    setExtras((prev) => [
+      ...prev,
+      { key: crypto.randomUUID(), product: null, quantity: 1 },
+    ]);
+  }
 
   return (
     <form
@@ -324,34 +408,165 @@ function VaccinationForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (!vaccineName.trim()) return;
+        const extraItems = extras
+          .filter((row) => row.product)
+          .map((row) => ({
+            productId: row.product!.id,
+            quantity: row.quantity,
+          }));
         onSubmit({
           vaccineName: vaccineName.trim(),
           lotNumber: lotNumber || undefined,
+          manufacturer: manufacturer || undefined,
           administeredAt: administeredAt || undefined,
           nextDueDate: nextDueDate || undefined,
           notes: notes || undefined,
-          productId: product?.id,
-          quantity: product ? quantity : undefined,
-          stockNote: product ? stockNote || undefined : undefined,
+          kitId: kitId || undefined,
+          productId: kitId ? undefined : product?.id,
+          quantity: kitId || !product ? undefined : quantity,
+          stockNote: kitId || !product ? undefined : stockNote || undefined,
+          extraItems: extraItems.length > 0 ? extraItems : undefined,
         });
       }}
     >
-      <div className="sm:col-span-2">
-        <label className="mb-1 block text-xs font-medium">
-          Inventory product (optional)
-        </label>
-        <ProductPicker
-          value={product}
-          placeholder="Link a catalog vaccine to decrement stock..."
-          onChange={(p) => {
-            setProduct(p);
-            if (p) {
-              setVaccineName(p.name);
-              if (p.lotNumber) setLotNumber(p.lotNumber);
-            }
-          }}
-        />
-      </div>
+      {activeKits.length > 0 && (
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium">
+            Inventory kit
+          </label>
+          <select
+            value={kitId}
+            onChange={(e) => applyKit(e.target.value)}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">None — enter manually</option>
+            {activeKits.map((kit) => (
+              <option key={kit.id} value={kit.id}>
+                {kit.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {selectedKit && (
+        <div className="sm:col-span-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+          <p className="font-medium">Deducts from inventory</p>
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {selectedKit.items.map((item) => (
+              <li key={item.id}>
+                {item.quantity}× {item.productName}
+                {item.note ? ` (${item.note})` : ""}
+                {item.stockQuantity != null
+                  ? ` · on hand ${item.stockQuantity}`
+                  : ""}
+              </li>
+            ))}
+            {extras
+              .filter((row) => row.product)
+              .map((row) => (
+                <li key={row.key}>
+                  {row.quantity}× {row.product!.name}
+                  {row.product!.stockQuantity != null
+                    ? ` · on hand ${row.product!.stockQuantity}`
+                    : ""}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+      {kitId && (
+        <div className="sm:col-span-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium">
+              Additional inventory (optional)
+            </label>
+            <Button type="button" size="sm" variant="outline" onClick={addExtra}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add item
+            </Button>
+          </div>
+          {extras.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Use this to deduct a different needle, syringe, or other item
+              along with the kit.
+            </p>
+          )}
+          {extras.map((row) => (
+            <div
+              key={row.key}
+              className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_5.5rem_auto]"
+            >
+              <ProductPicker
+                value={row.product}
+                placeholder="Search extra inventory item..."
+                onChange={(p) =>
+                  setExtras((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key ? { ...item, product: p } : item
+                    )
+                  )
+                }
+              />
+              <Input
+                type="number"
+                min={1}
+                value={row.quantity}
+                onChange={(e) =>
+                  setExtras((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key
+                        ? {
+                            ...item,
+                            quantity: Math.max(
+                              1,
+                              parseInt(e.target.value, 10) || 1
+                            ),
+                          }
+                        : item
+                    )
+                  )
+                }
+                aria-label="Quantity"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setExtras((prev) => prev.filter((item) => item.key !== row.key))
+                }
+              >
+                Remove
+              </Button>
+              {row.product && row.quantity > row.product.stockQuantity && (
+                <p className="text-xs text-amber-700 sm:col-span-3">
+                  On hand is {row.product.stockQuantity}
+                  {row.product.units ? ` ${row.product.units}` : ""}. Saving
+                  will take stock negative.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {!kitId && (
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium">
+            Inventory product (optional)
+          </label>
+          <ProductPicker
+            value={product}
+            placeholder="Link a catalog vaccine to decrement stock..."
+            onChange={(p) => {
+              setProduct(p);
+              if (p) {
+                setVaccineName(planDisplayName(p.planName, p.name));
+                if (p.lotNumber) setLotNumber(p.lotNumber);
+              }
+            }}
+          />
+        </div>
+      )}
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium">Vaccine name</label>
         <Input
@@ -361,6 +576,7 @@ function VaccinationForm({
           required
         />
       </div>
+      {!kitId && (
       <StockUseFields
         product={product}
         quantity={quantity}
@@ -368,6 +584,7 @@ function VaccinationForm({
         note={stockNote}
         onNoteChange={setStockNote}
       />
+      )}
       <div>
         <label className="mb-1 block text-xs font-medium">Date given</label>
         <Input
@@ -387,6 +604,11 @@ function VaccinationForm({
           value={nextDueDate}
           onChange={(e) => setNextDueDate(e.target.value)}
         />
+        {kitDueLabel && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            From kit protocol: {kitDueLabel}
+          </p>
+        )}
       </div>
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium">Notes</label>
@@ -405,7 +627,7 @@ function VaccinationForm({
   );
 }
 
-function PrescriptionForm({
+export function PrescriptionForm({
   onSubmit,
   loading,
 }: {
@@ -460,9 +682,9 @@ function PrescriptionForm({
         <ProductPicker
           value={product}
           placeholder="Link a catalog medication to decrement stock..."
-          onChange={(p) => {
+            onChange={(p) => {
             setProduct(p);
-            if (p) setMedicationName(p.name);
+            if (p) setMedicationName(planDisplayName(p.planName, p.name));
           }}
         />
       </div>
@@ -564,18 +786,21 @@ function ProblemForm({
   );
 }
 
-function SupplyForm({
+export function SupplyForm({
   onSubmit,
   loading,
 }: {
   onSubmit: (data: {
     productId: string;
+    productName: string;
     quantity: number;
+    units?: string | null;
     stockNote?: string;
   }) => void;
   loading: boolean;
 }) {
   const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const [planName, setPlanName] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [stockNote, setStockNote] = useState("");
 
@@ -587,17 +812,30 @@ function SupplyForm({
         if (!product) return;
         onSubmit({
           productId: product.id,
+          productName: planDisplayName(planName, product.name),
           quantity,
+          units: product.units,
           stockNote: stockNote || undefined,
         });
       }}
     >
       <div className="sm:col-span-2">
-        <label className="mb-1 block text-xs font-medium">Used supply</label>
+        <label className="mb-1 block text-xs font-medium">Inventory item</label>
         <ProductPicker
           value={product}
-          placeholder="Select a catalog supply..."
-          onChange={setProduct}
+          placeholder="Select a catalog item to deduct..."
+          onChange={(p) => {
+            setProduct(p);
+            setPlanName(p ? planDisplayName(p.planName, p.name) : "");
+          }}
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">Plan name</label>
+        <Input
+          value={planName}
+          onChange={(e) => setPlanName(e.target.value)}
+          placeholder="How this appears in the SOAP plan"
         />
       </div>
       <StockUseFields
@@ -609,7 +847,71 @@ function SupplyForm({
       />
       <div className="sm:col-span-2">
         <Button type="submit" size="sm" disabled={loading || !product}>
-          {loading ? "Saving..." : "Record supply use"}
+          {loading ? "Saving..." : "Record item use"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function LabTestForm({
+  onSubmit,
+  loading,
+}: {
+  onSubmit: (data: {
+    testName: string;
+    notes?: string;
+    resultDate?: string;
+  }) => void;
+  loading: boolean;
+}) {
+  const [testName, setTestName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [resultDate, setResultDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+
+  return (
+    <form
+      className="mt-4 grid gap-3 sm:grid-cols-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!testName.trim()) return;
+        onSubmit({
+          testName: testName.trim(),
+          notes: notes.trim() || undefined,
+          resultDate: resultDate || undefined,
+        });
+      }}
+    >
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">Test name</label>
+        <Input
+          value={testName}
+          onChange={(e) => setTestName(e.target.value)}
+          placeholder="e.g. CBC, Chemistry, UA"
+          required
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium">Date ordered</label>
+        <Input
+          type="date"
+          value={resultDate}
+          onChange={(e) => setResultDate(e.target.value)}
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">Notes</label>
+        <Input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Optional notes"
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <Button type="submit" size="sm" disabled={loading}>
+          {loading ? "Saving..." : "Order lab test"}
         </Button>
       </div>
     </form>

@@ -72,6 +72,37 @@ export const complianceRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (input.soapNoteId) {
+        const [existing] = await ctx.db
+          .select({ id: examVitals.id })
+          .from(examVitals)
+          .where(
+            and(
+              eq(examVitals.soapNoteId, input.soapNoteId),
+              eq(examVitals.practiceId, ctx.practiceId),
+              isNull(examVitals.deletedAt)
+            )
+          )
+          .limit(1);
+
+        if (existing) {
+          const [row] = await ctx.db
+            .update(examVitals)
+            .set({
+              weightKg: input.weightKg ?? null,
+              temperatureF: input.temperatureF ?? null,
+              heartRate: input.heartRate ?? null,
+              respiratoryRate: input.respiratoryRate ?? null,
+              examStatus: input.examStatus,
+              examNotes: input.examNotes ?? null,
+              updatedAt: new Date(),
+            })
+            .where(eq(examVitals.id, existing.id))
+            .returning();
+          return row!;
+        }
+      }
+
       const [row] = await ctx.db
         .insert(examVitals)
         .values({
