@@ -31,6 +31,18 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { InventoryKitsTab } from "@/components/settings/inventory-kits-tab";
 import { ServicesCatalogTab } from "@/components/settings/services-catalog-tab";
+import {
+  ProductPicker,
+  type CatalogProduct,
+} from "@/components/inventory/product-picker";
+import { chargePriceEach } from "@/lib/inventory-price";
+import { kitKindLabel } from "@/lib/kit-kind";
+import { planDisplayName } from "@/lib/plan-name";
+import {
+  kitChargeTotal,
+  kitDisplayName,
+  type TemplateItemType,
+} from "@/lib/treatment-template";
 
 // ── Types ───────────────────────────────────────────────────
 type Tab =
@@ -1679,7 +1691,9 @@ const CATEGORY_BADGE: Record<string, string> = {
 };
 
 interface TemplateItem {
-  itemType: "service" | "product";
+  itemType: TemplateItemType;
+  itemId?: string;
+  product?: CatalogProduct | null;
   description: string;
   defaultQuantity: number;
   defaultUnitPrice: string;
@@ -1898,6 +1912,8 @@ function EmailRemindersSection() {
 function TemplatesTab() {
   const utils = trpc.useUtils();
   const { data: templateList, isLoading } = trpc.templates.list.useQuery();
+  const { data: services } = trpc.billing.listServices.useQuery();
+  const { data: kits } = trpc.inventoryKits.list.useQuery();
   const createMutation = trpc.templates.create.useMutation({
     onSuccess: () => {
       utils.templates.list.invalidate();
@@ -1926,7 +1942,13 @@ function TemplatesTab() {
     category: "other" as TemplateCategory,
   });
   const [addItems, setAddItems] = useState<TemplateItem[]>([
-    { itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: 0 },
+    {
+      itemType: "product",
+      description: "",
+      defaultQuantity: 1,
+      defaultUnitPrice: "0",
+      sortOrder: 0,
+    },
   ]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null
@@ -1934,13 +1956,27 @@ function TemplatesTab() {
 
   const resetAddForm = () => {
     setAddForm({ name: "", description: "", category: "other" });
-    setAddItems([{ itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: 0 }]);
+    setAddItems([
+      {
+        itemType: "product",
+        description: "",
+        defaultQuantity: 1,
+        defaultUnitPrice: "0",
+        sortOrder: 0,
+      },
+    ]);
   };
 
   const addItemRow = () => {
     setAddItems([
       ...addItems,
-      { itemType: "service", description: "", defaultQuantity: 1, defaultUnitPrice: "0", sortOrder: addItems.length },
+      {
+        itemType: "product",
+        description: "",
+        defaultQuantity: 1,
+        defaultUnitPrice: "0",
+        sortOrder: addItems.length,
+      },
     ]);
   };
 
@@ -1948,11 +1984,12 @@ function TemplatesTab() {
     setAddItems(addItems.filter((_, i) => i !== index));
   };
 
-  const updateItem = (index: number, field: keyof TemplateItem, value: string | number) => {
+  const updateItem = (
+    index: number,
+    patch: Partial<TemplateItem>
+  ) => {
     setAddItems(
-      addItems.map((item, i) =>
-        i === index ? { ...item, [field]: value } : item
-      )
+      addItems.map((item, i) => (i === index ? { ...item, ...patch } : item))
     );
   };
 
@@ -2074,7 +2111,8 @@ function TemplatesTab() {
         <div>
           <h3 className="text-sm font-semibold">Treatment templates</h3>
           <p className="text-xs text-muted-foreground">
-            Bundles of services/products for quick invoicing.
+            Bundles of services, inventory items, and kits to apply on estimates
+            and invoices.
           </p>
         </div>
         <Button
@@ -2128,49 +2166,160 @@ function TemplatesTab() {
           {/* Items */}
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Items</h4>
-            {addItems.map((item, index) => (
-              <div key={index} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center">
-                <Input
-                  placeholder="Item description"
-                  value={item.description}
-                  onChange={(e) =>
-                    updateItem(index, "description", e.target.value)
-                  }
-                />
+            {addItems.map((item, index) => {
+              return (
+              <div
+                key={index}
+                className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[7.5rem_minmax(0,1fr)_5rem_6.5rem_auto] sm:items-start"
+              >
                 <select
                   className="h-10 rounded-md border border-input bg-background px-2 text-sm"
                   value={item.itemType}
                   onChange={(e) =>
-                    updateItem(index, "itemType", e.target.value)
+                    updateItem(index, {
+                      itemType: e.target.value as TemplateItemType,
+                      itemId: undefined,
+                      product: null,
+                      description: "",
+                      defaultUnitPrice: "0",
+                    })
                   }
                 >
-                  <option value="service">Service</option>
                   <option value="product">Product</option>
+                  <option value="service">Service</option>
+                  <option value="kit">Kit</option>
                 </select>
+                {item.itemType === "product" ? (
+                  <ProductPicker
+                    value={item.product ?? null}
+                    placeholder="Search inventory..."
+                    onChange={(product) => {
+                      if (!product) {
+                        updateItem(index, {
+                          itemId: undefined,
+                          product: null,
+                          description: "",
+                          defaultUnitPrice: "0",
+                        });
+                        return;
+                      }
+                      updateItem(index, {
+                        itemId: product.id,
+                        product,
+                        description: product.name,
+                        defaultUnitPrice: chargePriceEach(product),
+                      });
+                    }}
+                  />
+                ) : item.itemType === "kit" ? (
+                  <div className="min-w-0">
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={item.itemId ?? ""}
+                      onChange={(e) => {
+                        const kit = kits?.find(
+                          (row) => row.id === e.target.value
+                        );
+                        updateItem(index, {
+                          itemId: kit?.id,
+                          description: kit ? kitDisplayName(kit) : "",
+                          defaultUnitPrice: kit ? kitChargeTotal(kit) : "0",
+                        });
+                      }}
+                    >
+                      <option value="">
+                        {kits && kits.filter((k) => k.isActive !== false).length === 0
+                          ? "No kits — add them under Settings → Inventory Kits"
+                          : "Select a kit..."}
+                      </option>
+                      {(kits ?? [])
+                        .filter(
+                          (kit) =>
+                            kit.isActive !== false || kit.id === item.itemId
+                        )
+                        .map((kit) => (
+                          <option key={kit.id} value={kit.id}>
+                            {kitKindLabel(kit.kind)}: {kitDisplayName(kit)} — $
+                            {kitChargeTotal(kit)}
+                          </option>
+                        ))}
+                    </select>
+                    {(() => {
+                      const selectedKit = kits?.find(
+                        (row) => row.id === item.itemId
+                      );
+                      if (!selectedKit?.items.length) return null;
+                      return (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {selectedKit.items
+                            .map(
+                              (kitItem) =>
+                                `${kitItem.quantity}× ${
+                                  planDisplayName(
+                                    kitItem.productPlanName,
+                                    kitItem.productName
+                                  ) || "Item"
+                                }`
+                            )
+                            .join(", ")}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={item.itemId ?? ""}
+                    onChange={(e) => {
+                      const service = services?.find(
+                        (row) => row.id === e.target.value
+                      );
+                      updateItem(index, {
+                        itemId: service?.id,
+                        description: service?.name ?? "",
+                        defaultUnitPrice: service?.defaultPrice ?? "0",
+                      });
+                    }}
+                  >
+                    <option value="">
+                      {services && services.length === 0
+                        ? "No services — add them under Settings → Services"
+                        : "Select a service..."}
+                    </option>
+                    {services?.map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.category
+                          ? `${service.category}: ${service.name}`
+                          : service.name}{" "}
+                        — ${service.defaultPrice}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Input
                   type="number"
                   placeholder="Qty"
-                  className="w-20"
+                  min={1}
                   value={item.defaultQuantity}
                   onChange={(e) =>
-                    updateItem(
-                      index,
-                      "defaultQuantity",
-                      parseInt(e.target.value) || 1
-                    )
+                    updateItem(index, {
+                      defaultQuantity: Math.max(
+                        1,
+                        parseInt(e.target.value, 10) || 1
+                      ),
+                    })
                   }
                 />
                 <Input
                   type="number"
+                  step="0.01"
+                  min="0"
                   placeholder="Price"
-                  className="w-28"
                   value={item.defaultUnitPrice}
                   onChange={(e) =>
-                    updateItem(
-                      index,
-                      "defaultUnitPrice",
-                      e.target.value
-                    )
+                    updateItem(index, {
+                      defaultUnitPrice: e.target.value,
+                    })
                   }
                 />
                 <Button
@@ -2182,7 +2331,8 @@ function TemplatesTab() {
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
-            ))}
+              );
+            })}
             <Button size="sm" variant="outline" onClick={addItemRow}>
               <Plus className="mr-2 h-4 w-4" />
               Add Item
@@ -2201,7 +2351,16 @@ function TemplatesTab() {
                 createMutation.mutate({
                   ...addForm,
                   description: addForm.description || undefined,
-                  items: addItems.filter((i) => i.description),
+                  items: addItems
+                    .filter((i) => i.description.trim())
+                    .map((i, sortOrder) => ({
+                      itemType: i.itemType,
+                      itemId: i.itemId,
+                      description: i.description.trim(),
+                      defaultQuantity: i.defaultQuantity,
+                      defaultUnitPrice: i.defaultUnitPrice,
+                      sortOrder,
+                    })),
                 })
               }
             >

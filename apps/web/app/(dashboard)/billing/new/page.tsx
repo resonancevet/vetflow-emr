@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   type CatalogProduct,
 } from "@/components/inventory/product-picker";
 import { chargePriceEach } from "@/lib/inventory-price";
+import { expandTemplateItems } from "@/lib/treatment-template";
 
 interface LineItem {
   id: string;
@@ -32,6 +33,10 @@ function defaultDueDate(): string {
 
 export default function NewInvoicePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("id");
+  const fromTemplateId = searchParams.get("fromTemplate");
+  const sourceId = editId || fromTemplateId;
 
   // Client search
   const [clientSearch, setClientSearch] = useState("");
@@ -55,7 +60,8 @@ export default function NewInvoicePage() {
   const [itemUnitPrice, setItemUnitPrice] = useState("");
 
   // Estimate toggle
-  const [isEstimate, setIsEstimate] = useState(false);
+  const [isEstimate, setIsEstimate] = useState(!!fromTemplateId);
+  const [estimateName, setEstimateName] = useState("");
 
   // Due date
   const [dueDate, setDueDate] = useState(defaultDueDate());
@@ -72,11 +78,17 @@ export default function NewInvoicePage() {
   );
 
   const servicesQuery = trpc.billing.listServices.useQuery();
+  const treatmentTemplatesQuery = trpc.templates.list.useQuery();
   const unbilledQuery = trpc.inventory.listUnbilledUsages.useQuery(
     { patientId: selectedPatientId },
     { enabled: !!selectedPatientId }
   );
   const billingSettings = trpc.settings.getBillingSettings.useQuery();
+  const existingQuery = trpc.billing.getInvoice.useQuery(
+    { id: sourceId ?? "" },
+    { enabled: !!sourceId }
+  );
+  const [hydrated, setHydrated] = useState(!sourceId);
   const taxEnabled = billingSettings.data?.taxEnabled ?? true;
   const taxRatePercent =
     billingSettings.data?.effectiveTaxRatePercent ??
@@ -86,7 +98,13 @@ export default function NewInvoicePage() {
   const utils = trpc.useUtils();
   const createInvoice = trpc.billing.createInvoice.useMutation({
     onSuccess: (result) => {
-      toast.success("Invoice created");
+      toast.success(
+        isEstimate
+          ? selectedClient
+            ? "Estimate saved"
+            : "Template saved"
+          : "Invoice created"
+      );
       if (result.stockWarned) {
         toast.warning("One or more products went below zero stock");
       }
@@ -98,6 +116,54 @@ export default function NewInvoicePage() {
       toast.error(err.message);
     },
   });
+  const updateInvoice = trpc.billing.updateInvoice.useMutation({
+    onSuccess: () => {
+      toast.success("Estimate saved");
+      utils.billing.listInvoices.invalidate();
+      if (editId) utils.billing.getInvoice.invalidate({ id: editId });
+      router.push("/billing");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  useEffect(() => {
+    if (!sourceId || !existingQuery.data || hydrated) return;
+    const existing = existingQuery.data;
+    if (editId && !existing.isEstimate) {
+      toast.error("Only estimates can be edited");
+      router.replace("/billing");
+      return;
+    }
+    if (editId && existing.clientId) {
+      setSelectedClient({
+        id: existing.clientId,
+        firstName: existing.clientFirstName ?? "",
+        lastName: existing.clientLastName ?? "",
+      });
+      setSelectedPatientId(existing.patientId ?? "");
+      setDueDate(existing.dueDate ?? defaultDueDate());
+    } else {
+      setSelectedClient(null);
+      setSelectedPatientId("");
+      if (!editId) setDueDate(defaultDueDate());
+      else setDueDate(existing.dueDate ?? defaultDueDate());
+    }
+    setIsEstimate(true);
+    setEstimateName(existing.name ?? "");
+    setItems(
+      existing.items.map((item) => ({
+        id: fromTemplateId && !editId ? crypto.randomUUID() : item.id,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        itemType: item.itemType,
+        itemId: item.itemId ?? undefined,
+      }))
+    );
+    setHydrated(true);
+  }, [editId, fromTemplateId, sourceId, existingQuery.data, hydrated, router]);
 
   // Calculations
   const { subtotal, tax, total } = useMemo(() => {
@@ -174,11 +240,52 @@ export default function NewInvoicePage() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }
 
+  async function applyTreatmentTemplate(templateId: string) {
+    if (!templateId) return;
+    try {
+      const template = await utils.templates.getById.fetch({ id: templateId });
+      if (!template.items.length) {
+        toast.error("That template has no items");
+        return;
+      }
+      const needsKits = template.items.some((item) => item.itemType === "kit");
+      const kits = needsKits
+        ? await utils.inventoryKits.list.fetch()
+        : [];
+      const lines = expandTemplateItems(template.items, kits);
+      setItems((prev) => [
+        ...prev,
+        ...lines.map((item) => ({
+          id: crypto.randomUUID(),
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          itemType: item.itemType,
+          itemId: item.itemId,
+        })),
+      ]);
+      if (isEstimate && !estimateName.trim()) {
+        setEstimateName(template.name);
+      }
+      toast.success(`Added ${template.name}`);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to apply template"
+      );
+    }
+  }
+
   function handleSubmit() {
-    if (!selectedClient || items.length === 0) return;
-    createInvoice.mutate({
-      clientId: selectedClient.id,
+    if (items.length === 0) return;
+    if (!isEstimate && !selectedClient) return;
+    if (isEstimate && !selectedClient && !estimateName.trim()) {
+      toast.error("Add a template name, or choose a client");
+      return;
+    }
+    const payload = {
+      clientId: selectedClient?.id,
       patientId: selectedPatientId || undefined,
+      name: estimateName.trim() || null,
       items: items.map((item) => ({
         description: item.description,
         quantity: item.quantity,
@@ -188,8 +295,49 @@ export default function NewInvoicePage() {
         usageId: item.usageId,
       })),
       dueDate: dueDate || undefined,
+    };
+    if (editId) {
+      updateInvoice.mutate({
+        id: editId,
+        clientId: selectedClient?.id ?? null,
+        patientId: selectedPatientId || null,
+        name: estimateName.trim() || null,
+        items: payload.items,
+        dueDate: dueDate || null,
+      });
+      return;
+    }
+    createInvoice.mutate({
+      ...payload,
       isEstimate,
     });
+  }
+
+  const saving = createInvoice.isPending || updateInvoice.isPending;
+
+  if (sourceId && existingQuery.isLoading) {
+    return (
+      <div className="mx-auto max-w-3xl text-sm text-muted-foreground">
+        Loading estimate...
+      </div>
+    );
+  }
+
+  if (sourceId && existingQuery.error) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <p className="text-sm text-destructive">{existingQuery.error.message}</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-4"
+          onClick={() => router.push("/billing")}
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Back to Billing
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -207,12 +355,24 @@ export default function NewInvoicePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-heading text-xl font-semibold">
-            {isEstimate ? "New Estimate" : "New Invoice"}
+            {editId
+              ? existingQuery.data?.isTemplate
+                ? "Edit Template"
+                : "Edit Estimate"
+              : fromTemplateId
+                ? "New Estimate from Template"
+                : isEstimate
+                  ? "New Estimate"
+                  : "New Invoice"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {isEstimate
-              ? "Create an estimate that can be converted to an invoice later."
-              : "Create a new invoice for a client."}
+            {editId
+              ? "Update this estimate and save it to finish later."
+              : fromTemplateId
+                ? "Choose a client to create an estimate, or leave blank to save another template."
+                : isEstimate
+                  ? "Leave client blank to save a reusable template."
+                  : "Create a new invoice for a client."}
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -220,6 +380,7 @@ export default function NewInvoicePage() {
             type="checkbox"
             checked={isEstimate}
             onChange={(e) => setIsEstimate(e.target.checked)}
+            disabled={!!editId}
             className="rounded border-gray-300"
           />
           <span className="font-medium">Estimate</span>
@@ -228,8 +389,24 @@ export default function NewInvoicePage() {
 
       {/* Client Search */}
       <div className="mt-6 space-y-4">
+        {isEstimate && (
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              {selectedClient ? "Estimate name" : "Template name"}
+              {!selectedClient ? " *" : ""}
+            </label>
+            <Input
+              value={estimateName}
+              onChange={(e) => setEstimateName(e.target.value)}
+              placeholder="e.g. Canine spay under 50 lbs"
+            />
+          </div>
+        )}
+
         <div>
-          <label className="block text-sm font-medium mb-1">Client *</label>
+          <label className="block text-sm font-medium mb-1">
+            Client{isEstimate ? " (optional)" : " *"}
+          </label>
           {selectedClient ? (
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">
@@ -352,6 +529,28 @@ export default function NewInvoicePage() {
         {/* Add Line Item */}
         <div>
           <label className="block text-sm font-medium mb-1">Line Items</label>
+          {(treatmentTemplatesQuery.data?.length ?? 0) > 0 && (
+            <div className="mb-3">
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                defaultValue=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  e.target.value = "";
+                  void applyTreatmentTemplate(id);
+                }}
+              >
+                <option value="">Apply treatment template...</option>
+                {treatmentTemplatesQuery.data
+                  ?.filter((template) => template.isActive !== false)
+                  .map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
           <div className="rounded-lg border border-border p-4 space-y-3">
             <div className="flex gap-2 text-sm">
               <button
@@ -569,25 +768,32 @@ export default function NewInvoicePage() {
           <Button
             onClick={handleSubmit}
             disabled={
-              !selectedClient ||
               items.length === 0 ||
-              createInvoice.isPending
+              saving ||
+              (!isEstimate && !selectedClient) ||
+              (isEstimate && !selectedClient && !estimateName.trim())
             }
           >
-            {createInvoice.isPending
-              ? "Creating..."
-              : isEstimate
-              ? "Create Estimate"
-              : "Create Invoice"}
+            {saving
+              ? "Saving..."
+              : editId
+                ? selectedClient
+                  ? "Save Estimate"
+                  : "Save Template"
+                : isEstimate
+                  ? selectedClient
+                    ? "Save Estimate"
+                    : "Save Template"
+                  : "Create Invoice"}
           </Button>
           <Button variant="outline" onClick={() => router.push("/billing")}>
             Cancel
           </Button>
         </div>
 
-        {createInvoice.isError && (
+        {(createInvoice.isError || updateInvoice.isError) && (
           <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
-            {createInvoice.error.message}
+            {createInvoice.error?.message || updateInvoice.error?.message}
           </div>
         )}
       </div>

@@ -105,6 +105,7 @@ export function InventoryKitsTab() {
               name: item.productName,
               sku: item.productSku,
               unitPrice: item.unitPrice,
+              costPrice: item.costPrice,
               stockQuantity: item.stockQuantity,
               units: item.units,
               category: item.category,

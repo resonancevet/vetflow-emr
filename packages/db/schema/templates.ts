@@ -11,7 +11,6 @@ import {
 import { relations } from "drizzle-orm";
 import { baseColumns } from "./common";
 import { practices } from "./practices";
-import { invoiceItemTypeEnum } from "./billing";
 
 export const treatmentTemplates = pgTable(
   "treatment_templates",
@@ -40,7 +39,7 @@ export const treatmentTemplateItems = pgTable(
     templateId: uuid("template_id")
       .notNull()
       .references(() => treatmentTemplates.id),
-    itemType: invoiceItemTypeEnum("item_type").notNull(),
+    itemType: varchar("item_type", { length: 16 }).notNull(),
     itemId: uuid("item_id"),
     description: varchar("description", { length: 500 }).notNull(),
     defaultQuantity: integer("default_quantity").notNull().default(1),

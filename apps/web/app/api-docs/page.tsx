@@ -495,9 +495,28 @@ const sections: Section[] = [
 }`,
       },
       {
+        name: "billing.updateInvoice",
+        method: "POST",
+        description: "Update a saved estimate or template.",
+        input: `{
+  id: string,
+  clientId: string,
+  patientId?: string | null,
+  dueDate?: string | null,
+  items: {
+    description: string,
+    quantity: number,
+    unitPrice: string,
+    itemType: "service" | "product",
+    itemId?: string
+  }[]
+}`,
+        response: `Invoice`,
+      },
+      {
         name: "billing.createInvoice",
         method: "POST",
-        description: "Create an invoice or estimate.",
+        description: "Create an invoice, estimate, or client-less estimate template.",
         input: `{
   clientId: string,
   patientId?: string,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, asc } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
@@ -8,8 +8,68 @@ import {
   invoices,
   invoiceItems,
   practices,
+  inventoryKits,
+  inventoryKitItems,
+  products,
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
+import {
+  expandTemplateItems,
+  type KitForTemplate,
+} from "@/lib/treatment-template";
+
+const templateItemTypeSchema = z.enum(["service", "product", "kit"]);
+
+async function loadKitsForTemplate(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string,
+  kitIds: string[]
+): Promise<KitForTemplate[]> {
+  const uniqueIds = [...new Set(kitIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  const kits = await db
+    .select()
+    .from(inventoryKits)
+    .where(
+      and(
+        eq(inventoryKits.practiceId, practiceId),
+        inArray(inventoryKits.id, uniqueIds),
+        isNull(inventoryKits.deletedAt)
+      )
+    );
+
+  if (kits.length === 0) return [];
+
+  const items = await db
+    .select({
+      kitId: inventoryKitItems.kitId,
+      productId: inventoryKitItems.productId,
+      quantity: inventoryKitItems.quantity,
+      productName: products.name,
+      productPlanName: products.planName,
+      unitPrice: products.unitPrice,
+      costPrice: products.costPrice,
+    })
+    .from(inventoryKitItems)
+    .innerJoin(products, eq(inventoryKitItems.productId, products.id))
+    .where(
+      and(
+        inArray(
+          inventoryKitItems.kitId,
+          kits.map((kit: { id: string }) => kit.id)
+        ),
+        isNull(inventoryKitItems.deletedAt),
+        isNull(products.deletedAt)
+      )
+    );
+
+  return kits.map((kit: { id: string; name: string; planName: string | null }) => ({
+    ...kit,
+    items: items.filter((item: { kitId: string }) => item.kitId === kit.id),
+  }));
+}
 
 export const templatesRouter = createRouter({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -70,7 +130,7 @@ export const templatesRouter = createRouter({
         category: z.string().max(128).optional(),
         items: z.array(
           z.object({
-            itemType: z.enum(["service", "product"]),
+            itemType: templateItemTypeSchema,
             itemId: z.string().uuid().optional(),
             description: z.string().min(1).max(500),
             defaultQuantity: z.number().int().min(1).default(1),
@@ -98,7 +158,7 @@ export const templatesRouter = createRouter({
         await ctx.db.insert(treatmentTemplateItems).values(
           input.items.map((item) => ({
             templateId: template!.id,
-            itemType: item.itemType as "service" | "product",
+            itemType: item.itemType,
             itemId: item.itemId ?? null,
             description: item.description,
             defaultQuantity: item.defaultQuantity,
@@ -177,7 +237,7 @@ export const templatesRouter = createRouter({
     .input(
       z.object({
         templateId: z.string().uuid(),
-        itemType: z.enum(["service", "product"]),
+        itemType: templateItemTypeSchema,
         itemId: z.string().uuid().optional(),
         description: z.string().min(1).max(500),
         defaultQuantity: z.number().int().min(1).default(1),
@@ -213,7 +273,7 @@ export const templatesRouter = createRouter({
         .insert(treatmentTemplateItems)
         .values({
           templateId: input.templateId,
-          itemType: input.itemType as "service" | "product",
+          itemType: input.itemType,
           itemId: input.itemId ?? null,
           description: input.description,
           defaultQuantity: input.defaultQuantity,
@@ -333,18 +393,24 @@ export const templatesRouter = createRouter({
         });
       }
 
-      // Insert template items as invoice items
+      const kits = await loadKitsForTemplate(
+        ctx.db,
+        ctx.practiceId,
+        items
+          .filter((item) => item.itemType === "kit" && item.itemId)
+          .map((item) => item.itemId!)
+      );
+      const invoiceLines = expandTemplateItems(items, kits);
+
       await ctx.db.insert(invoiceItems).values(
-        items.map((item) => ({
+        invoiceLines.map((item) => ({
           invoiceId: input.invoiceId,
           description: item.description,
-          quantity: item.defaultQuantity,
-          unitPrice: item.defaultUnitPrice,
-          total: (
-            item.defaultQuantity * parseFloat(item.defaultUnitPrice)
-          ).toFixed(2),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
           itemType: item.itemType,
-          itemId: item.itemId,
+          itemId: item.itemId ?? null,
         }))
       );
 

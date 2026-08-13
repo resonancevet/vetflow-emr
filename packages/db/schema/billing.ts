@@ -68,9 +68,9 @@ export const invoices = pgTable(
     practiceId: uuid("practice_id")
       .notNull()
       .references(() => practices.id),
-    clientId: uuid("client_id")
-      .notNull()
-      .references(() => clients.id),
+    clientId: uuid("client_id").references(() => clients.id),
+    /** Display name for templates or optional estimate title. */
+    name: varchar("name", { length: 255 }),
     patientId: uuid("patient_id").references(() => patients.id),
     appointmentId: uuid("appointment_id").references(() => appointments.id),
     status: invoiceStatusEnum("status").notNull().default("draft"),
@@ -84,6 +84,8 @@ export const invoices = pgTable(
       .default("0"),
     dueDate: date("due_date"),
     isEstimate: boolean("is_estimate").notNull().default(false),
+    /** Client-less estimate that can be reused. */
+    isTemplate: boolean("is_template").notNull().default(false),
   },
   (table) => ({
     practiceIdx: index("invoices_practice_idx").on(table.practiceId, table.deletedAt),

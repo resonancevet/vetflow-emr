@@ -62,6 +62,7 @@ async function loadKit(
       units: products.units,
       category: products.category,
       unitPrice: products.unitPrice,
+      costPrice: products.costPrice,
     })
     .from(inventoryKitItems)
     .innerJoin(products, eq(inventoryKitItems.productId, products.id))
@@ -108,6 +109,7 @@ export const inventoryKitsRouter = createRouter({
         units: products.units,
         category: products.category,
         unitPrice: products.unitPrice,
+        costPrice: products.costPrice,
       })
       .from(inventoryKitItems)
       .innerJoin(products, eq(inventoryKitItems.productId, products.id))

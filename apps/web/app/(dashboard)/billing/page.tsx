@@ -14,6 +14,8 @@ import {
   ArrowRightLeft,
   Download,
   Mail,
+  Pencil,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -39,6 +41,7 @@ const STATUS_STYLES: Record<string, string> = {
   void: "bg-gray-100 text-gray-500",
   partial: "bg-amber-100 text-amber-700",
   estimate: "bg-purple-100 text-purple-700",
+  template: "bg-indigo-100 text-indigo-700",
 };
 
 const PAYMENT_METHODS = [
@@ -60,7 +63,11 @@ function getDisplayStatus(invoice: {
   paidAmount: string | null;
   total: string | null;
   isEstimate: boolean;
+  isTemplate?: boolean;
 }): { label: string; style: string } {
+  if (invoice.isTemplate) {
+    return { label: "template", style: STATUS_STYLES.template };
+  }
   if (invoice.isEstimate) {
     return { label: "estimate", style: STATUS_STYLES.estimate };
   }
@@ -289,6 +296,8 @@ function InvoiceRow({
     dueDate: string | null;
     createdAt: Date | string | null;
     isEstimate: boolean;
+    isTemplate?: boolean;
+    name?: string | null;
     clientFirstName: string | null;
     clientLastName: string | null;
     patientName: string | null;
@@ -324,7 +333,14 @@ function InvoiceRow({
           )}
         </td>
         <td className="px-4 py-3 font-medium">
-          {invoice.clientFirstName} {invoice.clientLastName}
+          {invoice.clientFirstName
+            ? `${invoice.clientFirstName} ${invoice.clientLastName}`
+            : invoice.name || "Untitled template"}
+          {invoice.isTemplate && invoice.clientFirstName ? (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {invoice.name}
+            </span>
+          ) : null}
         </td>
         <td className="px-4 py-3 text-muted-foreground">
           {invoice.patientName || "\u2014"}
@@ -355,15 +371,41 @@ function InvoiceRow({
         <td className="px-4 py-3 text-right">
           <div className="flex items-center justify-end gap-1">
             {invoice.isEstimate && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isMutating}
-                onClick={(e) => onConvertEstimate(e, invoice.id)}
-                title="Convert to Invoice"
-              >
-                <ArrowRightLeft className="h-3.5 w-3.5" />
-              </Button>
+              <>
+                <Button variant="ghost" size="sm" asChild title="Edit estimate">
+                  <Link
+                    href={`/billing/new?id=${invoice.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+                {invoice.isTemplate ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    title="Use template"
+                  >
+                    <Link
+                      href={`/billing/new?fromTemplate=${invoice.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={(e) => onConvertEstimate(e, invoice.id)}
+                    title="Convert to Invoice"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </>
             )}
             {!invoice.isEstimate && invoice.status === "draft" && (
               <Button
@@ -420,19 +462,45 @@ function InvoiceRow({
                     <div className="flex items-center gap-2">
                       <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                       <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
-                        This is an estimate
+                        {invoice.isTemplate
+                          ? "This is an estimate template"
+                          : "This is an estimate"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link
+                          href={`/billing/new?id=${invoice.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          Edit
+                        </Link>
+                      </Button>
+                      {invoice.isTemplate && (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link
+                            href={`/billing/new?fromTemplate=${invoice.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Copy className="mr-1 h-3.5 w-3.5" />
+                            Use template
+                          </Link>
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           const d = detail.data!;
-                          const clientName = [d.clientFirstName, d.clientLastName]
-                            .filter(Boolean)
-                            .join(" ");
+                          const clientName =
+                            [d.clientFirstName, d.clientLastName]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            d.name ||
+                            invoice.name ||
+                            "Estimate";
                           generateInvoicePdf({
                             practiceName: "Your Practice",
                             clientName,
@@ -461,14 +529,16 @@ function InvoiceRow({
                         <Download className="mr-1 h-3.5 w-3.5" />
                         Present to Client
                       </Button>
-                      <Button
-                        size="sm"
-                        disabled={isMutating}
-                        onClick={(e) => onConvertEstimate(e, invoice.id)}
-                      >
-                        <CheckCircle className="mr-1 h-3.5 w-3.5" />
-                        Approve &amp; Convert
-                      </Button>
+                      {!invoice.isTemplate && (
+                        <Button
+                          size="sm"
+                          disabled={isMutating}
+                          onClick={(e) => onConvertEstimate(e, invoice.id)}
+                        >
+                          <CheckCircle className="mr-1 h-3.5 w-3.5" />
+                          Approve &amp; Convert
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

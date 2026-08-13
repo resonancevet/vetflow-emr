@@ -28,12 +28,22 @@ function parseMoney(value: string): string {
   return n.toFixed(2);
 }
 
+const invoiceItemInput = z.object({
+  description: z.string(),
+  quantity: z.number().min(1),
+  unitPrice: z.string(),
+  itemType: z.enum(["service", "product"]),
+  itemId: z.string().uuid().optional(),
+  usageId: z.string().uuid().optional(),
+});
+
 export const billingRouter = createRouter({
   listInvoices: protectedProcedure
     .input(
       z.object({
         status: z.string().optional(),
         isEstimate: z.boolean().optional(),
+        isTemplate: z.boolean().optional(),
         limit: z.number().min(1).max(100).default(25),
         offset: z.number().min(0).default(0),
       })
@@ -51,6 +61,9 @@ export const billingRouter = createRouter({
       if (input.isEstimate !== undefined) {
         conditions.push(eq(invoices.isEstimate, input.isEstimate));
       }
+      if (input.isTemplate !== undefined) {
+        conditions.push(eq(invoices.isTemplate, input.isTemplate));
+      }
 
       const [items, countResult] = await Promise.all([
         ctx.db
@@ -64,6 +77,8 @@ export const billingRouter = createRouter({
             dueDate: invoices.dueDate,
             createdAt: invoices.createdAt,
             isEstimate: invoices.isEstimate,
+            isTemplate: invoices.isTemplate,
+            name: invoices.name,
             clientFirstName: clients.firstName,
             clientLastName: clients.lastName,
             patientName: patients.name,
@@ -100,6 +115,11 @@ export const billingRouter = createRouter({
           paidAmount: invoices.paidAmount,
           dueDate: invoices.dueDate,
           createdAt: invoices.createdAt,
+          clientId: invoices.clientId,
+          patientId: invoices.patientId,
+          isEstimate: invoices.isEstimate,
+          isTemplate: invoices.isTemplate,
+          name: invoices.name,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
@@ -121,7 +141,12 @@ export const billingRouter = createRouter({
       const items = await ctx.db
         .select()
         .from(invoiceItems)
-        .where(eq(invoiceItems.invoiceId, input.id));
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.id),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
 
       return { ...invoice, items };
     }),
@@ -304,24 +329,32 @@ export const billingRouter = createRouter({
     .use(requireRole("admin", "front_desk"))
     .input(
       z.object({
-        clientId: z.string().uuid(),
+        clientId: z.string().uuid().optional(),
         patientId: z.string().uuid().optional(),
         appointmentId: z.string().uuid().optional(),
-        items: z.array(
-          z.object({
-            description: z.string(),
-            quantity: z.number().min(1),
-            unitPrice: z.string(),
-            itemType: z.enum(["service", "product"]),
-            itemId: z.string().uuid().optional(),
-            usageId: z.string().uuid().optional(),
-          })
-        ),
+        name: z.string().max(255).nullable().optional(),
+        items: z.array(invoiceItemInput),
         dueDate: z.string().optional(),
         isEstimate: z.boolean().optional().default(false),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const isEstimate = input.isEstimate ?? false;
+      const clientId = input.clientId ?? null;
+      const name = input.name?.trim() || null;
+      if (!isEstimate && !clientId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Client is required for invoices",
+        });
+      }
+      if (isEstimate && !clientId && !name) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Name is required to save a template without a client",
+        });
+      }
+
       const [practice] = await ctx.db
         .select({ settings: practices.settings })
         .from(practices)
@@ -339,16 +372,18 @@ export const billingRouter = createRouter({
         .insert(invoices)
         .values({
           practiceId: ctx.practiceId,
-          clientId: input.clientId,
+          clientId,
           patientId: input.patientId ?? null,
           appointmentId: input.appointmentId ?? null,
+          name,
           status: "draft",
           subtotal: subtotal.toFixed(2),
           tax: tax.toFixed(2),
           total: total.toFixed(2),
           paidAmount: "0.00",
           dueDate: input.dueDate ?? null,
-          isEstimate: input.isEstimate ?? false,
+          isEstimate,
+          isTemplate: isEstimate && !clientId,
         })
         .returning();
 
@@ -413,6 +448,111 @@ export const billingRouter = createRouter({
       }
 
       return { ...invoice!, stockWarned };
+    }),
+
+  updateInvoice: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        clientId: z.string().uuid().nullable().optional(),
+        patientId: z.string().uuid().nullable().optional(),
+        name: z.string().max(255).nullable().optional(),
+        dueDate: z.string().nullable().optional(),
+        items: z.array(invoiceItemInput).min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({
+          id: invoices.id,
+          isEstimate: invoices.isEstimate,
+          status: invoices.status,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.id),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Estimate not found",
+        });
+      }
+      if (!existing.isEstimate) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only estimates can be edited",
+        });
+      }
+
+      const clientId = input.clientId ?? null;
+      const name = input.name?.trim() || null;
+      if (!clientId && !name) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Name is required to save a template without a client",
+        });
+      }
+
+      const [practice] = await ctx.db
+        .select({ settings: practices.settings })
+        .from(practices)
+        .where(eq(practices.id, ctx.practiceId))
+        .limit(1);
+      const taxRatePercent = getEffectiveTaxRatePercent(practice?.settings);
+
+      const subtotal = input.items.reduce((sum, item) => {
+        return sum + item.quantity * parseFloat(item.unitPrice);
+      }, 0);
+      const tax = calcTax(subtotal, taxRatePercent);
+      const total = Math.round((subtotal + tax) * 100) / 100;
+
+      await ctx.db
+        .update(invoiceItems)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.id),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      await ctx.db.insert(invoiceItems).values(
+        input.items.map((item) => ({
+          invoiceId: input.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+          itemType: item.itemType as "service" | "product",
+          itemId: item.itemId ?? null,
+        }))
+      );
+
+      const [invoice] = await ctx.db
+        .update(invoices)
+        .set({
+          clientId,
+          patientId: input.patientId ?? null,
+          name,
+          dueDate: input.dueDate || null,
+          subtotal: subtotal.toFixed(2),
+          tax: tax.toFixed(2),
+          total: total.toFixed(2),
+          isTemplate: !clientId,
+          updatedAt: new Date(),
+        })
+        .where(eq(invoices.id, input.id))
+        .returning();
+
+      return invoice!;
     }),
 
   listProducts: protectedProcedure
@@ -526,16 +666,33 @@ export const billingRouter = createRouter({
   convertEstimateToInvoice: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const [invoice] = await ctx.db
-        .update(invoices)
-        .set({ isEstimate: false })
+      const [existing] = await ctx.db
+        .select({
+          id: invoices.id,
+          clientId: invoices.clientId,
+        })
+        .from(invoices)
         .where(
           and(
             eq(invoices.id, input.id),
             eq(invoices.practiceId, ctx.practiceId),
-            eq(invoices.isEstimate, true)
+            eq(invoices.isEstimate, true),
+            isNull(invoices.deletedAt)
           )
         )
+        .limit(1);
+      if (!existing) throw new Error("Estimate not found");
+      if (!existing.clientId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Assign a client before converting this template to an invoice",
+        });
+      }
+
+      const [invoice] = await ctx.db
+        .update(invoices)
+        .set({ isEstimate: false, isTemplate: false })
+        .where(eq(invoices.id, input.id))
         .returning();
 
       if (!invoice) throw new Error("Estimate not found");
