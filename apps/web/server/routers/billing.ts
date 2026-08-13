@@ -11,8 +11,10 @@ import {
   payments,
   users,
   practices,
+  inventoryUsages,
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
+import { applyStockChange } from "../lib/stock";
 
 export const billingRouter = createRouter({
   listInvoices: protectedProcedure
@@ -183,6 +185,7 @@ export const billingRouter = createRouter({
       z.object({
         clientId: z.string().uuid(),
         patientId: z.string().uuid().optional(),
+        appointmentId: z.string().uuid().optional(),
         items: z.array(
           z.object({
             description: z.string(),
@@ -190,6 +193,7 @@ export const billingRouter = createRouter({
             unitPrice: z.string(),
             itemType: z.enum(["service", "product"]),
             itemId: z.string().uuid().optional(),
+            usageId: z.string().uuid().optional(),
           })
         ),
         dueDate: z.string().optional(),
@@ -216,6 +220,7 @@ export const billingRouter = createRouter({
           practiceId: ctx.practiceId,
           clientId: input.clientId,
           patientId: input.patientId ?? null,
+          appointmentId: input.appointmentId ?? null,
           status: "draft",
           subtotal: subtotal.toFixed(2),
           tax: tax.toFixed(2),
@@ -226,21 +231,67 @@ export const billingRouter = createRouter({
         })
         .returning();
 
+      let inserted: (typeof invoiceItems.$inferSelect)[] = [];
       if (input.items.length > 0) {
-        await ctx.db.insert(invoiceItems).values(
-          input.items.map((item) => ({
-            invoiceId: invoice!.id,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
-            itemType: item.itemType as "service" | "product",
-            itemId: item.itemId ?? null,
-          }))
-        );
+        inserted = await ctx.db
+          .insert(invoiceItems)
+          .values(
+            input.items.map((item) => ({
+              invoiceId: invoice!.id,
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+              itemType: item.itemType as "service" | "product",
+              itemId: item.itemId ?? null,
+            }))
+          )
+          .returning();
       }
 
-      return invoice!;
+      let stockWarned = false;
+      if (!input.isEstimate) {
+        for (let i = 0; i < inserted.length; i++) {
+          const item = input.items[i]!;
+          const row = inserted[i]!;
+          if (item.itemType !== "product" || !item.itemId) continue;
+
+          if (item.usageId) {
+            const [usage] = await ctx.db
+              .select()
+              .from(inventoryUsages)
+              .where(
+                and(
+                  eq(inventoryUsages.id, item.usageId),
+                  eq(inventoryUsages.practiceId, ctx.practiceId),
+                  isNull(inventoryUsages.deletedAt),
+                  isNull(inventoryUsages.invoiceItemId)
+                )
+              )
+              .limit(1);
+            if (!usage) throw new Error("Unbilled usage not found");
+            if (input.patientId && usage.patientId !== input.patientId) {
+              throw new Error("Usage does not belong to this patient");
+            }
+            await ctx.db
+              .update(inventoryUsages)
+              .set({ invoiceItemId: row.id, updatedAt: new Date() })
+              .where(eq(inventoryUsages.id, usage.id));
+            continue;
+          }
+
+          const qty = Math.max(1, Math.round(item.quantity));
+          const stock = await applyStockChange(ctx, {
+            productId: item.itemId,
+            quantity: -qty,
+            type: "invoice",
+            invoiceItemId: row.id,
+          });
+          if (stock.warned) stockWarned = true;
+        }
+      }
+
+      return { ...invoice!, stockWarned };
     }),
 
   listProducts: protectedProcedure

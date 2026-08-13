@@ -9,6 +9,7 @@ export * from "./scheduling";
 export * from "./clinical";
 export * from "./prescriptions";
 export * from "./billing";
+export * from "./inventory-stock";
 export * from "./communications";
 export * from "./auth";
 export * from "./controlled-substances";

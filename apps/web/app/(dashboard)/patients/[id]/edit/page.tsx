@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Camera } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { uploadFileToApi } from "@/lib/upload";
 
 const speciesOptions = [
   { value: "canine", label: "Canine" },
@@ -45,6 +46,9 @@ export default function EditPatientPage() {
     status: "active" as string,
   });
   const [error, setError] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
 
   const { data: patient, isLoading } = trpc.patients.getById.useQuery(
     { id: params.id },
@@ -76,6 +80,37 @@ export default function EditPatientPage() {
       setError(err.message);
     },
   });
+
+  const updatePhoto = trpc.patients.update.useMutation({
+    onSuccess: () => {
+      toast.success("Patient photo updated");
+      utils.patients.getById.invalidate({ id: params.id });
+    },
+    onError: (err) => {
+      toast.error(`Failed to update patient photo: ${err.message}`);
+    },
+  });
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPhoto(true);
+    try {
+      const data = await uploadFileToApi(file, {
+        category: "patient-photos",
+        entityType: "patient",
+        entityId: params.id,
+      });
+      const photoUrl = data.id ? `/api/files/${data.id}` : data.url;
+      updatePhoto.mutate({ id: params.id, photoUrl });
+    } catch {
+      toast.error("Failed to upload photo");
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +168,49 @@ export default function EditPatientPage() {
       )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div>
+          <label className="text-sm font-medium">Photo</label>
+          <div className="mt-1 flex items-center gap-4">
+            {patient?.photoUrl ? (
+              <img
+                src={patient.photoUrl}
+                alt={patient.name}
+                className="h-24 w-24 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-24 w-24 items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
+                No photo
+              </div>
+            )}
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadingPhoto || updatePhoto.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Camera className="mr-2 h-4 w-4" />
+                {uploadingPhoto || updatePhoto.isPending
+                  ? "Uploading..."
+                  : patient?.photoUrl
+                    ? "Change photo"
+                    : "Upload photo"}
+              </Button>
+              <p className="mt-1 text-xs text-muted-foreground">
+                JPEG, PNG, or WebP up to 10 MB.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div>
           <label className="text-sm font-medium" htmlFor="name">
             Patient Name *

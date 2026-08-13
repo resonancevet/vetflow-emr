@@ -14,6 +14,7 @@ import {
   users,
   files,
 } from "@openpims/db";
+import { recordProductUsage } from "../lib/stock";
 import { deleteFile as deleteFileFromS3 } from "@/lib/s3";
 import {
   assertNotStale,
@@ -437,10 +438,19 @@ export const recordsRouter = createRouter({
         administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
         notes: z.string().optional(),
+        productId: z.string().uuid().optional(),
+        quantity: z.number().int().min(1).optional(),
+        stockNote: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { administeredAt, ...rest } = input;
+      const {
+        administeredAt,
+        productId,
+        quantity,
+        stockNote,
+        ...rest
+      } = input;
       const [record] = await ctx.db
         .insert(vaccinationRecords)
         .values({
@@ -450,7 +460,23 @@ export const recordsRouter = createRouter({
           practiceId: ctx.practiceId,
         })
         .returning();
-      return record!;
+
+      let stockWarned = false;
+      let stockBalanceAfter: number | undefined;
+      if (productId) {
+        const stock = await recordProductUsage(ctx, {
+          patientId: input.patientId,
+          productId,
+          quantity: quantity ?? 1,
+          sourceType: "vaccination",
+          sourceId: record!.id,
+          note: stockNote,
+        });
+        stockWarned = stock.warned;
+        stockBalanceAfter = stock.balanceAfter;
+      }
+
+      return { ...record!, stockWarned, stockBalanceAfter };
     }),
 
   updateVaccination: protectedProcedure
@@ -705,20 +731,42 @@ export const recordsRouter = createRouter({
           .optional(),
         responseToTreatment: z.string().optional(),
         administeredAt: z.string().datetime().optional(),
+        productId: z.string().uuid().optional(),
+        stockNote: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { administeredAt, ...rest } = input;
+      const { administeredAt, productId, stockNote, ...rest } = input;
       const [rx] = await ctx.db
         .insert(prescriptions)
         .values({
           ...rest,
-          administeredAt: administeredAt ? new Date(administeredAt) : null,
+          administeredAt: administeredAt
+            ? new Date(administeredAt)
+            : productId
+              ? new Date()
+              : null,
           prescribedBy: ctx.user.id,
           practiceId: ctx.practiceId,
         })
         .returning();
-      return rx!;
+
+      let stockWarned = false;
+      let stockBalanceAfter: number | undefined;
+      if (productId) {
+        const stock = await recordProductUsage(ctx, {
+          patientId: input.patientId,
+          productId,
+          quantity: input.quantity && input.quantity > 0 ? input.quantity : 1,
+          sourceType: "prescription",
+          sourceId: rx!.id,
+          note: stockNote,
+        });
+        stockWarned = stock.warned;
+        stockBalanceAfter = stock.balanceAfter;
+      }
+
+      return { ...rx!, stockWarned, stockBalanceAfter };
     }),
 
   updatePrescription: protectedProcedure

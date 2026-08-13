@@ -6,6 +6,7 @@ import {
   suppliers,
   inventoryOrders,
   inventoryOrderItems,
+  inventoryUsages,
 } from "@openpims/db";
 import {
   normalizePrice,
@@ -13,6 +14,7 @@ import {
   calcLineTotal,
   todayDateString,
 } from "@/lib/inventory-price";
+import { applyStockChange, recordProductUsage } from "../lib/stock";
 
 const categoryEnum = z.enum([
   "medication",
@@ -82,9 +84,16 @@ async function resolveSupplier(
   return { supplierId: created!.id, supplierName: created!.name };
 }
 
-async function syncProductFromReceive(
+type StockCtx = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx: { db: any; practiceId: string },
+  db: any;
+  practiceId: string;
+  userId?: string;
+  user?: { id: string };
+};
+
+async function syncProductFromReceive(
+  ctx: StockCtx,
   item: typeof inventoryOrderItems.$inferSelect,
   order: typeof inventoryOrders.$inferSelect
 ) {
@@ -106,6 +115,22 @@ async function syncProductFromReceive(
   let productId = item.productId;
   const prevPosted = item.stockPosted ?? 0;
 
+  const meta = {
+    name: item.name,
+    sku: item.sku,
+    category: item.category,
+    unitPrice: item.unitPrice,
+    costPrice: cost,
+    reorderPoint: item.reorderPoint,
+    lotNumber: item.lotNumber,
+    expirationDate: item.expirationDate,
+    units: item.units,
+    supplierId: order.supplierId,
+    supplierName: order.supplierName,
+    needsReview: false,
+    updatedAt: new Date(),
+  };
+
   if (productId) {
     const [existing] = await ctx.db
       .select()
@@ -120,26 +145,13 @@ async function syncProductFromReceive(
       .limit(1);
 
     if (existing) {
-      const nextStock = Math.max(
-        0,
-        existing.stockQuantity - prevPosted + stockDeltaTarget
-      );
       await ctx.db
         .update(products)
         .set({
-          name: item.name,
-          sku: item.sku,
-          category: item.category,
-          unitPrice: item.unitPrice,
-          costPrice: cost,
-          stockQuantity: nextStock,
+          ...meta,
           reorderPoint: item.reorderPoint ?? existing.reorderPoint,
           lotNumber: item.lotNumber ?? existing.lotNumber,
           expirationDate: item.expirationDate ?? existing.expirationDate,
-          units: item.units,
-          supplierId: order.supplierId,
-          supplierName: order.supplierName,
-          needsReview: false,
         })
         .where(eq(products.id, existing.id));
     } else {
@@ -162,10 +174,6 @@ async function syncProductFromReceive(
 
     if (bySku) {
       productId = bySku.id;
-      const nextStock = Math.max(
-        0,
-        bySku.stockQuantity - prevPosted + stockDeltaTarget
-      );
       await ctx.db
         .update(products)
         .set({
@@ -173,7 +181,6 @@ async function syncProductFromReceive(
           category: item.category,
           unitPrice: item.unitPrice,
           costPrice: cost,
-          stockQuantity: nextStock,
           reorderPoint: item.reorderPoint ?? bySku.reorderPoint,
           lotNumber: item.lotNumber ?? bySku.lotNumber,
           expirationDate: item.expirationDate ?? bySku.expirationDate,
@@ -181,6 +188,7 @@ async function syncProductFromReceive(
           supplierId: order.supplierId,
           supplierName: order.supplierName,
           needsReview: false,
+          updatedAt: new Date(),
         })
         .where(eq(products.id, bySku.id));
     }
@@ -196,7 +204,7 @@ async function syncProductFromReceive(
         category: item.category,
         unitPrice: item.unitPrice,
         costPrice: cost,
-        stockQuantity: stockDeltaTarget,
+        stockQuantity: 0,
         reorderPoint: item.reorderPoint ?? 10,
         lotNumber: item.lotNumber,
         expirationDate: item.expirationDate,
@@ -207,6 +215,18 @@ async function syncProductFromReceive(
       })
       .returning();
     productId = created!.id;
+  }
+
+  if (!productId) throw new Error("Failed to resolve product for receive");
+
+  const delta = stockDeltaTarget - prevPosted;
+  if (delta !== 0) {
+    await applyStockChange(ctx, {
+      productId,
+      quantity: delta,
+      type: delta > 0 ? "receive" : "reverse_receive",
+      orderItemId: item.id,
+    });
   }
 
   const [updated] = await ctx.db
@@ -223,32 +243,17 @@ async function syncProductFromReceive(
 }
 
 async function reversePostedStock(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx: { db: any; practiceId: string },
+  ctx: StockCtx,
   item: typeof inventoryOrderItems.$inferSelect
 ) {
   if (!item.productId || !item.stockPosted) return;
 
-  const [existing] = await ctx.db
-    .select()
-    .from(products)
-    .where(
-      and(
-        eq(products.id, item.productId),
-        eq(products.practiceId, ctx.practiceId),
-        isNull(products.deletedAt)
-      )
-    )
-    .limit(1);
-
-  if (existing) {
-    await ctx.db
-      .update(products)
-      .set({
-        stockQuantity: Math.max(0, existing.stockQuantity - item.stockPosted),
-      })
-      .where(eq(products.id, existing.id));
-  }
+  await applyStockChange(ctx, {
+    productId: item.productId,
+    quantity: -item.stockPosted,
+    type: "reverse_receive",
+    orderItemId: item.id,
+  });
 }
 
 function mapOrderWithItems(
@@ -283,7 +288,7 @@ export const inventoryRouter = createRouter({
       z.object({
         search: z.string().optional(),
         category: z.string().optional(),
-        limit: z.number().min(1).max(100).default(50),
+        limit: z.number().min(1).max(500).default(50),
         offset: z.number().min(0).default(0),
       })
     )
@@ -337,7 +342,7 @@ export const inventoryRouter = createRouter({
         supplierName: z.string().max(255).nullable().optional(),
         unitPrice: z.string().optional(),
         costPrice: z.string().nullable().optional(),
-        stockQuantity: z.number().int().min(0).optional(),
+        stockQuantity: z.number().int().optional(),
         reorderPoint: z.number().int().min(0).optional(),
         lotNumber: z.string().max(64).nullable().optional(),
         expirationDate: z.string().nullable().optional(),
@@ -346,7 +351,7 @@ export const inventoryRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, supplierName, ...rest } = input;
+      const { id, supplierName, stockQuantity, ...rest } = input;
       const setValues: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) setValues[key] = value;
@@ -362,13 +367,52 @@ export const inventoryRouter = createRouter({
         setValues.supplierName = resolved.supplierName;
       }
 
-      if (Object.keys(setValues).length === 0) {
+      if (Object.keys(setValues).length === 0 && stockQuantity === undefined) {
         throw new Error("No fields to update");
       }
 
+      if (Object.keys(setValues).length > 0) {
+        const [updatedMeta] = await ctx.db
+          .update(products)
+          .set(setValues)
+          .where(
+            and(
+              eq(products.id, id),
+              eq(products.practiceId, ctx.practiceId),
+              isNull(products.deletedAt)
+            )
+          )
+          .returning();
+        if (!updatedMeta) throw new Error("Product not found");
+      }
+
+      if (stockQuantity !== undefined) {
+        const [existing] = await ctx.db
+          .select()
+          .from(products)
+          .where(
+            and(
+              eq(products.id, id),
+              eq(products.practiceId, ctx.practiceId),
+              isNull(products.deletedAt)
+            )
+          )
+          .limit(1);
+        if (!existing) throw new Error("Product not found");
+        const delta = stockQuantity - existing.stockQuantity;
+        if (delta !== 0) {
+          await applyStockChange(ctx, {
+            productId: id,
+            quantity: delta,
+            type: "adjustment",
+            note: "Product edit",
+          });
+        }
+      }
+
       const [product] = await ctx.db
-        .update(products)
-        .set(setValues)
+        .select()
+        .from(products)
         .where(
           and(
             eq(products.id, id),
@@ -376,7 +420,7 @@ export const inventoryRouter = createRouter({
             isNull(products.deletedAt)
           )
         )
-        .returning();
+        .limit(1);
 
       if (!product) throw new Error("Product not found");
       return product;
@@ -1161,5 +1205,211 @@ export const inventoryRouter = createRouter({
       }
 
       return supplier!;
+    }),
+
+  listUnbilledUsages: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db
+        .select({
+          id: inventoryUsages.id,
+          productId: inventoryUsages.productId,
+          quantity: inventoryUsages.quantity,
+          sourceType: inventoryUsages.sourceType,
+          note: inventoryUsages.note,
+          createdAt: inventoryUsages.createdAt,
+          productName: products.name,
+          sku: products.sku,
+          unitPrice: products.unitPrice,
+          units: products.units,
+          stockQuantity: products.stockQuantity,
+        })
+        .from(inventoryUsages)
+        .innerJoin(products, eq(products.id, inventoryUsages.productId))
+        .where(
+          and(
+            eq(inventoryUsages.practiceId, ctx.practiceId),
+            eq(inventoryUsages.patientId, input.patientId),
+            isNull(inventoryUsages.deletedAt),
+            isNull(inventoryUsages.invoiceItemId)
+          )
+        )
+        .orderBy(desc(inventoryUsages.createdAt));
+    }),
+
+  recordUsage: protectedProcedure
+    .input(
+      z.object({
+        patientId: z.string().uuid(),
+        productId: z.string().uuid(),
+        quantity: z.number().int().min(1),
+        sourceType: z.enum([
+          "vaccination",
+          "prescription",
+          "administration",
+          "supply",
+        ]),
+        sourceId: z.string().uuid().optional(),
+        appointmentId: z.string().uuid().optional(),
+        note: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return recordProductUsage(ctx, input);
+    }),
+
+  cycleCount: protectedProcedure
+    .input(
+      z.object({
+        items: z
+          .array(
+            z.object({
+              productId: z.string().uuid(),
+              countedQuantity: z.number().int(),
+              note: z.string().optional(),
+            })
+          )
+          .min(1)
+          .max(500),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const results: {
+        productId: string;
+        previous: number;
+        counted: number;
+        delta: number;
+        warned: boolean;
+      }[] = [];
+
+      for (const row of input.items) {
+        const [product] = await ctx.db
+          .select()
+          .from(products)
+          .where(
+            and(
+              eq(products.id, row.productId),
+              eq(products.practiceId, ctx.practiceId),
+              isNull(products.deletedAt)
+            )
+          )
+          .limit(1);
+        if (!product) continue;
+        const delta = row.countedQuantity - product.stockQuantity;
+        if (delta === 0) {
+          results.push({
+            productId: product.id,
+            previous: product.stockQuantity,
+            counted: row.countedQuantity,
+            delta: 0,
+            warned: product.stockQuantity < 0,
+          });
+          continue;
+        }
+        const stock = await applyStockChange(ctx, {
+          productId: product.id,
+          quantity: delta,
+          type: "adjustment",
+          note: row.note?.trim() || "Cycle count",
+        });
+        results.push({
+          productId: product.id,
+          previous: stock.previous,
+          counted: row.countedQuantity,
+          delta,
+          warned: stock.warned,
+        });
+      }
+
+      return { ok: true as const, results };
+    }),
+
+  createOrderFromProducts: protectedProcedure
+    .input(
+      z.object({
+        supplierName: z.string().max(255).optional(),
+        items: z
+          .array(
+            z.object({
+              productId: z.string().uuid(),
+              quantity: z.number().int().min(1),
+            })
+          )
+          .min(1)
+          .max(200),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const catalog = await ctx.db
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.practiceId, ctx.practiceId),
+            isNull(products.deletedAt),
+            inArray(
+              products.id,
+              input.items.map((i) => i.productId)
+            )
+          )
+        );
+
+      const byId = new Map(catalog.map((p: typeof products.$inferSelect) => [p.id, p]));
+      const lines = input.items.map((item) => {
+        const product = byId.get(item.productId);
+        if (!product) throw new Error("Product not found");
+        return {
+          name: product.name,
+          sku: product.sku ?? undefined,
+          unitPrice: product.costPrice ?? product.unitPrice ?? "0.00",
+          quantity: item.quantity,
+        };
+      });
+
+      let supplierName = input.supplierName?.trim() || undefined;
+      if (!supplierName) {
+        const names = [
+          ...new Set(
+            catalog
+              .map((p: typeof products.$inferSelect) => p.supplierName)
+              .filter((n: string | null): n is string => !!n)
+          ),
+        ];
+        if (names.length === 1) supplierName = names[0];
+      }
+
+      const dateOrdered = todayDateString();
+      const resolved = await resolveSupplier(
+        ctx.db,
+        ctx.practiceId,
+        supplierName
+      );
+
+      const [order] = await ctx.db
+        .insert(inventoryOrders)
+        .values({
+          practiceId: ctx.practiceId,
+          supplierId: resolved.supplierId,
+          supplierName: resolved.supplierName,
+          dateOrdered,
+          status: "active",
+          completionStatus: "not_received",
+          importedFromCsv: false,
+        })
+        .returning();
+
+      await ctx.db.insert(inventoryOrderItems).values(
+        lines.map((item, index) => ({
+          orderId: order!.id,
+          name: item.name,
+          sku: item.sku || null,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          sortOrder: index,
+          dateOrdered,
+        }))
+      );
+
+      return order!;
     }),
 });

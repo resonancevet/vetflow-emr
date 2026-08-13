@@ -276,10 +276,12 @@ export const reportsRouter = createRouter({
     const [lowStock, expiring] = await Promise.all([
       ctx.db
         .select({
+          id: products.id,
           name: products.name,
           sku: products.sku,
           stockQuantity: products.stockQuantity,
           reorderPoint: products.reorderPoint,
+          supplierName: products.supplierName,
         })
         .from(products)
         .where(

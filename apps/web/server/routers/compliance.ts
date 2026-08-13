@@ -13,6 +13,7 @@ import {
   clients,
 } from "@openpims/db";
 import { writeAudit } from "../lib/audit";
+import { recordProductUsage } from "../lib/stock";
 
 const examStatusSchema = z.enum(["wnl", "abnormal", "not_examined"]);
 const consentDecisionSchema = z.enum(["consented", "declined"]);
@@ -269,13 +270,17 @@ export const complianceRouter = createRouter({
         administeredAt: z.string().datetime().optional(),
         responseToTreatment: z.string().optional(),
         notes: z.string().optional(),
+        productId: z.string().uuid().optional(),
+        quantity: z.number().int().min(1).optional(),
+        stockNote: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { productId, quantity, stockNote, ...rest } = input;
       const [row] = await ctx.db
         .insert(treatmentAdministrations)
         .values({
-          ...input,
+          ...rest,
           administeredAt: input.administeredAt
             ? new Date(input.administeredAt)
             : new Date(),
@@ -283,7 +288,24 @@ export const complianceRouter = createRouter({
           administeredBy: ctx.user.id,
         })
         .returning();
-      return row!;
+
+      let stockWarned = false;
+      let stockBalanceAfter: number | undefined;
+      if (productId) {
+        const stock = await recordProductUsage(ctx, {
+          patientId: input.patientId,
+          productId,
+          quantity: quantity ?? 1,
+          sourceType: "administration",
+          sourceId: row!.id,
+          appointmentId: input.appointmentId,
+          note: stockNote,
+        });
+        stockWarned = stock.warned;
+        stockBalanceAfter = stock.balanceAfter;
+      }
+
+      return { ...row!, stockWarned, stockBalanceAfter };
     }),
 
   // --- Patient custody ---

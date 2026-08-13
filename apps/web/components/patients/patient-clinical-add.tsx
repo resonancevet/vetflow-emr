@@ -9,8 +9,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toKgString, useWeightUnit, type WeightUnit } from "@/lib/weight-units";
+import {
+  ProductPicker,
+  StockUseFields,
+  type CatalogProduct,
+} from "@/components/inventory/product-picker";
 
-type FormKind = "weight" | "vaccination" | "prescription" | "problem" | null;
+type FormKind =
+  | "weight"
+  | "vaccination"
+  | "prescription"
+  | "problem"
+  | "supply"
+  | null;
+
+function toastStock(result?: {
+  stockWarned?: boolean;
+  stockBalanceAfter?: number;
+  warned?: boolean;
+  balanceAfter?: number;
+}) {
+  const warned = result?.stockWarned || result?.warned;
+  const balance = result?.stockBalanceAfter ?? result?.balanceAfter;
+  if (warned) {
+    toast.warning(`Stock is now ${balance} (below zero)`);
+  }
+}
 
 export function PatientClinicalAdd({ patientId }: { patientId: string }) {
   const router = useRouter();
@@ -34,8 +58,9 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
   });
 
   const createVaccination = trpc.records.createVaccination.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Vaccination recorded");
+      toastStock(result);
       setOpenForm(null);
       invalidate();
     },
@@ -43,8 +68,19 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
   });
 
   const createPrescription = trpc.records.createPrescription.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Prescription added");
+      toastStock(result);
+      setOpenForm(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const recordSupply = trpc.inventory.recordUsage.useMutation({
+    onSuccess: (result) => {
+      toast.success("Supply used");
+      toastStock(result);
       setOpenForm(null);
       invalidate();
     },
@@ -110,6 +146,15 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
           <Button
             type="button"
             size="sm"
+            variant={openForm === "supply" ? "default" : "outline"}
+            onClick={() => setOpenForm(openForm === "supply" ? null : "supply")}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Supply
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant={openForm === "problem" ? "default" : "outline"}
             onClick={() => setOpenForm(openForm === "problem" ? null : "problem")}
           >
@@ -135,6 +180,20 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
         <PrescriptionForm
           onSubmit={(data) => createPrescription.mutate({ patientId, ...data })}
           loading={createPrescription.isPending}
+        />
+      )}
+      {openForm === "supply" && (
+        <SupplyForm
+          onSubmit={(data) =>
+            recordSupply.mutate({
+              patientId,
+              productId: data.productId,
+              quantity: data.quantity,
+              sourceType: "supply",
+              note: data.stockNote,
+            })
+          }
+          loading={recordSupply.isPending}
         />
       )}
       {openForm === "problem" && (
@@ -242,6 +301,9 @@ function VaccinationForm({
     administeredAt?: string;
     nextDueDate?: string;
     notes?: string;
+    productId?: string;
+    quantity?: number;
+    stockNote?: string;
   }) => void;
   loading: boolean;
 }) {
@@ -252,6 +314,9 @@ function VaccinationForm({
   );
   const [nextDueDate, setNextDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [stockNote, setStockNote] = useState("");
 
   return (
     <form
@@ -265,9 +330,28 @@ function VaccinationForm({
           administeredAt: administeredAt || undefined,
           nextDueDate: nextDueDate || undefined,
           notes: notes || undefined,
+          productId: product?.id,
+          quantity: product ? quantity : undefined,
+          stockNote: product ? stockNote || undefined : undefined,
         });
       }}
     >
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">
+          Inventory product (optional)
+        </label>
+        <ProductPicker
+          value={product}
+          placeholder="Link a catalog vaccine to decrement stock..."
+          onChange={(p) => {
+            setProduct(p);
+            if (p) {
+              setVaccineName(p.name);
+              if (p.lotNumber) setLotNumber(p.lotNumber);
+            }
+          }}
+        />
+      </div>
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium">Vaccine name</label>
         <Input
@@ -277,6 +361,13 @@ function VaccinationForm({
           required
         />
       </div>
+      <StockUseFields
+        product={product}
+        quantity={quantity}
+        onQuantityChange={setQuantity}
+        note={stockNote}
+        onNoteChange={setStockNote}
+      />
       <div>
         <label className="mb-1 block text-xs font-medium">Date given</label>
         <Input
@@ -324,6 +415,10 @@ function PrescriptionForm({
     frequency: string;
     startDate: string;
     instructions?: string;
+    productId?: string;
+    quantity?: number;
+    stockNote?: string;
+    administeredAt?: string;
   }) => void;
   loading: boolean;
 }) {
@@ -334,6 +429,9 @@ function PrescriptionForm({
     new Date().toISOString().slice(0, 10)
   );
   const [instructions, setInstructions] = useState("");
+  const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [stockNote, setStockNote] = useState("");
 
   return (
     <form
@@ -348,9 +446,26 @@ function PrescriptionForm({
           frequency: frequency.trim(),
           startDate,
           instructions: instructions || undefined,
+          productId: product?.id,
+          quantity: product ? quantity : undefined,
+          stockNote: product ? stockNote || undefined : undefined,
+          administeredAt: product ? new Date().toISOString() : undefined,
         });
       }}
     >
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">
+          Inventory product (optional)
+        </label>
+        <ProductPicker
+          value={product}
+          placeholder="Link a catalog medication to decrement stock..."
+          onChange={(p) => {
+            setProduct(p);
+            if (p) setMedicationName(p.name);
+          }}
+        />
+      </div>
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium">Medication</label>
         <Input
@@ -359,6 +474,13 @@ function PrescriptionForm({
           required
         />
       </div>
+      <StockUseFields
+        product={product}
+        quantity={quantity}
+        onQuantityChange={setQuantity}
+        note={stockNote}
+        onNoteChange={setStockNote}
+      />
       <div>
         <label className="mb-1 block text-xs font-medium">Dosage</label>
         <Input value={dosage} onChange={(e) => setDosage(e.target.value)} required />
@@ -442,18 +564,59 @@ function ProblemForm({
   );
 }
 
-function PatientAlerts({
-  patientId,
-  allergies = [],
+function SupplyForm({
+  onSubmit,
+  loading,
 }: {
-  patientId: string;
-  allergies?: Array<{
-    id: string;
-    allergen: string;
-    reaction: string | null;
-    severity: "mild" | "moderate" | "severe";
-  }>;
+  onSubmit: (data: {
+    productId: string;
+    quantity: number;
+    stockNote?: string;
+  }) => void;
+  loading: boolean;
 }) {
+  const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [stockNote, setStockNote] = useState("");
+
+  return (
+    <form
+      className="mt-4 grid gap-3 sm:grid-cols-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!product) return;
+        onSubmit({
+          productId: product.id,
+          quantity,
+          stockNote: stockNote || undefined,
+        });
+      }}
+    >
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-xs font-medium">Used supply</label>
+        <ProductPicker
+          value={product}
+          placeholder="Select a catalog supply..."
+          onChange={setProduct}
+        />
+      </div>
+      <StockUseFields
+        product={product}
+        quantity={quantity}
+        onQuantityChange={setQuantity}
+        note={stockNote}
+        onNoteChange={setStockNote}
+      />
+      <div className="sm:col-span-2">
+        <Button type="submit" size="sm" disabled={loading || !product}>
+          {loading ? "Saving..." : "Record supply use"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function PatientAlerts({ patientId }: { patientId: string }) {
   const { data: vaccinations } = trpc.records.listVaccinations.useQuery({
     patientId,
   });
@@ -468,55 +631,25 @@ function PatientAlerts({
     return due < today;
   });
 
-  const severityClass: Record<string, string> = {
-    severe: "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200",
-    moderate: "bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-    mild: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-  };
-
-  if (allergies.length === 0 && overdue.length === 0) return null;
+  if (overdue.length === 0) return null;
 
   return (
     <div className="mt-4 space-y-2">
-      {allergies.length > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
-          <p className="font-medium text-red-900 dark:text-red-200">
-            Allergies ({allergies.length})
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {allergies.map((a) => (
-              <span
-                key={a.id}
-                className={cn(
-                  "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-                  severityClass[a.severity]
-                )}
-                title={a.reaction ?? undefined}
-              >
-                {a.allergen}
-                {a.severity === "severe" ? " (!)" : ""}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {overdue.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
-            Overdue vaccinations ({overdue.length})
-          </p>
-          <ul className="mt-1 list-inside list-disc text-amber-800 dark:text-amber-300">
-            {overdue.map((v) => (
-              <li key={v.id}>
-                {v.vaccineName} — due{" "}
-                {v.nextDueDate
-                  ? new Date(v.nextDueDate).toLocaleDateString()
-                  : "unknown"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+        <p className="font-medium text-amber-900 dark:text-amber-200">
+          Overdue vaccinations ({overdue.length})
+        </p>
+        <ul className="mt-1 list-inside list-disc text-amber-800 dark:text-amber-300">
+          {overdue.map((v) => (
+            <li key={v.id}>
+              {v.vaccineName} — due{" "}
+              {v.nextDueDate
+                ? new Date(v.nextDueDate).toLocaleDateString()
+                : "unknown"}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

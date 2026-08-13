@@ -31,6 +31,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 type Tab = "revenue" | "appointments" | "services" | "inventory";
 
@@ -478,8 +480,25 @@ function ServicesTab() {
   );
 }
 
+function suggestedReorderQty(stockQuantity: number, reorderPoint: number | null) {
+  return Math.max(1, (reorderPoint ?? 10) - stockQuantity);
+}
+
 function InventoryTab() {
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.reports.inventoryAlerts.useQuery();
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [orderQtys, setOrderQtys] = useState<Record<string, number>>({});
+  const createOrder = trpc.inventory.createOrderFromProducts.useMutation({
+    onSuccess: () => {
+      toast.success("Order created — open Inventory → Orders to receive it");
+      utils.inventory.listOrders.invalidate();
+      utils.reports.inventoryAlerts.invalidate();
+      setSelectedIds({});
+      setOrderQtys({});
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   if (isLoading || !data) return <LoadingSkeleton />;
 
@@ -504,32 +523,92 @@ function InventoryTab() {
       {/* Low Stock Alerts */}
       {data.lowStock.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-5 dark:border-amber-900 dark:bg-amber-950/20">
-          <div className="mb-4 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            <h3 className="text-sm font-medium text-amber-800 dark:text-amber-300">
-              Low Stock Alerts ({data.lowStock.length})
-            </h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Low Stock Alerts ({data.lowStock.length})
+              </h3>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                const items = data.lowStock
+                  .filter((item) => selectedIds[item.id])
+                  .map((item) => ({
+                    productId: item.id,
+                    quantity:
+                      orderQtys[item.id] ??
+                      suggestedReorderQty(item.stockQuantity, item.reorderPoint),
+                  }));
+                if (items.length === 0) {
+                  toast.error("Select at least one product");
+                  return;
+                }
+                createOrder.mutate({ items });
+              }}
+              disabled={createOrder.isPending}
+            >
+              {createOrder.isPending ? "Creating..." : "Create order"}
+            </Button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-amber-200 text-left text-amber-700 dark:border-amber-800 dark:text-amber-400">
+                  <th className="pb-2 font-medium">Order</th>
                   <th className="pb-2 font-medium">Product</th>
                   <th className="pb-2 font-medium">SKU</th>
                   <th className="pb-2 font-medium text-right">Stock</th>
                   <th className="pb-2 font-medium text-right">Reorder Point</th>
+                  <th className="pb-2 font-medium text-right">Qty</th>
                 </tr>
               </thead>
               <tbody>
                 {data.lowStock.map((item) => (
                   <tr
-                    key={item.sku ?? item.name}
+                    key={item.id}
                     className="border-b border-amber-100 last:border-0 dark:border-amber-900"
                   >
+                    <td className="py-2">
+                      <input
+                        type="checkbox"
+                        checked={!!selectedIds[item.id]}
+                        onChange={(e) =>
+                          setSelectedIds((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.checked,
+                          }))
+                        }
+                      />
+                    </td>
                     <td className="py-2">{item.name}</td>
                     <td className="py-2 text-muted-foreground">{item.sku ?? "-"}</td>
                     <td className="py-2 text-right font-medium">{item.stockQuantity}</td>
                     <td className="py-2 text-right">{item.reorderPoint ?? 10}</td>
+                    <td className="py-2 text-right">
+                      <Input
+                        type="number"
+                        min={1}
+                        className="ml-auto h-8 w-20 text-right"
+                        value={
+                          orderQtys[item.id] ??
+                          suggestedReorderQty(
+                            item.stockQuantity,
+                            item.reorderPoint
+                          )
+                        }
+                        onChange={(e) =>
+                          setOrderQtys((prev) => ({
+                            ...prev,
+                            [item.id]: Math.max(
+                              1,
+                              parseInt(e.target.value, 10) || 1
+                            ),
+                          }))
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

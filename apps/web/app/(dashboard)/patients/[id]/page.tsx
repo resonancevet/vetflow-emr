@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -44,11 +44,12 @@ import {
 } from "@/components/patients/patient-clinical-tabs";
 import { PatientComplianceSection } from "@/components/patients/patient-compliance-section";
 import { PatientCommunicationsTab } from "@/components/patients/patient-communications-tab";
-import { PatientAllergiesSection } from "@/components/patients/patient-allergies-section";
-import { PatientAlertsBanner } from "@/components/patients/patient-alerts-banner";
+import {
+  PatientAlertsBanner,
+  PatientAlertsManageButton,
+} from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
 import { recordPatientView } from "@/lib/recent-patients";
-import { uploadFileToApi } from "@/lib/upload";
 import {
   kgToLb,
   toKgString,
@@ -95,57 +96,18 @@ function calculateAge(dob: string | null): string {
   return `${adjustedYears}y ${adjustedMonths}m`;
 }
 
-type Tab =
-  | "overview"
-  | "weight"
-  | "communication"
-  | "soap"
-  | "vaccinations"
-  | "prescriptions"
-  | "problems"
-  | "labResults"
-  | "procedures"
-  | "compliance";
-
-const allTabs: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "weight", label: "Weight" },
-  { id: "communication", label: "Communication" },
-  { id: "soap", label: "SOAP Notes" },
-  { id: "vaccinations", label: "Vaccinations" },
-  { id: "prescriptions", label: "Prescriptions" },
-  { id: "problems", label: "Problems" },
-  { id: "labResults", label: "Lab Results" },
-  { id: "procedures", label: "Procedures" },
-  { id: "compliance", label: "Compliance" },
-];
-
-// Tabs hidden from front desk staff (clinical-only content)
-const frontDeskRestrictedTabs: Tab[] = [
-  "soap",
-  "prescriptions",
-  "labResults",
-  "procedures",
-  "compliance",
-];
-
 export default function PatientDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { data: session } = useSession();
   const userRole = session?.user?.role;
-  const tabs = allTabs.filter(
-    (t) => userRole !== "front_desk" || !frontDeskRestrictedTabs.includes(t.id)
-  );
   const canCreateSoap =
     userRole !== "front_desk" && userRole !== "technician";
   const canManageClinicalRecords = userRole !== "front_desk";
   const canManagePrescriptions =
     userRole === "admin" || userRole === "veterinarian";
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [weightUnit, setWeightUnit] = useWeightUnit();
   const [weightView, setWeightView] = useState<"list" | "graph">("list");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const formatWeight = (kgString: string | null) => {
     if (!kgString) return "\u2014";
@@ -155,7 +117,6 @@ export default function PatientDetailPage() {
     return `${kg.toFixed(2)} kg`;
   };
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
   const { data: patient, isLoading, error } = trpc.patients.getById.useQuery(
@@ -174,41 +135,6 @@ export default function PatientDetailPage() {
       clientLastName: patient.clientLastName ?? null,
     });
   }, [patient]);
-
-  const updatePhotoMutation = trpc.patients.update.useMutation({
-    onSuccess: () => {
-      toast.success("Patient photo updated");
-      utils.patients.getById.invalidate({ id: params.id });
-    },
-    onError: (err) => {
-      toast.error(`Failed to update patient photo: ${err.message}`);
-    },
-  });
-
-  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingPhoto(true);
-    try {
-      const data = await uploadFileToApi(file, {
-        category: "patient-photos",
-        entityType: "patient",
-        entityId: params.id,
-      });
-      const photoUrl = data.id ? `/api/files/${data.id}` : data.url;
-      updatePhotoMutation.mutate({ id: params.id, photoUrl });
-    } catch {
-      toast.error("Failed to upload photo");
-    } finally {
-      setUploadingPhoto(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  }
-
-  const triggerPhotoUpload = () => fileInputRef.current?.click();
 
   // Medical summary PDF data queries (lazy -- only fetched on demand)
   const problemsQuery = trpc.records.listProblems.useQuery(
@@ -327,276 +253,189 @@ export default function PatientDetailPage() {
 
   return (
     <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/patients")}
-        className="mb-4"
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Patients
-      </Button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/patients")}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Patients
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/patients/${patient.id}/edit`)}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
+          {canManageClinicalRecords && (
+            <PatientAlertsManageButton patientId={patient.id} />
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadSummary}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            Download Summary
+          </Button>
+        </div>
+      </div>
 
       {/* Patient Header Card */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-start">
+          <div className="self-center px-4 py-4">
             <PatientPhoto
               name={patient.name}
               species={patient.species}
               photoUrl={patient.photoUrl}
-              size="sm"
-              uploading={uploadingPhoto}
-              onUploadClick={
-                canManageClinicalRecords ? triggerPhotoUpload : undefined
-              }
+              size="card"
             />
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handlePhotoUpload}
-              className="hidden"
-            />
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-heading text-xl font-semibold">
-                  {patient.name}
-                </h2>
-                <span
-                  className={cn(
-                    "inline-block h-2.5 w-2.5 rounded-full",
-                    statusColor
-                  )}
-                  title={patient.status ?? "active"}
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {patient.species &&
-                  patient.species.charAt(0).toUpperCase() +
-                    patient.species.slice(1)}
-                {patient.breed ? ` \u00B7 ${patient.breed}` : ""}
-                {" \u00B7 "}
-                {calculateAge(patient.dob)}
-                {" \u00B7 "}
-                {formatSex(patient.sex)}
-              </p>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                {patient.color && <span>Color: {patient.color}</span>}
-                {patient.microchipNumber && (
-                  <span>Microchip: {patient.microchipNumber}</span>
+          </div>
+          <div className="min-w-0 flex-1 py-4 pr-4">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-heading text-xl font-semibold">
+                    {patient.name}
+                  </h2>
+                  <span
+                    className={cn(
+                      "inline-block h-2.5 w-2.5 rounded-full",
+                      statusColor
+                    )}
+                    title={patient.status ?? "active"}
+                  />
+                </div>
+                {patient.clientFirstName && patient.clientId && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/clients/${patient.clientId}`)
+                      }
+                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                    >
+                      <User className="h-3.5 w-3.5" />
+                      {patient.clientFirstName} {patient.clientLastName}
+                    </button>
+                    <ClientAlertIcon clientId={patient.clientId} />
+                  </span>
                 )}
               </div>
-              {patient.clientFirstName && patient.clientId && (
-                <div className="mt-2 inline-flex items-center gap-1.5">
-                  <button
-                    onClick={() => router.push(`/clients/${patient.clientId}`)}
-                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                  >
-                    <User className="h-3.5 w-3.5" />
-                    {patient.clientFirstName} {patient.clientLastName}
-                  </button>
-                  <ClientAlertIcon clientId={patient.clientId} />
+              <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Species</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.species
+                      ? patient.species.charAt(0).toUpperCase() +
+                        patient.species.slice(1)
+                      : "\u2014"}
+                  </dd>
                 </div>
-              )}
+                <div>
+                  <dt className="text-xs text-muted-foreground">Breed</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.breed || "\u2014"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Sex</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {formatSex(patient.sex)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Date of Birth</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.dob
+                      ? new Date(patient.dob).toLocaleDateString()
+                      : "\u2014"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Age</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {calculateAge(patient.dob)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Color</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.color || "\u2014"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Microchip</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.microchipNumber || "\u2014"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Status</dt>
+                  <dd className="mt-0.5 text-sm font-medium capitalize">
+                    {patient.status ?? "active"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Weight</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {patient.weights?.[0]?.weightKg
+                      ? `${formatWeight(patient.weights[0].weightKg)}${
+                          patient.weights[0].recordedAt
+                            ? ` (${new Date(
+                                patient.weights[0].recordedAt
+                              ).toLocaleDateString()})`
+                            : ""
+                        }`
+                      : "\u2014"}
+                  </dd>
+                </div>
+              </dl>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadSummary}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Download Summary
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/patients/${patient.id}/edit`)}
-            >
-              Edit
-            </Button>
-          </div>
+          {(patient.allergies?.length ?? 0) > 0 ? (
+            <div className="m-4 max-w-xs shrink-0 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-right text-sm dark:border-red-900 dark:bg-red-950/40">
+              <p className="font-semibold text-red-800 dark:text-red-200">
+                Allergies
+              </p>
+              <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+                {patient.allergies.map((a) => (
+                  <span
+                    key={a.id}
+                    className="inline-flex rounded-full bg-red-200 px-2.5 py-0.5 text-xs font-medium text-red-900 dark:bg-red-900 dark:text-red-100"
+                    title={
+                      [a.severity, a.reaction].filter(Boolean).join(" · ") ||
+                      undefined
+                    }
+                  >
+                    {a.allergen}
+                    {a.severity === "severe" ? " (!)" : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="m-4 shrink-0 rounded-md border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200">
+              No Known Allergies
+            </div>
+          )}
         </div>
       </div>
 
-      <PatientAlertsBanner
-        patientId={patient.id}
-        canManage={canManageClinicalRecords}
-      />
+      <PatientAlertsBanner patientId={patient.id} />
 
-      <PatientAlerts
-        patientId={patient.id}
-        allergies={patient.allergies ?? []}
-      />
+      <PatientAlerts patientId={patient.id} />
 
       <div className="mt-4">
         <PatientClinicalAdd patientId={patient.id} />
       </div>
 
-      {/* Tab navigation: vertical rail on lg+, horizontal scroll on smaller */}
-      <div className="mt-6 lg:flex lg:gap-6">
-        <nav
-          className="mb-4 shrink-0 overflow-x-auto border-b border-border lg:mb-0 lg:w-44 lg:border-b-0 lg:border-r lg:pr-4"
-          aria-label="Patient sections"
-        >
-          <ul className="flex min-w-max gap-0 lg:flex-col lg:min-w-0">
-            {tabs.map((tab) => (
-              <li key={tab.id}>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "relative w-full whitespace-nowrap px-4 py-3 text-left text-sm font-medium transition-colors min-h-11 lg:rounded-md",
-                    activeTab === tab.id
-                      ? "text-primary lg:bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground lg:hover:bg-muted/50"
-                  )}
-                >
-                  {tab.label}
-                  {activeTab === tab.id && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary lg:bottom-auto lg:left-0 lg:top-2 lg:bottom-2 lg:w-0.5 lg:h-auto lg:right-auto" />
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="min-w-0 flex-1">
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-          <div className="rounded-lg border border-border bg-card p-6">
-            <h3 className="font-heading text-base font-semibold mb-4">
-              Basic Information
-            </h3>
-            <div className="mb-6 flex flex-col items-start gap-2 border-b border-border pb-6">
-              <PatientPhoto
-                name={patient.name}
-                species={patient.species}
-                photoUrl={patient.photoUrl}
-                size="lg"
-                uploading={uploadingPhoto}
-              />
-              {canManageClinicalRecords && (
-                <div className="flex w-40 flex-col items-center gap-2">
-                  {!patient.photoUrl && (
-                    <>
-                      <p className="w-full text-center text-sm font-medium text-foreground">
-                        Patient photo
-                      </p>
-                      <p className="w-full text-center text-xs text-muted-foreground">
-                        JPEG, PNG, or WebP up to 10 MB. Shown on this chart and
-                        the whiteboard.
-                      </p>
-                    </>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    disabled={uploadingPhoto || updatePhotoMutation.isPending}
-                    onClick={triggerPhotoUpload}
-                  >
-                    <Camera className="mr-1.5 h-3.5 w-3.5" />
-                    {uploadingPhoto || updatePhotoMutation.isPending
-                      ? "Uploading..."
-                      : patient.photoUrl
-                        ? "Change photo"
-                        : "Upload photo"}
-                  </Button>
-                </div>
-              )}
-            </div>
-            <dl className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <dt className="text-sm text-muted-foreground">Name</dt>
-                <dd className="mt-0.5 text-sm font-medium">{patient.name}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Species</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.species
-                    ? patient.species.charAt(0).toUpperCase() +
-                      patient.species.slice(1)
-                    : "\u2014"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Breed</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.breed || "\u2014"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Sex</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {formatSex(patient.sex)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Date of Birth</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.dob
-                    ? new Date(patient.dob).toLocaleDateString()
-                    : "\u2014"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Age</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {calculateAge(patient.dob)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Color</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.color || "\u2014"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">
-                  Microchip Number
-                </dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.microchipNumber || "\u2014"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Status</dt>
-                <dd className="mt-0.5 text-sm font-medium capitalize">
-                  {patient.status ?? "active"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm text-muted-foreground">Owner</dt>
-                <dd className="mt-0.5 text-sm font-medium">
-                  {patient.clientFirstName
-                    ? `${patient.clientFirstName} ${patient.clientLastName}`
-                    : "\u2014"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <PatientAllergiesSection
-            patientId={patient.id}
-            allergies={patient.allergies ?? []}
-            canManage={canManageClinicalRecords}
-          />
-          </div>
-        )}
-
-        {activeTab === "communication" && patient.clientId && (
-          <PatientCommunicationsTab
-            patientId={patient.id}
-            clientId={patient.clientId}
-            clientLabel={`${patient.clientFirstName ?? ""} ${patient.clientLastName ?? ""}`.trim()}
-          />
-        )}
-
-        {activeTab === "weight" && (
+      <div className="mt-6 space-y-10">
+        <section>
+          <h3 className="mb-3 font-heading text-base font-semibold">Weight</h3>
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
@@ -682,42 +521,69 @@ export default function PatientDetailPage() {
               </div>
             )}
           </div>
+        </section>
+
+        {patient.clientId && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Communication
+            </h3>
+            <PatientCommunicationsTab
+              patientId={patient.id}
+              clientId={patient.clientId}
+              clientLabel={`${patient.clientFirstName ?? ""} ${patient.clientLastName ?? ""}`.trim()}
+            />
+          </section>
         )}
 
-        {activeTab === "vaccinations" && (
+        <section>
+          <h3 className="mb-3 font-heading text-base font-semibold">
+            Vaccinations
+          </h3>
           <VaccinationsTab
             patientId={patient.id}
             canManage={canManageClinicalRecords}
           />
+        </section>
+
+        {userRole !== "front_desk" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              SOAP Notes
+            </h3>
+            <SoapNotesTab
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                species: patient.species ?? null,
+                clientFirstName: patient.clientFirstName ?? null,
+                clientLastName: patient.clientLastName ?? null,
+              }}
+              canCreate={canCreateSoap}
+            />
+          </section>
         )}
 
-        {activeTab === "soap" && (
-          <SoapNotesTab
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-            }}
-            canCreate={canCreateSoap}
-          />
+        {userRole !== "front_desk" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Prescriptions
+            </h3>
+            <PrescriptionsTab
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                species: patient.species ?? null,
+                clientFirstName: patient.clientFirstName ?? null,
+                clientLastName: patient.clientLastName ?? null,
+              }}
+              canManage={canManagePrescriptions}
+            />
+          </section>
         )}
 
-        {activeTab === "prescriptions" && (
-          <PrescriptionsTab
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-            }}
-            canManage={canManagePrescriptions}
-          />
-        )}
-
-        {activeTab === "problems" && (
+        <section>
+          <h3 className="mb-3 font-heading text-base font-semibold">Problems</h3>
           <ProblemsTab
             patient={{
               id: patient.id,
@@ -728,51 +594,65 @@ export default function PatientDetailPage() {
             }}
             canManage={canManageClinicalRecords}
           />
+        </section>
+
+        {userRole !== "front_desk" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Lab Results
+            </h3>
+            <LabResultsTab
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                species: patient.species ?? null,
+                clientFirstName: patient.clientFirstName ?? null,
+                clientLastName: patient.clientLastName ?? null,
+              }}
+              canManage={canManagePrescriptions}
+            />
+          </section>
         )}
 
-        {activeTab === "labResults" && (
-          <LabResultsTab
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-            }}
-            canManage={canManagePrescriptions}
-          />
+        {userRole !== "front_desk" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Procedures
+            </h3>
+            <ProceduresTab
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                species: patient.species ?? null,
+                clientFirstName: patient.clientFirstName ?? null,
+                clientLastName: patient.clientLastName ?? null,
+              }}
+              canManage={canManagePrescriptions}
+            />
+          </section>
         )}
 
-        {activeTab === "procedures" && (
-          <ProceduresTab
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-            }}
-            canManage={canManagePrescriptions}
-          />
+        {userRole !== "front_desk" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Compliance
+            </h3>
+            <PatientComplianceSection
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                species: patient.species ?? null,
+                microchipNumber: patient.microchipNumber,
+                clientId: patient.clientId,
+                clientFirstName: patient.clientFirstName ?? null,
+                clientLastName: patient.clientLastName ?? null,
+                clientPhone: patient.clientPhone,
+                clientAddress: patient.clientAddress,
+              }}
+              canManage={canManageClinicalRecords}
+            />
+          </section>
         )}
-
-        {activeTab === "compliance" && (
-          <PatientComplianceSection
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              species: patient.species ?? null,
-              microchipNumber: patient.microchipNumber,
-              clientId: patient.clientId,
-              clientFirstName: patient.clientFirstName ?? null,
-              clientLastName: patient.clientLastName ?? null,
-              clientPhone: patient.clientPhone,
-              clientAddress: patient.clientAddress,
-            }}
-            canManage={canManageClinicalRecords}
-          />
-        )}
-        </div>
       </div>
     </div>
   );
@@ -789,23 +669,26 @@ function PatientPhoto({
   name: string;
   species: string | null;
   photoUrl: string | null;
-  size: "sm" | "lg";
+  size: "sm" | "card" | "lg";
   uploading?: boolean;
   onUploadClick?: () => void;
 }) {
-  const isSmall = size === "sm";
-  const frameClass = isSmall
-    ? "h-14 w-14 rounded-full"
-    : "h-40 w-40 rounded-lg";
-  const emojiClass = isSmall ? "text-2xl" : "text-5xl";
+  const frameClass =
+    size === "sm"
+      ? "h-14 w-14 rounded-full"
+      : size === "card"
+        ? "h-36 w-36 rounded-lg"
+        : "h-40 w-40 rounded-lg";
+  const emojiClass = size === "sm" ? "text-2xl" : "text-5xl";
+  const cameraClass = size === "sm" ? "h-5 w-5" : "h-6 w-6";
 
   return (
-    <div className={cn("group relative shrink-0", frameClass)}>
+    <div className={cn("group relative shrink-0 overflow-hidden", frameClass)}>
       {photoUrl ? (
         <img
           src={photoUrl}
           alt={name}
-          className={cn("object-cover", frameClass)}
+          className={cn("h-full w-full object-cover", frameClass)}
         />
       ) : (
         <div
@@ -819,12 +702,7 @@ function PatientPhoto({
         </div>
       )}
       {uploading && (
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-medium text-white",
-            frameClass
-          )}
-        >
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-medium text-white">
           Uploading...
         </div>
       )}
@@ -832,13 +710,10 @@ function PatientPhoto({
         <button
           type="button"
           onClick={onUploadClick}
-          className={cn(
-            "absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
-            frameClass
-          )}
+          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
           title="Upload photo"
         >
-          <Camera className="h-5 w-5 text-white" />
+          <Camera className={cn(cameraClass, "text-white")} />
         </button>
       )}
     </div>

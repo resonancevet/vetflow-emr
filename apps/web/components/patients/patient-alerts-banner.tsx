@@ -9,6 +9,15 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 type AlertType = "behavior" | "medical" | "financial" | "other";
+type AllergySeverity = "mild" | "moderate" | "severe";
+
+const allergyBanner: Record<AllergySeverity, string> = {
+  severe:
+    "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200",
+  moderate:
+    "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200",
+  mild: "border-yellow-200 bg-yellow-50 text-yellow-900 dark:border-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-200",
+};
 
 /**
  * Financial alerts moved to client-level (see `client_alerts`). We keep the
@@ -31,17 +40,22 @@ const severityBanner: Record<AlertSeverity, string> = {
   info: "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
 };
 
-export function PatientAlertsBanner({
+export function PatientAlertsManageButton({
   patientId,
-  canManage,
 }: {
   patientId: string;
-  canManage: boolean;
 }) {
   const utils = trpc.useUtils();
   const [manageOpen, setManageOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingAllergyId, setEditingAllergyId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [addingAllergy, setAddingAllergy] = useState(false);
+  const [allergyForm, setAllergyForm] = useState({
+    allergen: "",
+    reaction: "",
+    severity: "moderate" as AllergySeverity,
+  });
   const [form, setForm] = useState({
     type: "behavior" as AlertType,
     severity: "warning" as AlertSeverity,
@@ -57,6 +71,11 @@ export function PatientAlertsBanner({
     patientId,
     activeOnly: true,
   });
+  const { data: patient } = trpc.patients.getById.useQuery(
+    { id: patientId },
+    { enabled: manageOpen }
+  );
+  const allergies = patient?.allergies ?? [];
 
   const sorted = [...alerts].sort(
     (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
@@ -64,6 +83,8 @@ export function PatientAlertsBanner({
 
   const invalidate = () =>
     utils.patientAlerts.list.invalidate({ patientId, activeOnly: true });
+  const invalidateAllergies = () =>
+    utils.patients.getById.invalidate({ id: patientId });
 
   const create = trpc.patientAlerts.create.useMutation({
     onSuccess: () => {
@@ -98,55 +119,45 @@ export function PatientAlertsBanner({
     onError: (e) => toast.error(e.message),
   });
 
-  const topAlerts = sorted.slice(0, 3);
+  const addAllergy = trpc.patients.addAllergy.useMutation({
+    onSuccess: () => {
+      toast.success("Allergy added");
+      setAddingAllergy(false);
+      setAllergyForm({ allergen: "", reaction: "", severity: "moderate" });
+      invalidateAllergies();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateAllergy = trpc.patients.updateAllergy.useMutation({
+    onSuccess: () => {
+      toast.success("Allergy updated");
+      setEditingAllergyId(null);
+      invalidateAllergies();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteAllergy = trpc.patients.deleteAllergy.useMutation({
+    onSuccess: () => {
+      toast.success("Allergy removed");
+      invalidateAllergies();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-2">
-        {topAlerts.length > 0 ? (
-          <div className="flex flex-1 flex-col gap-2">
-            {topAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={cn(
-                  "flex items-start gap-2 rounded-lg border p-3 text-sm",
-                  severityBanner[alert.severity]
-                )}
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-medium">
-                    {alert.title}
-                    <span className="ml-2 text-xs font-normal opacity-80 capitalize">
-                      ({alert.type})
-                    </span>
-                  </p>
-                  {alert.notes && (
-                    <p className="mt-0.5 text-xs opacity-90">{alert.notes}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-            {sorted.length > 3 && (
-              <p className="text-xs text-muted-foreground">
-                +{sorted.length - 3} more alert{sorted.length - 3 !== 1 ? "s" : ""}
-              </p>
-            )}
-          </div>
-        ) : null}
-        {canManage && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="min-h-11 shrink-0"
-            onClick={() => setManageOpen(true)}
-          >
-            <Bell className="mr-2 h-4 w-4" />
-            Manage alerts
-          </Button>
-        )}
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-h-11 shrink-0"
+        onClick={() => setManageOpen(true)}
+      >
+        <Bell className="mr-2 h-4 w-4" />
+        Manage alerts
+      </Button>
 
       {manageOpen && (
         <div
@@ -162,7 +173,9 @@ export function PatientAlertsBanner({
                 onClick={() => {
                   setManageOpen(false);
                   setEditingId(null);
+                  setEditingAllergyId(null);
                   setAdding(false);
+                  setAddingAllergy(false);
                 }}
                 className="rounded-md p-2 hover:bg-accent min-h-11 min-w-11 flex items-center justify-center"
                 aria-label="Close"
@@ -172,11 +185,102 @@ export function PatientAlertsBanner({
             </div>
 
             <div className="space-y-4 p-4">
-              {sorted.length === 0 && !adding && (
-                <p className="text-sm text-muted-foreground">No active alerts.</p>
+              {sorted.length === 0 && allergies.length === 0 && !adding && !addingAllergy && (
+                <p className="text-sm text-muted-foreground">
+                  No active alerts or allergies.
+                </p>
               )}
 
               <ul className="space-y-2">
+                {allergies.map((allergy) =>
+                  editingAllergyId === allergy.id ? (
+                    <li key={allergy.id} className="space-y-2 rounded-md border p-3">
+                      <AllergyFormFields
+                        form={allergyForm}
+                        setForm={setAllergyForm}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="min-h-11"
+                          onClick={() =>
+                            updateAllergy.mutate({
+                              id: allergy.id,
+                              allergen: allergyForm.allergen.trim(),
+                              reaction: allergyForm.reaction.trim() || undefined,
+                              severity: allergyForm.severity,
+                              clientUpdatedAt: editSnapshot.updatedAt
+                                ? new Date(editSnapshot.updatedAt)
+                                : undefined,
+                            })
+                          }
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditingAllergyId(null)}
+                          className="min-h-11"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ) : (
+                    <li
+                      key={allergy.id}
+                      className={cn(
+                        "flex justify-between gap-2 rounded-md border p-3 text-sm",
+                        allergyBanner[allergy.severity]
+                      )}
+                    >
+                      <div>
+                        <p className="font-medium">{allergy.allergen}</p>
+                        <p className="text-xs capitalize opacity-80">
+                          allergy · {allergy.severity}
+                        </p>
+                        {allergy.reaction && (
+                          <p className="mt-1 text-xs">{allergy.reaction}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          className="rounded p-2 hover:bg-black/5 min-h-11 min-w-11 flex items-center justify-center"
+                          onClick={() => {
+                            setEditingAllergyId(allergy.id);
+                            setEditingId(null);
+                            setAddingAllergy(false);
+                            setAllergyForm({
+                              allergen: allergy.allergen,
+                              reaction: allergy.reaction ?? "",
+                              severity: allergy.severity,
+                            });
+                            setEditSnapshot({ updatedAt: allergy.updatedAt });
+                          }}
+                          aria-label="Edit allergy"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded p-2 hover:bg-black/5 min-h-11 min-w-11 flex items-center justify-center"
+                          onClick={() => {
+                            if (confirm("Remove this allergy?")) {
+                              deleteAllergy.mutate({ id: allergy.id });
+                            }
+                          }}
+                          aria-label="Delete allergy"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                )}
                 {sorted.map((alert) =>
                   editingId === alert.id ? (
                     <li key={alert.id} className="space-y-2 rounded-md border p-3">
@@ -238,6 +342,7 @@ export function PatientAlertsBanner({
                           className="rounded p-2 hover:bg-black/5 min-h-11 min-w-11 flex items-center justify-center"
                           onClick={() => {
                             setEditingId(alert.id);
+                            setEditingAllergyId(null);
                             setForm({
                               type: alert.type,
                               severity: alert.severity,
@@ -310,16 +415,168 @@ export function PatientAlertsBanner({
                   variant="outline"
                   size="sm"
                   className="min-h-11 w-full"
-                  onClick={() => setAdding(true)}
+                  onClick={() => {
+                    setAdding(true);
+                    setAddingAllergy(false);
+                  }}
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   Add alert
+                </Button>
+              )}
+
+              {addingAllergy ? (
+                <form
+                  className="space-y-3 border-t border-border pt-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    addAllergy.mutate({
+                      patientId,
+                      allergen: allergyForm.allergen.trim(),
+                      reaction: allergyForm.reaction.trim() || undefined,
+                      severity: allergyForm.severity,
+                    });
+                  }}
+                >
+                  <AllergyFormFields
+                    form={allergyForm}
+                    setForm={setAllergyForm}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={addAllergy.isPending}
+                      className="min-h-11"
+                    >
+                      Save allergy
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setAddingAllergy(false)}
+                      className="min-h-11"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 w-full"
+                  onClick={() => {
+                    setAddingAllergy(true);
+                    setAdding(false);
+                    setEditingAllergyId(null);
+                    setAllergyForm({
+                      allergen: "",
+                      reaction: "",
+                      severity: "moderate",
+                    });
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add allergy
                 </Button>
               )}
             </div>
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+export function PatientAlertsBanner({ patientId }: { patientId: string }) {
+  const { data: alerts = [] } = trpc.patientAlerts.list.useQuery({
+    patientId,
+    activeOnly: true,
+  });
+
+  const sorted = [...alerts].sort(
+    (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
+  );
+  const topAlerts = sorted.slice(0, 3);
+
+  if (topAlerts.length === 0) return null;
+
+  return (
+    <div className="mt-4 flex flex-1 flex-col gap-2">
+      {topAlerts.map((alert) => (
+        <div
+          key={alert.id}
+          className={cn(
+            "flex items-start gap-2 rounded-lg border p-3 text-sm",
+            severityBanner[alert.severity]
+          )}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">
+              {alert.title}
+              <span className="ml-2 text-xs font-normal opacity-80 capitalize">
+                ({alert.type})
+              </span>
+            </p>
+            {alert.notes && (
+              <p className="mt-0.5 text-xs opacity-90">{alert.notes}</p>
+            )}
+          </div>
+        </div>
+      ))}
+      {sorted.length > 3 && (
+        <p className="text-xs text-muted-foreground">
+          +{sorted.length - 3} more alert{sorted.length - 3 !== 1 ? "s" : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AllergyFormFields({
+  form,
+  setForm,
+}: {
+  form: {
+    allergen: string;
+    reaction: string;
+    severity: AllergySeverity;
+  };
+  setForm: React.Dispatch<React.SetStateAction<typeof form>>;
+}) {
+  return (
+    <>
+      <Input
+        placeholder="Allergen"
+        value={form.allergen}
+        onChange={(e) => setForm((f) => ({ ...f, allergen: e.target.value }))}
+        required
+        className="min-h-11"
+      />
+      <Input
+        placeholder="Reaction (optional)"
+        value={form.reaction}
+        onChange={(e) => setForm((f) => ({ ...f, reaction: e.target.value }))}
+        className="min-h-11"
+      />
+      <select
+        value={form.severity}
+        onChange={(e) =>
+          setForm((f) => ({
+            ...f,
+            severity: e.target.value as AllergySeverity,
+          }))
+        }
+        className="w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm"
+      >
+        <option value="mild">Mild</option>
+        <option value="moderate">Moderate</option>
+        <option value="severe">Severe</option>
+      </select>
     </>
   );
 }

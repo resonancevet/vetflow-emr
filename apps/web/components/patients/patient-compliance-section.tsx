@@ -17,6 +17,11 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { generateDischargeInstructions } from "@/lib/pdf";
 import { uploadFileToApi } from "@/lib/upload";
+import {
+  ProductPicker,
+  StockUseFields,
+  type CatalogProduct,
+} from "@/components/inventory/product-picker";
 
 type PatientInfo = {
   id: string;
@@ -171,12 +176,20 @@ export function PatientComplianceSection({
   const createDischarge = trpc.compliance.createDischargeInstructions.useMutation();
   const attachDischargePdf = trpc.compliance.attachDischargePdf.useMutation();
   const createTreatment = trpc.compliance.createTreatmentAdministration.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Treatment logged");
+      if (result.stockWarned) {
+        toast.warning(
+          `Stock is now ${result.stockBalanceAfter} (below zero)`
+        );
+      }
       utils.compliance.listTreatmentAdministrations.invalidate({
         patientId: patient.id,
       });
       setTreatmentForm(emptyTreatmentForm);
+      setTreatmentProduct(null);
+      setTreatmentQty(1);
+      setTreatmentStockNote("");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -200,6 +213,10 @@ export function PatientComplianceSection({
   const [vitalsForm, setVitalsForm] = useState(emptyVitalsForm);
   const [consentForm, setConsentForm] = useState(emptyConsentForm);
   const [treatmentForm, setTreatmentForm] = useState(emptyTreatmentForm);
+  const [treatmentProduct, setTreatmentProduct] =
+    useState<CatalogProduct | null>(null);
+  const [treatmentQty, setTreatmentQty] = useState(1);
+  const [treatmentStockNote, setTreatmentStockNote] = useState("");
   const [custodyForm, setCustodyForm] = useState(emptyCustodyForm);
   const [anesthesiaForm, setAnesthesiaForm] = useState(emptyAnesthesiaForm);
   const [dischargeForm, setDischargeForm] = useState(emptyDischargeForm);
@@ -697,9 +714,36 @@ export function PatientComplianceSection({
                 responseToTreatment:
                   treatmentForm.responseToTreatment || undefined,
                 notes: treatmentForm.notes || undefined,
+                productId: treatmentProduct?.id,
+                quantity: treatmentProduct ? treatmentQty : undefined,
+                stockNote: treatmentProduct
+                  ? treatmentStockNote || undefined
+                  : undefined,
               });
             }}
           >
+            <div className="sm:col-span-2">
+              <ProductPicker
+                value={treatmentProduct}
+                placeholder="Link inventory product (optional)..."
+                onChange={(p) => {
+                  setTreatmentProduct(p);
+                  if (p) {
+                    setTreatmentForm((f) => ({
+                      ...f,
+                      medicationName: f.medicationName || p.name,
+                    }));
+                  }
+                }}
+              />
+            </div>
+            <StockUseFields
+              product={treatmentProduct}
+              quantity={treatmentQty}
+              onQuantityChange={setTreatmentQty}
+              note={treatmentStockNote}
+              onNoteChange={setTreatmentStockNote}
+            />
             <Input
               className="sm:col-span-2"
               placeholder="Medication / treatment *"

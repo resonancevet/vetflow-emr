@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  ClipboardCheck,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
@@ -278,16 +279,26 @@ function SupplierAutocomplete({
 
 // --- Products tab ---
 
+function suggestedReorderQty(stockQuantity: number, reorderPoint: number | null) {
+  return Math.max(1, (reorderPoint ?? 10) - stockQuantity);
+}
+
 function ProductsTab() {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [counting, setCounting] = useState(false);
+  const [counted, setCounted] = useState<Record<string, number>>({});
+  const [countNote, setCountNote] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [orderQtys, setOrderQtys] = useState<Record<string, number>>({});
 
   const productsQuery = trpc.inventory.list.useQuery({
     search: search || undefined,
     category: category || undefined,
-    limit: 100,
+    limit: counting || lowStockOnly ? 500 : 100,
     offset: 0,
   });
 
@@ -299,9 +310,81 @@ function ProductsTab() {
     onError: (err) => toast.error(err.message),
   });
 
+  const cycleCount = trpc.inventory.cycleCount.useMutation({
+    onSuccess: (result) => {
+      const warned = result.results.some((r) => r.warned);
+      toast.success("Cycle count saved");
+      if (warned) toast.warning("One or more counts left stock negative");
+      utils.inventory.list.invalidate();
+      setCounting(false);
+      setCounted({});
+      setCountNote("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const createOrderFromProducts =
+    trpc.inventory.createOrderFromProducts.useMutation({
+      onSuccess: () => {
+        toast.success("Order created — open the Orders tab to receive it");
+        utils.inventory.listOrders.invalidate();
+        setSelectedIds({});
+        setOrderQtys({});
+      },
+      onError: (err) => toast.error(err.message),
+    });
+
+  const visibleItems = (productsQuery.data?.items ?? []).filter((p) =>
+    lowStockOnly ? p.stockStatus === "low" : true
+  );
+
+  function startCount() {
+    const init: Record<string, number> = {};
+    for (const p of visibleItems) init[p.id] = p.stockQuantity;
+    setCounted(init);
+    setCountNote("");
+    setCounting(true);
+    setEditingId(null);
+  }
+
+  function saveCount() {
+    const items = visibleItems
+      .map((p) => ({
+        productId: p.id,
+        countedQuantity: counted[p.id] ?? p.stockQuantity,
+        note: countNote.trim() || undefined,
+      }))
+      .filter((row) => {
+        const product = visibleItems.find((p) => p.id === row.productId);
+        return product && row.countedQuantity !== product.stockQuantity;
+      });
+    if (items.length === 0) {
+      toast.success("No variances to save");
+      setCounting(false);
+      return;
+    }
+    cycleCount.mutate({ items });
+  }
+
+  function createSelectedOrder() {
+    const items = visibleItems
+      .filter((p) => selectedIds[p.id])
+      .map((p) => ({
+        productId: p.id,
+        quantity:
+          orderQtys[p.id] ??
+          suggestedReorderQty(p.stockQuantity, p.reorderPoint),
+      }));
+    if (items.length === 0) {
+      toast.error("Select at least one product");
+      return;
+    }
+    createOrderFromProducts.mutate({ items });
+  }
+
   return (
     <>
-      <div className="mt-4 flex items-center gap-4">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -322,28 +405,92 @@ function ProductsTab() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={lowStockOnly}
+            onChange={(e) => {
+              setLowStockOnly(e.target.checked);
+              if (!e.target.checked) {
+                setSelectedIds({});
+                setOrderQtys({});
+              }
+            }}
+          />
+          Low stock
+        </label>
+        {counting ? (
+          <>
+            <Input
+              className="max-w-xs"
+              placeholder="Count note (optional)"
+              value={countNote}
+              onChange={(e) => setCountNote(e.target.value)}
+            />
+            <Button
+              size="sm"
+              onClick={saveCount}
+              disabled={cycleCount.isPending}
+            >
+              {cycleCount.isPending ? "Saving..." : "Save count"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setCounting(false);
+                setCounted({});
+                setCountNote("");
+              }}
+            >
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="outline" onClick={startCount}>
+            <ClipboardCheck className="mr-1 h-4 w-4" />
+            Count
+          </Button>
+        )}
+        {lowStockOnly && (
+          <Button
+            size="sm"
+            onClick={createSelectedOrder}
+            disabled={createOrderFromProducts.isPending}
+          >
+            {createOrderFromProducts.isPending
+              ? "Creating..."
+              : "Create order"}
+          </Button>
+        )}
         {productsQuery.data && (
           <p className="text-sm text-muted-foreground">
-            {productsQuery.data.total} product
-            {productsQuery.data.total !== 1 ? "s" : ""}
+            {lowStockOnly ? visibleItems.length : productsQuery.data.total}{" "}
+            product
+            {(lowStockOnly ? visibleItems.length : productsQuery.data.total) !==
+            1
+              ? "s"
+              : ""}
           </p>
         )}
       </div>
 
       {productsQuery.isLoading ? (
         <div className="mt-6 text-center text-muted-foreground">Loading...</div>
-      ) : productsQuery.data && productsQuery.data.items.length > 0 ? (
+      ) : productsQuery.data && visibleItems.length > 0 ? (
         <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 {[
+                  ...(lowStockOnly ? ["Order"] : []),
                   "Name",
                   "SKU",
                   "Category",
                   "Supplier",
                   "Unit Price",
                   "Stock",
+                  ...(counting ? ["Counted", "Variance"] : []),
                   "Cost",
                   "Reorder Pt",
                   "Status",
@@ -359,7 +506,7 @@ function ProductsTab() {
               </tr>
             </thead>
             <tbody>
-              {productsQuery.data.items.map((product) =>
+              {visibleItems.map((product) =>
                 editingId === product.id ? (
                   <EditProductRow
                     key={product.id}
@@ -371,6 +518,43 @@ function ProductsTab() {
                     key={product.id}
                     className="border-b border-border last:border-0 hover:bg-muted/30"
                   >
+                    {lowStockOnly && (
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!selectedIds[product.id]}
+                            onChange={(e) =>
+                              setSelectedIds((prev) => ({
+                                ...prev,
+                                [product.id]: e.target.checked,
+                              }))
+                            }
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            className="h-8 w-16 rounded-md border border-input bg-background px-1.5 text-xs"
+                            value={
+                              orderQtys[product.id] ??
+                              suggestedReorderQty(
+                                product.stockQuantity,
+                                product.reorderPoint
+                              )
+                            }
+                            onChange={(e) =>
+                              setOrderQtys((prev) => ({
+                                ...prev,
+                                [product.id]: Math.max(
+                                  1,
+                                  parseInt(e.target.value, 10) || 1
+                                ),
+                              }))
+                            }
+                          />
+                        </div>
+                      </td>
+                    )}
                     <td className="px-3 py-3 font-medium">{product.name}</td>
                     <td className="px-3 py-3 text-muted-foreground">
                       {product.sku || "—"}
@@ -392,6 +576,27 @@ function ProductsTab() {
                         </span>
                       ) : null}
                     </td>
+                    {counting && (
+                      <>
+                        <td className="px-3 py-3">
+                          <Input
+                            type="number"
+                            className="h-8 w-20"
+                            value={counted[product.id] ?? product.stockQuantity}
+                            onChange={(e) =>
+                              setCounted((prev) => ({
+                                ...prev,
+                                [product.id]: parseInt(e.target.value, 10) || 0,
+                              }))
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {(counted[product.id] ?? product.stockQuantity) -
+                            product.stockQuantity}
+                        </td>
+                      </>
+                    )}
                     <td className="px-3 py-3 tabular-nums text-muted-foreground">
                       {product.costPrice
                         ? formatCurrency(product.costPrice)
@@ -416,6 +621,7 @@ function ProductsTab() {
                           className="h-7 w-7 p-0"
                           onClick={() => setEditingId(product.id)}
                           title="Edit"
+                          disabled={counting}
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -423,6 +629,7 @@ function ProductsTab() {
                           size="sm"
                           variant="ghost"
                           className="h-7 w-7 p-0 text-destructive"
+                          disabled={counting}
                           onClick={() => {
                             if (confirm(`Delete "${product.name}"?`)) {
                               deleteMutation.mutate({ id: product.id });
@@ -444,7 +651,9 @@ function ProductsTab() {
         <div className="mt-6 rounded-lg border border-dashed border-border bg-card p-12 text-center">
           <Package className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <p className="mt-2 text-muted-foreground">
-            No products yet. Receive stock from the Orders tab.
+            {lowStockOnly
+              ? "No low-stock products."
+              : "No products yet. Receive stock from the Orders tab."}
           </p>
         </div>
       )}

@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { calcTax, DEFAULT_TAX_RATE_PERCENT } from "@/lib/tax";
+import {
+  ProductPicker,
+  type CatalogProduct,
+} from "@/components/inventory/product-picker";
 
 interface LineItem {
   id: string;
@@ -16,6 +20,7 @@ interface LineItem {
   unitPrice: string;
   itemType: "service" | "product";
   itemId?: string;
+  usageId?: string;
 }
 
 function defaultDueDate(): string {
@@ -40,7 +45,10 @@ export default function NewInvoicePage() {
 
   // Line items
   const [items, setItems] = useState<LineItem[]>([]);
+  const [lineKind, setLineKind] = useState<"service" | "product">("service");
   const [selectedServiceId, setSelectedServiceId] = useState("");
+  const [selectedProduct, setSelectedProduct] =
+    useState<CatalogProduct | null>(null);
   const [itemDescription, setItemDescription] = useState("");
   const [itemQuantity, setItemQuantity] = useState(1);
   const [itemUnitPrice, setItemUnitPrice] = useState("");
@@ -63,6 +71,10 @@ export default function NewInvoicePage() {
   );
 
   const servicesQuery = trpc.billing.listServices.useQuery();
+  const unbilledQuery = trpc.inventory.listUnbilledUsages.useQuery(
+    { patientId: selectedPatientId },
+    { enabled: !!selectedPatientId }
+  );
   const billingSettings = trpc.settings.getBillingSettings.useQuery();
   const taxEnabled = billingSettings.data?.taxEnabled ?? true;
   const taxRatePercent =
@@ -72,9 +84,13 @@ export default function NewInvoicePage() {
   // Mutation
   const utils = trpc.useUtils();
   const createInvoice = trpc.billing.createInvoice.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Invoice created");
+      if (result.stockWarned) {
+        toast.warning("One or more products went below zero stock");
+      }
       utils.billing.listInvoices.invalidate();
+      utils.inventory.listUnbilledUsages.invalidate();
       router.push("/billing");
     },
     onError: (err) => {
@@ -117,14 +133,40 @@ export default function NewInvoicePage() {
         description: itemDescription,
         quantity: itemQuantity,
         unitPrice: itemUnitPrice,
-        itemType: "service",
-        itemId: service?.id,
+        itemType: lineKind,
+        itemId:
+          lineKind === "product" ? selectedProduct?.id : service?.id,
       },
     ]);
     setSelectedServiceId("");
+    setSelectedProduct(null);
     setItemDescription("");
     setItemQuantity(1);
     setItemUnitPrice("");
+  }
+
+  function addUnbilledUsages() {
+    const usages = unbilledQuery.data ?? [];
+    if (usages.length === 0) return;
+    setItems((prev) => {
+      const existing = new Set(
+        prev.map((item) => item.usageId).filter(Boolean)
+      );
+      const next = [...prev];
+      for (const usage of usages) {
+        if (existing.has(usage.id)) continue;
+        next.push({
+          id: crypto.randomUUID(),
+          description: usage.productName,
+          quantity: usage.quantity,
+          unitPrice: usage.unitPrice,
+          itemType: "product",
+          itemId: usage.productId,
+          usageId: usage.id,
+        });
+      }
+      return next;
+    });
   }
 
   function handleRemoveItem(id: string) {
@@ -142,6 +184,7 @@ export default function NewInvoicePage() {
         unitPrice: item.unitPrice,
         itemType: item.itemType,
         itemId: item.itemId,
+        usageId: item.usageId,
       })),
       dueDate: dueDate || undefined,
       isEstimate,
@@ -198,6 +241,7 @@ export default function NewInvoicePage() {
                   setSelectedClient(null);
                   setSelectedPatientId("");
                   setClientSearch("");
+                  setItems((prev) => prev.filter((i) => !i.usageId));
                 }}
               >
                 Change
@@ -257,7 +301,10 @@ export default function NewInvoicePage() {
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={selectedPatientId}
-              onChange={(e) => setSelectedPatientId(e.target.value)}
+              onChange={(e) => {
+                setSelectedPatientId(e.target.value);
+                setItems((prev) => prev.filter((i) => !i.usageId));
+              }}
             >
               <option value="">-- No patient --</option>
               {patientResults.data?.map((patient) => (
@@ -269,24 +316,104 @@ export default function NewInvoicePage() {
           </div>
         )}
 
+        {selectedPatientId && (unbilledQuery.data?.length ?? 0) > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Unbilled used items</p>
+                <p className="text-xs text-muted-foreground">
+                  {unbilledQuery.data!.length} clinical use
+                  {unbilledQuery.data!.length === 1 ? "" : "s"} not yet on an
+                  invoice. Adding them will not decrement stock again.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addUnbilledUsages}
+              >
+                Add used items
+              </Button>
+            </div>
+            <ul className="mt-2 space-y-1 text-sm">
+              {unbilledQuery.data!.map((usage) => (
+                <li key={usage.id} className="text-muted-foreground">
+                  {usage.productName} × {usage.quantity}
+                  {usage.units ? ` ${usage.units}` : ""} · $
+                  {parseFloat(usage.unitPrice).toFixed(2)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Add Line Item */}
         <div>
           <label className="block text-sm font-medium mb-1">Line Items</label>
           <div className="rounded-lg border border-border p-4 space-y-3">
+            <div className="flex gap-2 text-sm">
+              <button
+                type="button"
+                className={`rounded-md border px-3 py-1.5 ${
+                  lineKind === "service"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input"
+                }`}
+                onClick={() => {
+                  setLineKind("service");
+                  setSelectedProduct(null);
+                  setItemDescription("");
+                  setItemUnitPrice("");
+                }}
+              >
+                Service
+              </button>
+              <button
+                type="button"
+                className={`rounded-md border px-3 py-1.5 ${
+                  lineKind === "product"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input"
+                }`}
+                onClick={() => {
+                  setLineKind("product");
+                  setSelectedServiceId("");
+                  setItemDescription("");
+                  setItemUnitPrice("");
+                }}
+              >
+                Product
+              </button>
+            </div>
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-4">
-                <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={selectedServiceId}
-                  onChange={(e) => handleServiceSelect(e.target.value)}
-                >
-                  <option value="">Select a service...</option>
-                  {servicesQuery.data?.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name} - ${service.defaultPrice}
-                    </option>
-                  ))}
-                </select>
+                {lineKind === "service" ? (
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={selectedServiceId}
+                    onChange={(e) => handleServiceSelect(e.target.value)}
+                  >
+                    <option value="">Select a service...</option>
+                    {servicesQuery.data?.map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.name} - ${service.defaultPrice}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <ProductPicker
+                    value={selectedProduct}
+                    placeholder="Search products..."
+                    onChange={(p) => {
+                      setSelectedProduct(p);
+                      if (p) {
+                        setItemDescription(p.name);
+                        setItemUnitPrice(p.unitPrice);
+                      }
+                    }}
+                  />
+                )}
               </div>
               <div className="col-span-3">
                 <Input
@@ -356,7 +483,18 @@ export default function NewInvoicePage() {
                       key={item.id}
                       className="border-b border-border/50 last:border-0"
                     >
-                      <td className="py-2">{item.description}</td>
+                      <td className="py-2">
+                        {item.description}
+                        {item.usageId ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (used)
+                          </span>
+                        ) : item.itemType === "product" ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (product)
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="py-2 text-right tabular-nums">
                         {item.quantity}
                       </td>
