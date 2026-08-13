@@ -54,6 +54,21 @@ export function calcCostPerCount(
   return (price / (quantity * count)).toFixed(4);
 }
 
+/**
+ * Price to charge per inventory each on an invoice or estimate.
+ * Received packs store box price on unitPrice and Cost/ct on costPrice.
+ */
+export function chargePriceEach(product: {
+  unitPrice?: string | number | null;
+  costPrice?: string | number | null;
+}): string {
+  const cost = parseFloat(String(product.costPrice ?? ""));
+  if (Number.isFinite(cost) && cost > 0) return cost.toFixed(2);
+  const unit = parseFloat(String(product.unitPrice ?? ""));
+  if (Number.isFinite(unit) && unit >= 0) return unit.toFixed(2);
+  return "0.00";
+}
+
 export function calcLineTotal(
   unitPrice: string | number,
   quantity: number

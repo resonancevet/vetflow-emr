@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
+import { chargePriceEach } from "@/lib/inventory-price";
 
 export type CatalogProduct = {
   id: string;
@@ -11,6 +12,7 @@ export type CatalogProduct = {
   planName?: string | null;
   sku: string | null;
   unitPrice: string;
+  costPrice?: string | null;
   stockQuantity: number;
   units: string | null;
   category: string | null;
@@ -72,6 +74,7 @@ export function ProductPicker({
                   planName: p.planName,
                   sku: p.sku,
                   unitPrice: p.unitPrice,
+                  costPrice: p.costPrice,
                   stockQuantity: p.stockQuantity,
                   units: p.units,
                   category: p.category,
@@ -84,7 +87,8 @@ export function ProductPicker({
               <span className="font-medium">{p.name}</span>
               <span className="ml-2 text-muted-foreground">
                 {p.sku ? `${p.sku} · ` : ""}
-                {p.stockQuantity} {p.units ?? "on hand"}
+                {p.stockQuantity} {p.units ?? "on hand"} · $
+                {chargePriceEach(p)} each
               </span>
             </button>
           ))}

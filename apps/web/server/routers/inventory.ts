@@ -1222,6 +1222,7 @@ export const inventoryRouter = createRouter({
           productName: products.name,
           sku: products.sku,
           unitPrice: products.unitPrice,
+          costPrice: products.costPrice,
           units: products.units,
           stockQuantity: products.stockQuantity,
         })

@@ -12,6 +12,7 @@ import {
   ProductPicker,
   type CatalogProduct,
 } from "@/components/inventory/product-picker";
+import { chargePriceEach } from "@/lib/inventory-price";
 
 interface LineItem {
   id: string;
@@ -159,7 +160,7 @@ export default function NewInvoicePage() {
           id: crypto.randomUUID(),
           description: usage.productName,
           quantity: usage.quantity,
-          unitPrice: usage.unitPrice,
+          unitPrice: chargePriceEach(usage),
           itemType: "product",
           itemId: usage.productId,
           usageId: usage.id,
@@ -341,7 +342,7 @@ export default function NewInvoicePage() {
                 <li key={usage.id} className="text-muted-foreground">
                   {usage.productName} × {usage.quantity}
                   {usage.units ? ` ${usage.units}` : ""} · $
-                  {parseFloat(usage.unitPrice).toFixed(2)}
+                  {chargePriceEach(usage)}
                 </li>
               ))}
             </ul>
@@ -416,7 +417,7 @@ export default function NewInvoicePage() {
                       setSelectedProduct(p);
                       if (p) {
                         setItemDescription(p.name);
-                        setItemUnitPrice(p.unitPrice);
+                        setItemUnitPrice(chargePriceEach(p));
                       }
                     }}
                   />
