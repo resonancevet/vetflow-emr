@@ -316,24 +316,13 @@ export function InventoryKitsTab() {
           )}
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">Inventory items</h4>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setItems((prev) => [...prev, emptyItem()])}
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Add item
-              </Button>
-            </div>
+            <h4 className="text-sm font-medium">Inventory items</h4>
             {items.map((item, index) => (
               <div
                 key={index}
-                className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,8rem)_auto] sm:items-end"
+                className="grid grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,8rem)_auto] sm:items-start"
               >
-                <div>
+                <div className="min-w-0">
                   <label className="mb-1 block text-xs font-medium">
                     Product
                   </label>
@@ -369,7 +358,7 @@ export function InventoryKitsTab() {
                     }
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="mb-1 block text-xs font-medium">Note</label>
                   <Input
                     value={item.note}
@@ -387,6 +376,7 @@ export function InventoryKitsTab() {
                   type="button"
                   size="sm"
                   variant="ghost"
+                  className="sm:mt-5"
                   onClick={() =>
                     setItems((prev) => prev.filter((_, i) => i !== index))
                   }
@@ -396,6 +386,15 @@ export function InventoryKitsTab() {
                 </Button>
               </div>
             ))}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setItems((prev) => [...prev, emptyItem()])}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add item
+            </Button>
           </div>
 
           <div className="flex gap-2">

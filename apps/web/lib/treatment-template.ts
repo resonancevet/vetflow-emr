@@ -35,6 +35,11 @@ export function kitDisplayName(kit: {
   return planDisplayName(kit.planName, kit.name);
 }
 
+/** Inventory kit name for Settings / template pickers (not the SOAP plan label). */
+export function kitInventoryName(kit: { name: string }): string {
+  return kit.name.trim();
+}
+
 export function kitChargeTotal(kit: KitForTemplate): string {
   const total = kit.items.reduce((sum, item) => {
     const each = parseFloat(
@@ -74,7 +79,7 @@ export function expandTemplateItem(
   if (!kit || kit.items.length === 0) {
     return [
       {
-        description: item.description,
+        description: kit ? kitDisplayName(kit) : item.description,
         quantity: item.defaultQuantity,
         unitPrice: item.defaultUnitPrice,
         itemType: "product",
@@ -86,6 +91,7 @@ export function expandTemplateItem(
   return kit.items.map((kitItem) => ({
     description:
       planDisplayName(kitItem.productPlanName, kitItem.productName) ||
+      kitDisplayName(kit) ||
       item.description,
     quantity: kitItem.quantity * multiplier,
     unitPrice: chargePriceEach({

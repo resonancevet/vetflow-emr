@@ -37,10 +37,9 @@ import {
 } from "@/components/inventory/product-picker";
 import { chargePriceEach } from "@/lib/inventory-price";
 import { kitKindLabel } from "@/lib/kit-kind";
-import { planDisplayName } from "@/lib/plan-name";
 import {
   kitChargeTotal,
-  kitDisplayName,
+  kitInventoryName,
   type TemplateItemType,
 } from "@/lib/treatment-template";
 
@@ -111,8 +110,16 @@ const ROOM_TYPES = ["exam", "surgery", "treatment", "boarding"] as const;
 
 // ── Main Page ───────────────────────────────────────────────
 export default function SettingsPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<Tab>("practice");
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (session?.user?.role !== "admin") {
     return (
@@ -2222,7 +2229,7 @@ function TemplatesTab() {
                         );
                         updateItem(index, {
                           itemId: kit?.id,
-                          description: kit ? kitDisplayName(kit) : "",
+                          description: kit ? kitInventoryName(kit) : "",
                           defaultUnitPrice: kit ? kitChargeTotal(kit) : "0",
                         });
                       }}
@@ -2239,7 +2246,7 @@ function TemplatesTab() {
                         )
                         .map((kit) => (
                           <option key={kit.id} value={kit.id}>
-                            {kitKindLabel(kit.kind)}: {kitDisplayName(kit)} — $
+                            {kitKindLabel(kit.kind)}: {kitInventoryName(kit)} — $
                             {kitChargeTotal(kit)}
                           </option>
                         ))}
@@ -2255,10 +2262,7 @@ function TemplatesTab() {
                             .map(
                               (kitItem) =>
                                 `${kitItem.quantity}× ${
-                                  planDisplayName(
-                                    kitItem.productPlanName,
-                                    kitItem.productName
-                                  ) || "Item"
+                                  kitItem.productName || "Item"
                                 }`
                             )
                             .join(", ")}
