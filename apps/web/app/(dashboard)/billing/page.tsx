@@ -564,17 +564,8 @@ function InvoiceRow({
                         <th className="py-2 text-left font-medium text-muted-foreground">
                           Description
                         </th>
-                        <th className="py-2 text-left font-medium text-muted-foreground">
-                          Type
-                        </th>
                         <th className="py-2 text-right font-medium text-muted-foreground">
-                          Qty
-                        </th>
-                        <th className="py-2 text-right font-medium text-muted-foreground">
-                          Unit Price
-                        </th>
-                        <th className="py-2 text-right font-medium text-muted-foreground">
-                          Total
+                          Price
                         </th>
                       </tr>
                     </thead>
@@ -585,15 +576,6 @@ function InvoiceRow({
                           className="border-b border-border/50 last:border-0"
                         >
                           <td className="py-2">{item.description}</td>
-                          <td className="py-2 capitalize text-muted-foreground">
-                            {item.itemType}
-                          </td>
-                          <td className="py-2 text-right tabular-nums">
-                            {item.quantity}
-                          </td>
-                          <td className="py-2 text-right tabular-nums">
-                            {formatCurrency(item.unitPrice)}
-                          </td>
                           <td className="py-2 text-right tabular-nums">
                             {formatCurrency(item.total)}
                           </td>
@@ -602,7 +584,7 @@ function InvoiceRow({
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-border">
-                        <td colSpan={4} className="py-2 text-right font-medium">
+                        <td className="py-2 text-right font-medium">
                           Subtotal
                         </td>
                         <td className="py-2 text-right tabular-nums">
@@ -610,7 +592,7 @@ function InvoiceRow({
                         </td>
                       </tr>
                       <tr>
-                        <td colSpan={4} className="py-1 text-right text-muted-foreground">
+                        <td className="py-1 text-right text-muted-foreground">
                           Tax
                         </td>
                         <td className="py-1 text-right tabular-nums text-muted-foreground">
@@ -618,7 +600,7 @@ function InvoiceRow({
                         </td>
                       </tr>
                       <tr className="font-semibold">
-                        <td colSpan={4} className="py-2 text-right">
+                        <td className="py-2 text-right">
                           Total
                         </td>
                         <td className="py-2 text-right tabular-nums">

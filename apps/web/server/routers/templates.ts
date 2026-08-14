@@ -12,7 +12,8 @@ import {
   inventoryKitItems,
   products,
 } from "@openpims/db";
-import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
+import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
+import { applyInventoryMarkup } from "@/lib/inventory-price";
 import {
   expandTemplateItems,
   type KitForTemplate,
@@ -565,13 +566,33 @@ export const templatesRouter = createRouter({
       );
       const invoiceLines = expandTemplateItems(items, kits);
 
+      const [practice] = await ctx.db
+        .select({ settings: practices.settings })
+        .from(practices)
+        .where(eq(practices.id, ctx.practiceId))
+        .limit(1);
+      const markupPercent = getEffectiveInventoryMarkupPercent(
+        practice?.settings
+      );
+      const pricedLines = invoiceLines.map((item) => {
+        const unitPrice =
+          item.itemType === "product"
+            ? applyInventoryMarkup(item.unitPrice, markupPercent)
+            : item.unitPrice;
+        return {
+          ...item,
+          unitPrice,
+          total: (item.quantity * parseFloat(unitPrice)).toFixed(2),
+        };
+      });
+
       await ctx.db.insert(invoiceItems).values(
-        invoiceLines.map((item) => ({
+        pricedLines.map((item) => ({
           invoiceId: input.invoiceId,
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+          total: item.total,
           itemType: item.itemType,
           itemId: item.itemId ?? null,
         }))
@@ -590,11 +611,6 @@ export const templatesRouter = createRouter({
         return sum + row.quantity * parseFloat(row.unitPrice);
       }, 0);
 
-      const [practice] = await ctx.db
-        .select({ settings: practices.settings })
-        .from(practices)
-        .where(eq(practices.id, ctx.practiceId))
-        .limit(1);
       const tax = calcTax(
         subtotal,
         getEffectiveTaxRatePercent(practice?.settings)

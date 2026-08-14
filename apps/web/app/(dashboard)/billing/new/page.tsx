@@ -706,10 +706,7 @@ function NewInvoicePageContent() {
                       Qty
                     </th>
                     <th className="py-2 text-right font-medium text-muted-foreground">
-                      Unit Price
-                    </th>
-                    <th className="py-2 text-right font-medium text-muted-foreground">
-                      Total
+                      Price
                     </th>
                     <th className="py-2 w-10" />
                   </tr>
@@ -734,9 +731,6 @@ function NewInvoicePageContent() {
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {item.quantity}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        ${parseFloat(item.unitPrice).toFixed(2)}
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         $

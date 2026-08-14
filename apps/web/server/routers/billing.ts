@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, desc, asc, sql, sum } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, sql, sum, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
@@ -14,7 +14,8 @@ import {
   practices,
   inventoryUsages,
 } from "@openpims/db";
-import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
+import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
+import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
 import { applyStockChange } from "../lib/stock";
 
 function parseMoney(value: string): string {
@@ -36,6 +37,67 @@ const invoiceItemInput = z.object({
   itemId: z.string().uuid().optional(),
   usageId: z.string().uuid().optional(),
 });
+
+type InvoiceItemInput = z.infer<typeof invoiceItemInput>;
+
+async function priceInvoiceItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string,
+  items: InvoiceItemInput[],
+  markupPercent: number
+) {
+  const productIds = [
+    ...new Set(
+      items
+        .filter((item) => item.itemType === "product" && item.itemId)
+        .map((item) => item.itemId!)
+    ),
+  ];
+
+  const productRows =
+    productIds.length > 0
+      ? await db
+          .select({
+            id: products.id,
+            unitPrice: products.unitPrice,
+            costPrice: products.costPrice,
+          })
+          .from(products)
+          .where(
+            and(
+              eq(products.practiceId, practiceId),
+              inArray(products.id, productIds),
+              isNull(products.deletedAt)
+            )
+          )
+      : [];
+
+  const byId = new Map(
+    productRows.map((row: { id: string }) => [row.id, row])
+  );
+
+  return items.map((item) => {
+    let unitPrice = parseMoney(item.unitPrice);
+    if (item.itemType === "product" && item.itemId) {
+      const product = byId.get(item.itemId);
+      if (product) {
+        unitPrice = chargePriceEachWithMarkup(product, markupPercent);
+      } else if (markupPercent > 0) {
+        unitPrice = chargePriceEachWithMarkup(
+          { unitPrice: item.unitPrice, costPrice: item.unitPrice },
+          markupPercent
+        );
+      }
+    }
+    const quantity = item.quantity;
+    return {
+      ...item,
+      unitPrice,
+      total: (quantity * parseFloat(unitPrice)).toFixed(2),
+    };
+  });
+}
 
 export const billingRouter = createRouter({
   listInvoices: protectedProcedure
@@ -361,8 +423,17 @@ export const billingRouter = createRouter({
         .where(eq(practices.id, ctx.practiceId))
         .limit(1);
       const taxRatePercent = getEffectiveTaxRatePercent(practice?.settings);
+      const markupPercent = getEffectiveInventoryMarkupPercent(
+        practice?.settings
+      );
+      const pricedItems = await priceInvoiceItems(
+        ctx.db,
+        ctx.practiceId,
+        input.items,
+        markupPercent
+      );
 
-      const subtotal = input.items.reduce((sum, item) => {
+      const subtotal = pricedItems.reduce((sum, item) => {
         return sum + item.quantity * parseFloat(item.unitPrice);
       }, 0);
       const tax = calcTax(subtotal, taxRatePercent);
@@ -388,16 +459,16 @@ export const billingRouter = createRouter({
         .returning();
 
       let inserted: (typeof invoiceItems.$inferSelect)[] = [];
-      if (input.items.length > 0) {
+      if (pricedItems.length > 0) {
         inserted = await ctx.db
           .insert(invoiceItems)
           .values(
-            input.items.map((item) => ({
+            pricedItems.map((item) => ({
               invoiceId: invoice!.id,
               description: item.description,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+              total: item.total,
               itemType: item.itemType as "service" | "product",
               itemId: item.itemId ?? null,
             }))
@@ -408,7 +479,7 @@ export const billingRouter = createRouter({
       let stockWarned = false;
       if (!input.isEstimate) {
         for (let i = 0; i < inserted.length; i++) {
-          const item = input.items[i]!;
+          const item = pricedItems[i]!;
           const row = inserted[i]!;
           if (item.itemType !== "product" || !item.itemId) continue;
 
@@ -507,8 +578,17 @@ export const billingRouter = createRouter({
         .where(eq(practices.id, ctx.practiceId))
         .limit(1);
       const taxRatePercent = getEffectiveTaxRatePercent(practice?.settings);
+      const markupPercent = getEffectiveInventoryMarkupPercent(
+        practice?.settings
+      );
+      const pricedItems = await priceInvoiceItems(
+        ctx.db,
+        ctx.practiceId,
+        input.items,
+        markupPercent
+      );
 
-      const subtotal = input.items.reduce((sum, item) => {
+      const subtotal = pricedItems.reduce((sum, item) => {
         return sum + item.quantity * parseFloat(item.unitPrice);
       }, 0);
       const tax = calcTax(subtotal, taxRatePercent);
@@ -525,12 +605,12 @@ export const billingRouter = createRouter({
         );
 
       await ctx.db.insert(invoiceItems).values(
-        input.items.map((item) => ({
+        pricedItems.map((item) => ({
           invoiceId: input.id,
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+          total: item.total,
           itemType: item.itemType as "service" | "product",
           itemId: item.itemId ?? null,
         }))

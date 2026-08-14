@@ -229,8 +229,6 @@ export function generateInvoicePdf(data: InvoiceData): jsPDF {
   // --- Line Items Table ------------------------------------------------------
   const colX = {
     desc: PAGE_MARGIN,
-    qty: PAGE_MARGIN + CONTENT_WIDTH * 0.55,
-    unit: PAGE_MARGIN + CONTENT_WIDTH * 0.7,
     total: PAGE_WIDTH - PAGE_MARGIN,
   };
 
@@ -242,9 +240,7 @@ export function generateInvoicePdf(data: InvoiceData): jsPDF {
   doc.setFontSize(9);
   setColor(doc, COLOR_DARK);
   doc.text("Description", colX.desc + 2, y);
-  doc.text("Qty", colX.qty, y, { align: "center" });
-  doc.text("Unit Price", colX.unit, y, { align: "center" });
-  doc.text("Total", colX.total - 2, y, { align: "right" });
+  doc.text("Price", colX.total - 2, y, { align: "right" });
   y += 8;
 
   // Table rows
@@ -254,8 +250,6 @@ export function generateInvoicePdf(data: InvoiceData): jsPDF {
   for (const item of data.items) {
     y = ensureSpace(doc, y, 8);
     doc.text(item.description, colX.desc + 2, y);
-    doc.text(String(item.quantity), colX.qty, y, { align: "center" });
-    doc.text(item.unitPrice, colX.unit, y, { align: "center" });
     doc.text(item.total, colX.total - 2, y, { align: "right" });
     y += 6;
   }
