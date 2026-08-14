@@ -71,6 +71,39 @@ async function loadKitsForTemplate(
   }));
 }
 
+type TemplateItemInput = {
+  itemType: "service" | "product" | "kit";
+  itemId?: string;
+  description: string;
+  defaultQuantity: number;
+  defaultUnitPrice: string;
+  sortOrder: number;
+};
+
+async function resolveTemplateItemRows(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string,
+  items: TemplateItemInput[]
+) {
+  const kits = await loadKitsForTemplate(
+    db,
+    practiceId,
+    items
+      .filter((item) => item.itemType === "kit" && item.itemId)
+      .map((item) => item.itemId!)
+  );
+
+  return expandTemplateItems(items, kits).map((line, sortOrder) => ({
+    itemType: line.itemType,
+    itemId: line.itemId ?? null,
+    description: line.description,
+    defaultQuantity: line.quantity,
+    defaultUnitPrice: line.unitPrice,
+    sortOrder,
+  }));
+}
+
 export const templatesRouter = createRouter({
   list: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db
@@ -144,6 +177,12 @@ export const templatesRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const itemRows = await resolveTemplateItemRows(
+        ctx.db,
+        ctx.practiceId,
+        input.items
+      );
+
       const [template] = await ctx.db
         .insert(treatmentTemplates)
         .values({
@@ -154,12 +193,12 @@ export const templatesRouter = createRouter({
         })
         .returning();
 
-      if (input.items.length > 0) {
+      if (itemRows.length > 0) {
         await ctx.db.insert(treatmentTemplateItems).values(
-          input.items.map((item) => ({
+          itemRows.map((item) => ({
             templateId: template!.id,
             itemType: item.itemType,
-            itemId: item.itemId ?? null,
+            itemId: item.itemId,
             description: item.description,
             defaultQuantity: item.defaultQuantity,
             defaultUnitPrice: item.defaultUnitPrice,
@@ -177,16 +216,32 @@ export const templatesRouter = createRouter({
       z.object({
         id: z.string().uuid(),
         name: z.string().min(1).max(255).optional(),
-        description: z.string().optional(),
-        category: z.string().max(128).optional(),
+        description: z.string().optional().nullable(),
+        category: z.string().max(128).optional().nullable(),
         isActive: z.boolean().optional(),
+        items: z
+          .array(
+            z.object({
+              itemType: templateItemTypeSchema,
+              itemId: z.string().uuid().optional(),
+              description: z.string().min(1).max(500),
+              defaultQuantity: z.number().int().min(1).default(1),
+              defaultUnitPrice: z.string().refine(
+                (v) => !isNaN(parseFloat(v)) && parseFloat(v) >= 0,
+                "Must be a valid non-negative number"
+              ),
+              sortOrder: z.number().int().min(0).default(0),
+            })
+          )
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input;
-      const [template] = await ctx.db
-        .update(treatmentTemplates)
-        .set(updates)
+      const { id, items, ...updates } = input;
+
+      const [existing] = await ctx.db
+        .select({ id: treatmentTemplates.id })
+        .from(treatmentTemplates)
         .where(
           and(
             eq(treatmentTemplates.id, id),
@@ -194,16 +249,64 @@ export const templatesRouter = createRouter({
             isNull(treatmentTemplates.deletedAt)
           )
         )
-        .returning();
+        .limit(1);
 
-      if (!template) {
+      if (!existing) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Treatment template not found",
         });
       }
 
-      return template;
+      const itemRows =
+        items !== undefined
+          ? await resolveTemplateItemRows(ctx.db, ctx.practiceId, items)
+          : null;
+
+      const [template] = await ctx.db
+        .update(treatmentTemplates)
+        .set({
+          ...(updates.name !== undefined ? { name: updates.name } : {}),
+          ...(updates.description !== undefined
+            ? { description: updates.description }
+            : {}),
+          ...(updates.category !== undefined
+            ? { category: updates.category }
+            : {}),
+          ...(updates.isActive !== undefined
+            ? { isActive: updates.isActive }
+            : {}),
+        })
+        .where(eq(treatmentTemplates.id, id))
+        .returning();
+
+      if (itemRows) {
+        await ctx.db
+          .update(treatmentTemplateItems)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              eq(treatmentTemplateItems.templateId, id),
+              isNull(treatmentTemplateItems.deletedAt)
+            )
+          );
+
+        if (itemRows.length > 0) {
+          await ctx.db.insert(treatmentTemplateItems).values(
+            itemRows.map((item) => ({
+              templateId: id,
+              itemType: item.itemType,
+              itemId: item.itemId,
+              description: item.description,
+              defaultQuantity: item.defaultQuantity,
+              defaultUnitPrice: item.defaultUnitPrice,
+              sortOrder: item.sortOrder,
+            }))
+          );
+        }
+      }
+
+      return template!;
     }),
 
   delete: protectedProcedure
@@ -228,6 +331,16 @@ export const templatesRouter = createRouter({
           message: "Treatment template not found",
         });
       }
+
+      await ctx.db
+        .update(treatmentTemplateItems)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(treatmentTemplateItems.templateId, input.id),
+            isNull(treatmentTemplateItems.deletedAt)
+          )
+        );
 
       return template;
     }),
@@ -269,20 +382,33 @@ export const templatesRouter = createRouter({
         });
       }
 
-      const [item] = await ctx.db
-        .insert(treatmentTemplateItems)
-        .values({
-          templateId: input.templateId,
+      const itemRows = await resolveTemplateItemRows(ctx.db, ctx.practiceId, [
+        {
           itemType: input.itemType,
-          itemId: input.itemId ?? null,
+          itemId: input.itemId,
           description: input.description,
           defaultQuantity: input.defaultQuantity,
           defaultUnitPrice: input.defaultUnitPrice,
           sortOrder: input.sortOrder,
-        })
+        },
+      ]);
+
+      const inserted = await ctx.db
+        .insert(treatmentTemplateItems)
+        .values(
+          itemRows.map((item) => ({
+            templateId: input.templateId,
+            itemType: item.itemType,
+            itemId: item.itemId,
+            description: item.description,
+            defaultQuantity: item.defaultQuantity,
+            defaultUnitPrice: item.defaultUnitPrice,
+            sortOrder: item.sortOrder,
+          }))
+        )
         .returning();
 
-      return item!;
+      return inserted[0]!;
     }),
 
   removeItem: protectedProcedure

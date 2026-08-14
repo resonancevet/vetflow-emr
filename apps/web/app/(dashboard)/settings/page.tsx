@@ -1921,28 +1921,9 @@ function TemplatesTab() {
   const { data: templateList, isLoading } = trpc.templates.list.useQuery();
   const { data: services } = trpc.billing.listServices.useQuery();
   const { data: kits } = trpc.inventoryKits.list.useQuery();
-  const createMutation = trpc.templates.create.useMutation({
-    onSuccess: () => {
-      utils.templates.list.invalidate();
-      setShowAdd(false);
-      resetAddForm();
-      toast.success("Template created");
-    },
-    onError: (err) => {
-      toast.error(err.message);
-    },
-  });
-  const updateMutation = trpc.templates.update.useMutation({
-    onSuccess: () => {
-      utils.templates.list.invalidate();
-      toast.success("Template updated");
-    },
-    onError: (err) => {
-      toast.error(err.message);
-    },
-  });
 
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
     name: "",
     description: "",
@@ -1961,6 +1942,8 @@ function TemplatesTab() {
     null
   );
 
+  const showForm = showAdd || !!editingId;
+
   const resetAddForm = () => {
     setAddForm({ name: "", description: "", category: "other" });
     setAddItems([
@@ -1973,6 +1956,49 @@ function TemplatesTab() {
       },
     ]);
   };
+
+  const closeForm = () => {
+    setShowAdd(false);
+    setEditingId(null);
+    resetAddForm();
+  };
+
+  const createMutation = trpc.templates.create.useMutation({
+    onSuccess: () => {
+      utils.templates.list.invalidate();
+      closeForm();
+      toast.success("Template created");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+  const updateMutation = trpc.templates.update.useMutation({
+    onSuccess: (_data, variables) => {
+      utils.templates.list.invalidate();
+      utils.templates.getById.invalidate({ id: variables.id });
+      if (variables.items) {
+        closeForm();
+      }
+      toast.success("Template updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+  const deleteMutation = trpc.templates.delete.useMutation({
+    onSuccess: () => {
+      utils.templates.list.invalidate();
+      setSelectedTemplateId(null);
+      closeForm();
+      toast.success("Template deleted");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const saving = createMutation.isPending || updateMutation.isPending;
 
   const addItemRow = () => {
     setAddItems([
@@ -1991,14 +2017,109 @@ function TemplatesTab() {
     setAddItems(addItems.filter((_, i) => i !== index));
   };
 
-  const updateItem = (
-    index: number,
-    patch: Partial<TemplateItem>
-  ) => {
+  const updateItem = (index: number, patch: Partial<TemplateItem>) => {
     setAddItems(
       addItems.map((item, i) => (i === index ? { ...item, ...patch } : item))
     );
   };
+
+  const buildItemsPayload = () =>
+    addItems
+      .filter((i) => i.description.trim())
+      .map((i, sortOrder) => ({
+        itemType: i.itemType,
+        itemId: i.itemId,
+        description: i.description.trim(),
+        defaultQuantity: i.defaultQuantity,
+        defaultUnitPrice: i.defaultUnitPrice,
+        sortOrder,
+      }));
+
+  async function startEdit(templateId: string) {
+    try {
+      const detail = await utils.templates.getById.fetch({ id: templateId });
+      setSelectedTemplateId(null);
+      setShowAdd(false);
+      setEditingId(templateId);
+      setAddForm({
+        name: detail.name,
+        description: detail.description ?? "",
+        category: (TEMPLATE_CATEGORIES.includes(
+          detail.category as TemplateCategory
+        )
+          ? detail.category
+          : "other") as TemplateCategory,
+      });
+      setAddItems(
+        detail.items.length > 0
+          ? detail.items.map((item, sortOrder) => ({
+              itemType:
+                item.itemType === "service"
+                  ? ("service" as const)
+                  : item.itemType === "kit"
+                    ? ("kit" as const)
+                    : ("product" as const),
+              itemId: item.itemId ?? undefined,
+              product:
+                item.itemType === "product" && item.itemId
+                  ? {
+                      id: item.itemId,
+                      name: item.description,
+                      sku: null,
+                      unitPrice: item.defaultUnitPrice,
+                      stockQuantity: 0,
+                      units: null,
+                      category: null,
+                      lotNumber: null,
+                    }
+                  : null,
+              description: item.description,
+              defaultQuantity: item.defaultQuantity,
+              defaultUnitPrice: item.defaultUnitPrice,
+              sortOrder,
+            }))
+          : [
+              {
+                itemType: "product" as const,
+                description: "",
+                defaultQuantity: 1,
+                defaultUnitPrice: "0",
+                sortOrder: 0,
+              },
+            ]
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to load template"
+      );
+    }
+  }
+
+  function handleDelete(templateId: string, name: string) {
+    if (!confirm(`Delete template “${name}”? This cannot be undone.`)) return;
+    deleteMutation.mutate({ id: templateId });
+  }
+
+  function handleSave() {
+    const items = buildItemsPayload();
+    if (!addForm.name.trim() || items.length === 0) return;
+    if (editingId) {
+      updateMutation.mutate({
+        id: editingId,
+        name: addForm.name.trim(),
+        description: addForm.description.trim() || null,
+        category: addForm.category,
+        items,
+      });
+      return;
+    }
+    createMutation.mutate({
+      name: addForm.name.trim(),
+      description: addForm.description.trim() || undefined,
+      category: addForm.category,
+      items,
+    });
+  }
 
   const selectedTemplate = templateList?.find(
     (t) => t.id === selectedTemplateId
@@ -2017,10 +2138,10 @@ function TemplatesTab() {
   }
 
   // Detail view for a selected template
-  if (selectedTemplate) {
+  if (selectedTemplate && !showForm) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             size="sm"
             variant="ghost"
@@ -2043,6 +2164,14 @@ function TemplatesTab() {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => startEdit(selectedTemplate.id)}
+          >
+            <Pencil className="mr-1 h-3.5 w-3.5" />
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={updateMutation.isPending}
             onClick={() =>
               updateMutation.mutate({
@@ -2055,6 +2184,17 @@ function TemplatesTab() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             {selectedTemplate.isActive !== false ? "Deactivate" : "Activate"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={deleteMutation.isPending}
+            onClick={() =>
+              handleDelete(selectedTemplate.id, selectedTemplate.name)
+            }
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5 text-destructive" />
+            Delete
           </Button>
         </div>
 
@@ -2075,9 +2215,9 @@ function TemplatesTab() {
               </tr>
             </thead>
             <tbody>
-              {selectedTemplateDetail?.items?.map((item: any, i: number) => (
+              {selectedTemplateDetail?.items?.map((item, i) => (
                 <tr
-                  key={i}
+                  key={item.id ?? i}
                   className="border-b border-border last:border-0"
                 >
                   <td className="px-4 py-3 font-medium">{item.description}</td>
@@ -2092,7 +2232,8 @@ function TemplatesTab() {
                   </td>
                 </tr>
               ))}
-              {(!selectedTemplateDetail?.items || selectedTemplateDetail.items.length === 0) && (
+              {(!selectedTemplateDetail?.items ||
+                selectedTemplateDetail.items.length === 0) && (
                 <tr>
                   <td
                     colSpan={4}
@@ -2124,6 +2265,7 @@ function TemplatesTab() {
         </div>
         <Button
           onClick={() => {
+            setEditingId(null);
             setShowAdd(!showAdd);
             resetAddForm();
           }}
@@ -2134,9 +2276,11 @@ function TemplatesTab() {
         </Button>
       </div>
 
-      {showAdd && (
+      {showForm && (
         <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-          <h3 className="text-sm font-semibold">New Treatment Template</h3>
+          <h3 className="text-sm font-semibold">
+            {editingId ? "Edit Treatment Template" : "New Treatment Template"}
+          </h3>
           <div className="grid grid-cols-2 gap-3">
             <Input
               placeholder="Template name"
@@ -2347,43 +2491,22 @@ function TemplatesTab() {
             <Button
               size="sm"
               disabled={
-                !addForm.name ||
-                addItems.every((i) => !i.description) ||
-                createMutation.isPending
+                !addForm.name.trim() ||
+                addItems.every((i) => !i.description.trim()) ||
+                saving
               }
-              onClick={() =>
-                createMutation.mutate({
-                  ...addForm,
-                  description: addForm.description || undefined,
-                  items: addItems
-                    .filter((i) => i.description.trim())
-                    .map((i, sortOrder) => ({
-                      itemType: i.itemType,
-                      itemId: i.itemId,
-                      description: i.description.trim(),
-                      defaultQuantity: i.defaultQuantity,
-                      defaultUnitPrice: i.defaultUnitPrice,
-                      sortOrder,
-                    })),
-                })
-              }
+              onClick={handleSave}
             >
-              {createMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Create
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editingId ? "Save changes" : "Create"}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowAdd(false)}
-            >
+            <Button size="sm" variant="ghost" onClick={closeForm}>
               Cancel
             </Button>
           </div>
-          {createMutation.error && (
+          {(createMutation.error || updateMutation.error) && (
             <p className="text-sm text-destructive">
-              {createMutation.error.message}
+              {createMutation.error?.message || updateMutation.error?.message}
             </p>
           )}
         </div>
@@ -2395,7 +2518,6 @@ function TemplatesTab() {
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium">Name</th>
               <th className="px-4 py-3 text-left font-medium">Category</th>
-              <th className="px-4 py-3 text-left font-medium">Items</th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
               <th className="px-4 py-3 text-right font-medium">Actions</th>
             </tr>
@@ -2418,9 +2540,6 @@ function TemplatesTab() {
                     {template.category}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  —
-                </td>
                 <td className="px-4 py-3">
                   <span
                     className={cn(
@@ -2433,31 +2552,59 @@ function TemplatesTab() {
                     {template.isActive !== false ? "Active" : "Inactive"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateMutation.mutate({
-                        id: template.id,
-                        isActive: !template.isActive,
-                      });
-                    }}
-                  >
-                    {template.isActive !== false ? (
-                      <X className="h-4 w-4 text-destructive" />
-                    ) : (
-                      <Check className="h-4 w-4 text-green-600" />
-                    )}
-                  </Button>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void startEdit(template.id);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title={
+                        template.isActive !== false ? "Deactivate" : "Activate"
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateMutation.mutate({
+                          id: template.id,
+                          isActive: !template.isActive,
+                        });
+                      }}
+                    >
+                      {template.isActive !== false ? (
+                        <X className="h-4 w-4 text-destructive" />
+                      ) : (
+                        <Check className="h-4 w-4 text-green-600" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Delete"
+                      disabled={deleteMutation.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(template.id, template.name);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
             {templateList?.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={4}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
                   No templates configured.
