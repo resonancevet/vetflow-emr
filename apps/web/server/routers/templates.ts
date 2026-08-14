@@ -106,7 +106,7 @@ async function resolveTemplateItemRows(
 
 export const templatesRouter = createRouter({
   list: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.db
+    const templates = await ctx.db
       .select()
       .from(treatmentTemplates)
       .where(
@@ -116,6 +116,43 @@ export const templatesRouter = createRouter({
         )
       )
       .orderBy(asc(treatmentTemplates.name));
+
+    if (templates.length === 0) return [];
+
+    const items = await ctx.db
+      .select({
+        templateId: treatmentTemplateItems.templateId,
+        defaultQuantity: treatmentTemplateItems.defaultQuantity,
+        defaultUnitPrice: treatmentTemplateItems.defaultUnitPrice,
+      })
+      .from(treatmentTemplateItems)
+      .where(
+        and(
+          inArray(
+            treatmentTemplateItems.templateId,
+            templates.map((template) => template.id)
+          ),
+          isNull(treatmentTemplateItems.deletedAt)
+        )
+      );
+
+    return templates.map((template) => {
+      const templateItems = items.filter(
+        (item) => item.templateId === template.id
+      );
+      const total = templateItems.reduce((sum, item) => {
+        const price = parseFloat(item.defaultUnitPrice);
+        return (
+          sum +
+          item.defaultQuantity * (Number.isFinite(price) ? price : 0)
+        );
+      }, 0);
+      return {
+        ...template,
+        itemCount: templateItems.length,
+        total: total.toFixed(2),
+      };
+    });
   }),
 
   getById: protectedProcedure

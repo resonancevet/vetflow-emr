@@ -12,7 +12,10 @@ import {
   ProductPicker,
   type CatalogProduct,
 } from "@/components/inventory/product-picker";
-import { chargePriceEach } from "@/lib/inventory-price";
+import {
+  applyInventoryMarkup,
+  chargePriceEachWithMarkup,
+} from "@/lib/inventory-price";
 import { expandTemplateItems } from "@/lib/treatment-template";
 
 interface LineItem {
@@ -107,6 +110,8 @@ function NewInvoicePageContent() {
   const taxRatePercent =
     billingSettings.data?.effectiveTaxRatePercent ??
     (taxEnabled ? DEFAULT_TAX_RATE_PERCENT : 0);
+  const inventoryMarkupPercent =
+    billingSettings.data?.effectiveInventoryMarkupPercent ?? 0;
 
   // Mutation
   const utils = trpc.useUtils();
@@ -240,7 +245,7 @@ function NewInvoicePageContent() {
           id: crypto.randomUUID(),
           description: usage.productName,
           quantity: usage.quantity,
-          unitPrice: chargePriceEach(usage),
+          unitPrice: chargePriceEachWithMarkup(usage, inventoryMarkupPercent),
           itemType: "product",
           itemId: usage.productId,
           usageId: usage.id,
@@ -266,7 +271,13 @@ function NewInvoicePageContent() {
       const kits = needsKits
         ? await utils.inventoryKits.list.fetch()
         : [];
-      const lines = expandTemplateItems(template.items, kits);
+      const lines = expandTemplateItems(template.items, kits).map((item) => ({
+        ...item,
+        unitPrice:
+          item.itemType === "product"
+            ? applyInventoryMarkup(item.unitPrice, inventoryMarkupPercent)
+            : item.unitPrice,
+      }));
       setItems((prev) => [
         ...prev,
         ...lines.map((item) => ({
@@ -533,7 +544,7 @@ function NewInvoicePageContent() {
                 <li key={usage.id} className="text-muted-foreground">
                   {usage.productName} × {usage.quantity}
                   {usage.units ? ` ${usage.units}` : ""} · $
-                  {chargePriceEach(usage)}
+                  {chargePriceEachWithMarkup(usage, inventoryMarkupPercent)}
                 </li>
               ))}
             </ul>
@@ -560,6 +571,9 @@ function NewInvoicePageContent() {
                   .map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.name}
+                      {template.total
+                        ? ` — $${Number(template.total).toFixed(2)}`
+                        : ""}
                     </option>
                   ))}
               </select>
@@ -630,7 +644,9 @@ function NewInvoicePageContent() {
                       setSelectedProduct(p);
                       if (p) {
                         setItemDescription(p.name);
-                        setItemUnitPrice(chargePriceEach(p));
+                        setItemUnitPrice(
+                          chargePriceEachWithMarkup(p, inventoryMarkupPercent)
+                        );
                       }
                     }}
                   />

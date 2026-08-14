@@ -13,6 +13,9 @@ import {
   getEffectiveTaxRatePercent,
   getTaxRatePercent,
   isTaxEnabled,
+  getEffectiveInventoryMarkupPercent,
+  getInventoryMarkupPercent,
+  isInventoryMarkupEnabled,
   type PracticeSettingsJson,
 } from "@/lib/tax";
 import {
@@ -47,6 +50,11 @@ export const settingsRouter = createRouter({
       taxEnabled: isTaxEnabled(practice?.settings),
       taxRatePercent: getTaxRatePercent(practice?.settings),
       effectiveTaxRatePercent: getEffectiveTaxRatePercent(practice?.settings),
+      inventoryMarkupEnabled: isInventoryMarkupEnabled(practice?.settings),
+      inventoryMarkupPercent: getInventoryMarkupPercent(practice?.settings),
+      effectiveInventoryMarkupPercent: getEffectiveInventoryMarkupPercent(
+        practice?.settings
+      ),
     };
   }),
 
@@ -64,6 +72,8 @@ export const settingsRouter = createRouter({
           scheduleEndHour: z.number().int().min(1).max(24).optional(),
           taxRatePercent: z.number().min(0).max(100).optional(),
           taxEnabled: z.boolean().optional(),
+          inventoryMarkupEnabled: z.boolean().optional(),
+          inventoryMarkupPercent: z.number().min(0).max(1000).optional(),
         })
         .refine(
           (data) =>
@@ -77,10 +87,22 @@ export const settingsRouter = createRouter({
         )
     )
     .mutation(async ({ ctx, input }) => {
-      const { taxRatePercent, taxEnabled, ...practiceFields } = input;
+      const {
+        taxRatePercent,
+        taxEnabled,
+        inventoryMarkupEnabled,
+        inventoryMarkupPercent,
+        ...practiceFields
+      } = input;
       const setValues: Record<string, unknown> = { ...practiceFields };
 
-      if (taxRatePercent !== undefined || taxEnabled !== undefined) {
+      const touchesBillingSettings =
+        taxRatePercent !== undefined ||
+        taxEnabled !== undefined ||
+        inventoryMarkupEnabled !== undefined ||
+        inventoryMarkupPercent !== undefined;
+
+      if (touchesBillingSettings) {
         const [current] = await ctx.db
           .select({ settings: practices.settings })
           .from(practices)
@@ -92,6 +114,12 @@ export const settingsRouter = createRouter({
           ...existing,
           ...(taxRatePercent !== undefined ? { taxRatePercent } : {}),
           ...(taxEnabled !== undefined ? { taxEnabled } : {}),
+          ...(inventoryMarkupEnabled !== undefined
+            ? { inventoryMarkupEnabled }
+            : {}),
+          ...(inventoryMarkupPercent !== undefined
+            ? { inventoryMarkupPercent }
+            : {}),
         };
       }
 

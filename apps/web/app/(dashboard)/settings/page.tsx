@@ -189,6 +189,7 @@ function PracticeInfoTab() {
   const updateMutation = trpc.settings.updatePractice.useMutation({
     onSuccess: () => {
       utils.settings.getPractice.invalidate();
+      utils.settings.getBillingSettings.invalidate();
       toast.success("Practice info updated");
     },
     onError: (err) => {
@@ -207,12 +208,16 @@ function PracticeInfoTab() {
     scheduleEndHour: number;
     taxRatePercent: number;
     taxEnabled: boolean;
+    inventoryMarkupEnabled: boolean;
+    inventoryMarkupPercent: number;
   } | null>(null);
 
   // Initialize form when data loads
   const settingsJson = (practice?.settings ?? {}) as {
     taxRatePercent?: number;
     taxEnabled?: boolean;
+    inventoryMarkupEnabled?: boolean;
+    inventoryMarkupPercent?: number;
   };
   const current = form ?? {
     name: practice?.name ?? "",
@@ -228,6 +233,11 @@ function PracticeInfoTab() {
         ? settingsJson.taxRatePercent
         : 8,
     taxEnabled: settingsJson.taxEnabled !== false,
+    inventoryMarkupEnabled: settingsJson.inventoryMarkupEnabled === true,
+    inventoryMarkupPercent:
+      typeof settingsJson.inventoryMarkupPercent === "number"
+        ? settingsJson.inventoryMarkupPercent
+        : 0,
   };
 
   if (isLoading) {
@@ -303,7 +313,8 @@ function PracticeInfoTab() {
         <div className="border-t border-border pt-4">
           <h3 className="text-sm font-semibold">Billing</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Sales tax automatically applied to new invoices and estimates.
+            Sales tax and inventory markup applied to new invoices and
+            estimates.
           </p>
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
@@ -339,6 +350,49 @@ function PracticeInfoTab() {
               className="max-w-[10rem]"
             />
           </label>
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={current.inventoryMarkupEnabled}
+              onChange={(e) =>
+                setForm({
+                  ...current,
+                  inventoryMarkupEnabled: e.target.checked,
+                })
+              }
+              className="h-4 w-4 rounded border-input"
+            />
+            <span className="font-medium">
+              Automatically add inventory markup
+            </span>
+          </label>
+          <label
+            className={cn(
+              "mt-3 block space-y-1.5",
+              !current.inventoryMarkupEnabled && "opacity-50"
+            )}
+          >
+            <span className="text-sm font-medium">Markup (%)</span>
+            <Input
+              type="number"
+              min={0}
+              max={1000}
+              step={0.01}
+              disabled={!current.inventoryMarkupEnabled}
+              value={current.inventoryMarkupPercent}
+              onChange={(e) =>
+                handleChange(
+                  "inventoryMarkupPercent",
+                  parseFloat(e.target.value) || 0
+                )
+              }
+              className="max-w-[10rem]"
+            />
+          </label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Markup is applied to inventory Cost/ct when adding products to
+            invoices and estimates.
+          </p>
         </div>
 
         <div className="border-t border-border pt-4">
@@ -2212,6 +2266,7 @@ function TemplatesTab() {
                 <th className="px-4 py-3 text-left font-medium">Type</th>
                 <th className="px-4 py-3 text-left font-medium">Quantity</th>
                 <th className="px-4 py-3 text-right font-medium">Unit Price</th>
+                <th className="px-4 py-3 text-right font-medium">Line total</th>
               </tr>
             </thead>
             <tbody>
@@ -2230,13 +2285,19 @@ function TemplatesTab() {
                   <td className="px-4 py-3 text-right text-muted-foreground">
                     ${Number(item.defaultUnitPrice).toFixed(2)}
                   </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                    $
+                    {(
+                      item.defaultQuantity * Number(item.defaultUnitPrice)
+                    ).toFixed(2)}
+                  </td>
                 </tr>
               ))}
               {(!selectedTemplateDetail?.items ||
                 selectedTemplateDetail.items.length === 0) && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-8 text-center text-muted-foreground"
                   >
                     No items in this template.
@@ -2246,6 +2307,24 @@ function TemplatesTab() {
             </tbody>
           </table>
         </div>
+        {(selectedTemplateDetail?.items?.length ?? 0) > 0 && (
+          <div className="flex justify-end text-sm">
+            <div className="rounded-lg border border-border px-4 py-2">
+              <span className="text-muted-foreground">Estimate total: </span>
+              <span className="font-semibold tabular-nums">
+                $
+                {selectedTemplateDetail!.items
+                  .reduce(
+                    (sum, item) =>
+                      sum +
+                      item.defaultQuantity * Number(item.defaultUnitPrice),
+                    0
+                  )
+                  .toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2485,6 +2564,24 @@ function TemplatesTab() {
               <Plus className="mr-2 h-4 w-4" />
               Add Item
             </Button>
+            {addItems.some((i) => i.description.trim()) && (
+              <p className="text-sm text-muted-foreground">
+                Estimate total:{" "}
+                <span className="font-medium text-foreground tabular-nums">
+                  $
+                  {addItems
+                    .filter((i) => i.description.trim())
+                    .reduce(
+                      (sum, i) =>
+                        sum +
+                        i.defaultQuantity *
+                          (parseFloat(i.defaultUnitPrice) || 0),
+                      0
+                    )
+                    .toFixed(2)}
+                </span>
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -2518,6 +2615,7 @@ function TemplatesTab() {
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium">Name</th>
               <th className="px-4 py-3 text-left font-medium">Category</th>
+              <th className="px-4 py-3 text-right font-medium">Total</th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
               <th className="px-4 py-3 text-right font-medium">Actions</th>
             </tr>
@@ -2539,6 +2637,9 @@ function TemplatesTab() {
                   >
                     {template.category}
                   </span>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  ${Number(template.total ?? 0).toFixed(2)}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -2604,7 +2705,7 @@ function TemplatesTab() {
             {templateList?.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
                   No templates configured.
