@@ -13,9 +13,10 @@ import {
   products,
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
-import { applyInventoryMarkup } from "@/lib/inventory-price";
 import {
   expandTemplateItems,
+  applyMarkupToTemplateLines,
+  templateEstimateSubtotal,
   type KitForTemplate,
 } from "@/lib/treatment-template";
 
@@ -107,6 +108,15 @@ async function resolveTemplateItemRows(
 
 export const templatesRouter = createRouter({
   list: protectedProcedure.query(async ({ ctx }) => {
+    const [practice] = await ctx.db
+      .select({ settings: practices.settings })
+      .from(practices)
+      .where(eq(practices.id, ctx.practiceId))
+      .limit(1);
+    const markupPercent = getEffectiveInventoryMarkupPercent(
+      practice?.settings
+    );
+
     const templates = await ctx.db
       .select()
       .from(treatmentTemplates)
@@ -123,6 +133,7 @@ export const templatesRouter = createRouter({
     const items = await ctx.db
       .select({
         templateId: treatmentTemplateItems.templateId,
+        itemType: treatmentTemplateItems.itemType,
         defaultQuantity: treatmentTemplateItems.defaultQuantity,
         defaultUnitPrice: treatmentTemplateItems.defaultUnitPrice,
       })
@@ -141,17 +152,10 @@ export const templatesRouter = createRouter({
       const templateItems = items.filter(
         (item) => item.templateId === template.id
       );
-      const total = templateItems.reduce((sum, item) => {
-        const price = parseFloat(item.defaultUnitPrice);
-        return (
-          sum +
-          item.defaultQuantity * (Number.isFinite(price) ? price : 0)
-        );
-      }, 0);
       return {
         ...template,
         itemCount: templateItems.length,
-        total: total.toFixed(2),
+        total: templateEstimateSubtotal(templateItems, markupPercent),
       };
     });
   }),
@@ -565,7 +569,6 @@ export const templatesRouter = createRouter({
           .map((item) => item.itemId!)
       );
       const invoiceLines = expandTemplateItems(items, kits);
-
       const [practice] = await ctx.db
         .select({ settings: practices.settings })
         .from(practices)
@@ -574,17 +577,13 @@ export const templatesRouter = createRouter({
       const markupPercent = getEffectiveInventoryMarkupPercent(
         practice?.settings
       );
-      const pricedLines = invoiceLines.map((item) => {
-        const unitPrice =
-          item.itemType === "product"
-            ? applyInventoryMarkup(item.unitPrice, markupPercent)
-            : item.unitPrice;
-        return {
-          ...item,
-          unitPrice,
-          total: (item.quantity * parseFloat(unitPrice)).toFixed(2),
-        };
-      });
+      const pricedLines = applyMarkupToTemplateLines(
+        invoiceLines,
+        markupPercent
+      ).map((item) => ({
+        ...item,
+        total: (item.quantity * parseFloat(item.unitPrice)).toFixed(2),
+      }));
 
       await ctx.db.insert(invoiceItems).values(
         pricedLines.map((item) => ({

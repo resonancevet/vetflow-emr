@@ -40,6 +40,8 @@ import { kitKindLabel } from "@/lib/kit-kind";
 import {
   kitChargeTotal,
   kitInventoryName,
+  templateEstimateSubtotal,
+  templateLineEstimateAmount,
   type TemplateItemType,
 } from "@/lib/treatment-template";
 
@@ -390,8 +392,9 @@ function PracticeInfoTab() {
             />
           </label>
           <p className="mt-2 text-xs text-muted-foreground">
-            Markup is applied to inventory Cost/ct when adding products to
-            invoices and estimates.
+            Applied to inventory products and kits on invoices and estimates.
+            Services are not marked up. Template estimate totals include this
+            markup.
           </p>
         </div>
 
@@ -1975,6 +1978,9 @@ function TemplatesTab() {
   const { data: templateList, isLoading } = trpc.templates.list.useQuery();
   const { data: services } = trpc.billing.listServices.useQuery();
   const { data: kits } = trpc.inventoryKits.list.useQuery();
+  const { data: billingSettings } = trpc.settings.getBillingSettings.useQuery();
+  const inventoryMarkupPercent =
+    billingSettings?.effectiveInventoryMarkupPercent ?? 0;
 
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -2266,7 +2272,10 @@ function TemplatesTab() {
                 <th className="px-4 py-3 text-left font-medium">Type</th>
                 <th className="px-4 py-3 text-left font-medium">Quantity</th>
                 <th className="px-4 py-3 text-right font-medium">Unit Price</th>
-                <th className="px-4 py-3 text-right font-medium">Line total</th>
+                <th className="px-4 py-3 text-right font-medium">
+                  Line total
+                  {inventoryMarkupPercent > 0 ? " (w/ markup)" : ""}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -2287,8 +2296,9 @@ function TemplatesTab() {
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     $
-                    {(
-                      item.defaultQuantity * Number(item.defaultUnitPrice)
+                    {templateLineEstimateAmount(
+                      item,
+                      inventoryMarkupPercent
                     ).toFixed(2)}
                   </td>
                 </tr>
@@ -2310,17 +2320,19 @@ function TemplatesTab() {
         {(selectedTemplateDetail?.items?.length ?? 0) > 0 && (
           <div className="flex justify-end text-sm">
             <div className="rounded-lg border border-border px-4 py-2">
-              <span className="text-muted-foreground">Estimate total: </span>
+              <span className="text-muted-foreground">
+                Estimate total
+                {inventoryMarkupPercent > 0
+                  ? ` (incl. ${inventoryMarkupPercent}% product markup)`
+                  : ""}
+                :{" "}
+              </span>
               <span className="font-semibold tabular-nums">
                 $
-                {selectedTemplateDetail!.items
-                  .reduce(
-                    (sum, item) =>
-                      sum +
-                      item.defaultQuantity * Number(item.defaultUnitPrice),
-                    0
-                  )
-                  .toFixed(2)}
+                {templateEstimateSubtotal(
+                  selectedTemplateDetail!.items,
+                  inventoryMarkupPercent
+                )}
               </span>
             </div>
           </div>
@@ -2566,19 +2578,17 @@ function TemplatesTab() {
             </Button>
             {addItems.some((i) => i.description.trim()) && (
               <p className="text-sm text-muted-foreground">
-                Estimate total:{" "}
+                Estimate total
+                {inventoryMarkupPercent > 0
+                  ? ` (incl. ${inventoryMarkupPercent}% product markup)`
+                  : ""}
+                :{" "}
                 <span className="font-medium text-foreground tabular-nums">
                   $
-                  {addItems
-                    .filter((i) => i.description.trim())
-                    .reduce(
-                      (sum, i) =>
-                        sum +
-                        i.defaultQuantity *
-                          (parseFloat(i.defaultUnitPrice) || 0),
-                      0
-                    )
-                    .toFixed(2)}
+                  {templateEstimateSubtotal(
+                    addItems.filter((i) => i.description.trim()),
+                    inventoryMarkupPercent
+                  )}
                 </span>
               </p>
             )}
@@ -2615,7 +2625,9 @@ function TemplatesTab() {
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 text-left font-medium">Name</th>
               <th className="px-4 py-3 text-left font-medium">Category</th>
-              <th className="px-4 py-3 text-right font-medium">Total</th>
+              <th className="px-4 py-3 text-right font-medium">
+                Estimate total
+              </th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
               <th className="px-4 py-3 text-right font-medium">Actions</th>
             </tr>

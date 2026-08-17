@@ -12,11 +12,11 @@ import {
   ProductPicker,
   type CatalogProduct,
 } from "@/components/inventory/product-picker";
+import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
 import {
-  applyInventoryMarkup,
-  chargePriceEachWithMarkup,
-} from "@/lib/inventory-price";
-import { expandTemplateItems } from "@/lib/treatment-template";
+  expandTemplateItems,
+  applyMarkupToTemplateLines,
+} from "@/lib/treatment-template";
 
 interface LineItem {
   id: string;
@@ -271,13 +271,10 @@ function NewInvoicePageContent() {
       const kits = needsKits
         ? await utils.inventoryKits.list.fetch()
         : [];
-      const lines = expandTemplateItems(template.items, kits).map((item) => ({
-        ...item,
-        unitPrice:
-          item.itemType === "product"
-            ? applyInventoryMarkup(item.unitPrice, inventoryMarkupPercent)
-            : item.unitPrice,
-      }));
+      const lines = applyMarkupToTemplateLines(
+        expandTemplateItems(template.items, kits),
+        inventoryMarkupPercent
+      );
       setItems((prev) => [
         ...prev,
         ...lines.map((item) => ({
