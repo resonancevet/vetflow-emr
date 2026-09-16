@@ -30,6 +30,22 @@ function formatTime(date: Date | string) {
   });
 }
 
+function formatAppointmentWhen(date: Date | string, focusDay: Date) {
+  const d = new Date(date);
+  const sameDay =
+    d.getFullYear() === focusDay.getFullYear() &&
+    d.getMonth() === focusDay.getMonth() &&
+    d.getDate() === focusDay.getDate();
+  if (sameDay) return formatTime(d);
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 const kpiConfig = [
   {
     key: "todayAppointments" as const,
@@ -166,10 +182,16 @@ export default function DashboardPage() {
       .slice(0, 10);
 
   const dayOffset = showNextDay ? 1 : 0;
+  const focusDay = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + dayOffset
+  );
 
   const upcoming = trpc.appointments.list.useQuery({
     startDate: toDateStr(dayOffset),
-    endDate: toDateStr(dayOffset + 1),
+    // Exclusive-ish upper bound (~90 days ahead), matching prior day-window pattern.
+    endDate: toDateStr(dayOffset + 91),
   });
 
   const upcomingAppointments = (upcoming.data ?? [])
@@ -179,6 +201,10 @@ export default function DashboardPage() {
         a.status !== "cancelled" &&
         a.status !== "no_show"
     )
+    .filter((a) => {
+      if (showNextDay) return true;
+      return new Date(a.startTime) >= now;
+    })
     .slice(0, 5);
 
   const pendingRequests = requests.data ?? [];
@@ -375,7 +401,7 @@ export default function DashboardPage() {
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-heading text-lg font-semibold">
-            {showNextDay ? "Tomorrow's Appointments" : "Upcoming Appointments"}
+            Upcoming Appointments
           </h2>
         </div>
         <div className="space-y-2 p-4">
@@ -385,9 +411,7 @@ export default function DashboardPage() {
             ))
           ) : upcomingAppointments.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              {showNextDay
-                ? "No appointments scheduled for tomorrow."
-                : "No upcoming appointments today."}
+              No upcoming appointments scheduled.
             </p>
           ) : (
             upcomingAppointments.map((appt) => (
@@ -395,9 +419,9 @@ export default function DashboardPage() {
                 key={appt.id}
                 className="flex items-center gap-4 rounded-md border border-border px-4 py-3"
               >
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
                   <Clock className="h-3.5 w-3.5" />
-                  <span>{formatTime(appt.startTime)}</span>
+                  <span>{formatAppointmentWhen(appt.startTime, focusDay)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
