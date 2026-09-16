@@ -46,6 +46,14 @@ function formatAppointmentWhen(date: Date | string, focusDay: Date) {
   });
 }
 
+function toScheduleDateParam(date: Date | string) {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const kpiConfig = [
   {
     key: "todayAppointments" as const,
@@ -421,14 +429,50 @@ export default function DashboardPage() {
               >
                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
                   <Clock className="h-3.5 w-3.5" />
-                  <span>{formatAppointmentWhen(appt.startTime, focusDay)}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/schedule?date=${toScheduleDateParam(appt.startTime)}&appointment=${appt.id}`
+                      )
+                    }
+                    className="hover:underline focus-visible:underline focus-visible:outline-none"
+                  >
+                    {formatAppointmentWhen(appt.startTime, focusDay)}
+                  </button>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
-                    {appt.patientName ?? "Unknown Patient"}
-                    {appt.clientLastName && (
+                    {appt.patientId ? (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/patients/${appt.patientId}`)}
+                        className="hover:underline focus-visible:underline focus-visible:outline-none"
+                      >
+                        {appt.patientName ?? "Unknown Patient"}
+                      </button>
+                    ) : (
+                      (appt.patientName ?? "Unknown Patient")
+                    )}
+                    {(appt.clientFirstName || appt.clientLastName) && (
                       <span className="ml-1 font-normal text-muted-foreground">
-                        ({appt.clientFirstName} {appt.clientLastName})
+                        (
+                        {appt.clientId ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(`/clients/${appt.clientId}`)
+                            }
+                            className="hover:underline focus-visible:underline focus-visible:outline-none"
+                          >
+                            {appt.clientFirstName} {appt.clientLastName}
+                          </button>
+                        ) : (
+                          <>
+                            {appt.clientFirstName} {appt.clientLastName}
+                          </>
+                        )}
+                        )
                       </span>
                     )}
                   </p>

@@ -314,6 +314,7 @@ function AppointmentBlock({
   return (
     <button
       type="button"
+      data-appointment-id={appointment.id}
       onClick={onClick}
       className="absolute rounded-md px-2 py-1 text-left text-xs lg:text-sm leading-tight overflow-hidden cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 min-h-11"
       style={{
@@ -1060,6 +1061,7 @@ function SchedulePageContent() {
   }, []);
 
   const searchParams = useSearchParams();
+  const appointmentParam = searchParams.get("appointment");
   const [currentDate, setCurrentDate] = useState(() => {
     const raw = searchParams.get("date");
     if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
@@ -1082,6 +1084,7 @@ function SchedulePageContent() {
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingDefaultTime, setBookingDefaultTime] = useState<string | undefined>(undefined);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const openedFromQueryRef = useRef<string | null>(null);
 
   const { data: scheduleHours } = trpc.appointments.getScheduleHours.useQuery();
   const startHour = scheduleHours?.startHour ?? DEFAULT_START_HOUR;
@@ -1101,6 +1104,22 @@ function SchedulePageContent() {
   const displayAppointments: Appointment[] | null = appointments
     ? (appointments as unknown as Appointment[])
     : null;
+
+  useEffect(() => {
+    if (!appointmentParam || !displayAppointments) return;
+    if (openedFromQueryRef.current === appointmentParam) return;
+    const found = displayAppointments.find((a) => a.id === appointmentParam);
+    if (!found) return;
+    openedFromQueryRef.current = appointmentParam;
+    setSelectedAppointment(found);
+    // Scroll the day grid to the appointment after layout.
+    requestAnimationFrame(() => {
+      const el = document.querySelector(
+        `[data-appointment-id="${appointmentParam}"]`
+      );
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, [appointmentParam, displayAppointments]);
 
   const updateStatus = trpc.appointments.updateStatus.useMutation();
 
