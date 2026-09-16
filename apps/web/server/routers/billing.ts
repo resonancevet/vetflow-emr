@@ -13,6 +13,8 @@ import {
   users,
   practices,
   inventoryUsages,
+  servicePackageInstallments,
+  servicePackageSales,
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
 import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
@@ -664,7 +666,15 @@ export const billingRouter = createRouter({
       z.object({
         invoiceId: z.string().uuid(),
         amount: z.string().refine((v) => parseFloat(v) > 0, "Amount must be positive"),
-        method: z.enum(["cash", "credit_card", "debit_card", "check", "online", "other"]),
+        method: z.enum([
+          "cash",
+          "credit_card",
+          "debit_card",
+          "check",
+          "online",
+          "venmo",
+          "other",
+        ]),
         notes: z.string().optional(),
       })
     )
@@ -714,6 +724,60 @@ export const billingRouter = createRouter({
             eq(invoices.practiceId, ctx.practiceId)
           )
         );
+
+      if (updates.status === "paid") {
+        const [installment] = await ctx.db
+          .select({
+            id: servicePackageInstallments.id,
+            saleId: servicePackageInstallments.saleId,
+          })
+          .from(servicePackageInstallments)
+          .where(
+            and(
+              eq(servicePackageInstallments.invoiceId, input.invoiceId),
+              isNull(servicePackageInstallments.deletedAt)
+            )
+          )
+          .limit(1);
+        if (installment) {
+          await ctx.db
+            .update(servicePackageInstallments)
+            .set({ status: "paid", updatedAt: new Date() })
+            .where(eq(servicePackageInstallments.id, installment.id));
+
+          const remaining = await ctx.db
+            .select({ id: servicePackageInstallments.id })
+            .from(servicePackageInstallments)
+            .where(
+              and(
+                eq(servicePackageInstallments.saleId, installment.saleId),
+                isNull(servicePackageInstallments.deletedAt),
+                inArray(servicePackageInstallments.status, [
+                  "scheduled",
+                  "invoiced",
+                ])
+              )
+            )
+            .limit(1);
+
+          if (remaining.length === 0) {
+            await ctx.db
+              .update(servicePackageSales)
+              .set({ status: "completed", updatedAt: new Date() })
+              .where(eq(servicePackageSales.id, installment.saleId));
+          } else {
+            await ctx.db
+              .update(servicePackageSales)
+              .set({ status: "active", updatedAt: new Date() })
+              .where(
+                and(
+                  eq(servicePackageSales.id, installment.saleId),
+                  eq(servicePackageSales.status, "past_due")
+                )
+              );
+          }
+        }
+      }
 
       return payment!;
     }),

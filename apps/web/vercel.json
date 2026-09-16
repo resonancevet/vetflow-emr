@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/lock-records",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/package-billing",
+      "schedule": "15 6 * * *"
     }
   ]
 }

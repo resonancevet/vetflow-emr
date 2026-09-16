@@ -22,6 +22,7 @@ import {
   Layers,
   ScrollText,
   Package,
+  Gift,
   DollarSign,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -31,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { InventoryKitsTab } from "@/components/settings/inventory-kits-tab";
 import { ServicesCatalogTab } from "@/components/settings/services-catalog-tab";
+import { ServicePackagesTab } from "@/components/settings/service-packages-tab";
 import {
   ProductPicker,
   type CatalogProduct,
@@ -54,6 +56,7 @@ type Tab =
   | "data"
   | "templates"
   | "services"
+  | "servicePackages"
   | "inventoryKits"
   | "audit";
 
@@ -65,6 +68,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "data", label: "Data", icon: Database },
   { id: "templates", label: "Templates", icon: Layers },
   { id: "services", label: "Services", icon: DollarSign },
+  { id: "servicePackages", label: "Packages", icon: Gift },
   { id: "inventoryKits", label: "Inventory Kits", icon: Package },
   { id: "audit", label: "Audit Log", icon: ScrollText },
 ];
@@ -177,6 +181,7 @@ export default function SettingsPage() {
         {activeTab === "data" && <DataTab />}
         {activeTab === "templates" && <TemplatesTab />}
         {activeTab === "services" && <ServicesCatalogTab />}
+        {activeTab === "servicePackages" && <ServicePackagesTab />}
         {activeTab === "inventoryKits" && <InventoryKitsTab />}
         {activeTab === "audit" && <AuditLogTab />}
       </div>
@@ -212,6 +217,7 @@ function PracticeInfoTab() {
     taxEnabled: boolean;
     inventoryMarkupEnabled: boolean;
     inventoryMarkupPercent: number;
+    venmoHandle: string;
   } | null>(null);
 
   // Initialize form when data loads
@@ -220,6 +226,7 @@ function PracticeInfoTab() {
     taxEnabled?: boolean;
     inventoryMarkupEnabled?: boolean;
     inventoryMarkupPercent?: number;
+    venmoHandle?: string;
   };
   const current = form ?? {
     name: practice?.name ?? "",
@@ -240,6 +247,10 @@ function PracticeInfoTab() {
       typeof settingsJson.inventoryMarkupPercent === "number"
         ? settingsJson.inventoryMarkupPercent
         : 0,
+    venmoHandle:
+      typeof settingsJson.venmoHandle === "string"
+        ? settingsJson.venmoHandle
+        : "",
   };
 
   if (isLoading) {
@@ -396,6 +407,20 @@ function PracticeInfoTab() {
             Services are not marked up. Template estimate totals include this
             markup.
           </p>
+          <label className="mt-4 block space-y-1.5">
+            <span className="text-sm font-medium">Venmo handle</span>
+            <Input
+              value={current.venmoHandle}
+              onChange={(e) => handleChange("venmoHandle", e.target.value)}
+              placeholder="@YourPractice"
+              className="max-w-[16rem]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown as a payment option when recording package and invoice
+              payments. Clients pay you on Venmo; staff records the payment
+              here.
+            </p>
+          </label>
         </div>
 
         <div className="border-t border-border pt-4">

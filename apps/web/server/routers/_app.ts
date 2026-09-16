@@ -24,6 +24,7 @@ import { clientAlertsRouter } from "./client-alerts";
 import { auditRouter } from "./audit";
 import { complianceRouter } from "./compliance";
 import { inventoryKitsRouter } from "./inventory-kits";
+import { servicePackagesRouter } from "./service-packages";
 
 export const appRouter = createRouter({
   auth: authRouter,
@@ -51,6 +52,7 @@ export const appRouter = createRouter({
   audit: auditRouter,
   compliance: complianceRouter,
   inventoryKits: inventoryKitsRouter,
+  servicePackages: servicePackagesRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -69,11 +69,6 @@ export function InventoryKitsTab() {
     onError: (err) => toast.error(err.message),
   });
 
-  const toggleActive = trpc.inventoryKits.update.useMutation({
-    onSuccess: () => utils.inventoryKits.list.invalidate(),
-    onError: (err) => toast.error(err.message),
-  });
-
   function resetForm() {
     setEditingId(null);
     setShowForm(false);
@@ -450,18 +445,6 @@ export function InventoryKitsTab() {
                       onClick={() => startEdit(kit)}
                     >
                       <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        toggleActive.mutate({
-                          id: kit.id,
-                          isActive: !kit.isActive,
-                        })
-                      }
-                    >
-                      {kit.isActive ? "Deactivate" : "Activate"}
                     </Button>
                     <Button
                       size="sm"

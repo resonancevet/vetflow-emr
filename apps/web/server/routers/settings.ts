@@ -16,6 +16,7 @@ import {
   getEffectiveInventoryMarkupPercent,
   getInventoryMarkupPercent,
   isInventoryMarkupEnabled,
+  getVenmoHandle,
   type PracticeSettingsJson,
 } from "@/lib/tax";
 import {
@@ -55,6 +56,7 @@ export const settingsRouter = createRouter({
       effectiveInventoryMarkupPercent: getEffectiveInventoryMarkupPercent(
         practice?.settings
       ),
+      venmoHandle: getVenmoHandle(practice?.settings),
     };
   }),
 
@@ -74,6 +76,7 @@ export const settingsRouter = createRouter({
           taxEnabled: z.boolean().optional(),
           inventoryMarkupEnabled: z.boolean().optional(),
           inventoryMarkupPercent: z.number().min(0).max(1000).optional(),
+          venmoHandle: z.string().max(64).optional(),
         })
         .refine(
           (data) =>
@@ -92,6 +95,7 @@ export const settingsRouter = createRouter({
         taxEnabled,
         inventoryMarkupEnabled,
         inventoryMarkupPercent,
+        venmoHandle,
         ...practiceFields
       } = input;
       const setValues: Record<string, unknown> = { ...practiceFields };
@@ -100,7 +104,8 @@ export const settingsRouter = createRouter({
         taxRatePercent !== undefined ||
         taxEnabled !== undefined ||
         inventoryMarkupEnabled !== undefined ||
-        inventoryMarkupPercent !== undefined;
+        inventoryMarkupPercent !== undefined ||
+        venmoHandle !== undefined;
 
       if (touchesBillingSettings) {
         const [current] = await ctx.db
@@ -119,6 +124,9 @@ export const settingsRouter = createRouter({
             : {}),
           ...(inventoryMarkupPercent !== undefined
             ? { inventoryMarkupPercent }
+            : {}),
+          ...(venmoHandle !== undefined
+            ? { venmoHandle: venmoHandle.trim() }
             : {}),
         };
       }

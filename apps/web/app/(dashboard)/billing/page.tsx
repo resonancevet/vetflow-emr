@@ -49,6 +49,7 @@ const PAYMENT_METHODS = [
   { label: "Credit Card", value: "credit_card" },
   { label: "Debit Card", value: "debit_card" },
   { label: "Check", value: "check" },
+  { label: "Venmo", value: "venmo" },
   { label: "Online", value: "online" },
   { label: "Other", value: "other" },
 ] as const;
@@ -145,12 +146,17 @@ export default function BillingPage() {
             Invoices and payments
           </p>
         </div>
-        <Button asChild>
-          <Link href="/billing/new">
-            <Plus className="mr-1 h-4 w-4" />
-            New Invoice
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/billing/packages">Packages</Link>
+          </Button>
+          <Button asChild>
+            <Link href="/billing/new">
+              <Plus className="mr-1 h-4 w-4" />
+              New Invoice
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Status filter tabs */}

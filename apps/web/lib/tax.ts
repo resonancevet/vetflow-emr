@@ -10,8 +10,15 @@ export type PracticeSettingsJson = {
   inventoryMarkupEnabled?: boolean;
   /** Percent markup applied to inventory unit prices when enabled. */
   inventoryMarkupPercent?: number;
+  /** Venmo handle shown on invoices / payment instructions (e.g. @ClinicName). */
+  venmoHandle?: string;
   [key: string]: unknown;
 };
+
+export function getVenmoHandle(settings: unknown): string {
+  const raw = (settings as PracticeSettingsJson | null | undefined)?.venmoHandle;
+  return typeof raw === "string" ? raw.trim() : "";
+}
 
 export const DEFAULT_INVENTORY_MARKUP_PERCENT = 0;
 

@@ -219,6 +219,7 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "debit_card",
   "check",
   "online",
+  "venmo",
   "other",
 ]);
 
