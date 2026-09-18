@@ -23,12 +23,16 @@ export type KitForTemplate = {
   kind?: string | null;
   isActive?: boolean;
   items: Array<{
-    productId: string;
+    itemType?: string | null;
+    productId?: string | null;
+    serviceId?: string | null;
     quantity: number;
-    productName: string;
+    productName?: string | null;
     productPlanName?: string | null;
     unitPrice?: string | number | null;
     costPrice?: string | number | null;
+    serviceName?: string | null;
+    serviceDefaultPrice?: string | number | null;
   }>;
 };
 
@@ -44,11 +48,29 @@ export function kitInventoryName(kit: { name: string }): string {
   return kit.name.trim();
 }
 
+export function kitItemDisplayName(item: {
+  itemType?: string | null;
+  productName?: string | null;
+  productPlanName?: string | null;
+  serviceName?: string | null;
+}): string {
+  if (item.itemType === "service") {
+    return item.serviceName?.trim() || "Service";
+  }
+  return (
+    planDisplayName(item.productPlanName, item.productName ?? "") || "Product"
+  );
+}
+
 export function kitChargeTotal(
   kit: KitForTemplate,
   markupPercent: number = 0
 ): string {
   const total = kit.items.reduce((sum, item) => {
+    if (item.itemType === "service") {
+      const each = parseFloat(String(item.serviceDefaultPrice ?? "0"));
+      return sum + (Number.isFinite(each) ? each : 0) * item.quantity;
+    }
     const each = parseFloat(
       chargePriceEachWithMarkup(
         {
@@ -134,19 +156,34 @@ export function expandTemplateItem(
   }
 
   const multiplier = Math.max(1, item.defaultQuantity);
-  return kit.items.map((kitItem) => ({
-    description:
-      planDisplayName(kitItem.productPlanName, kitItem.productName) ||
-      kitDisplayName(kit) ||
-      item.description,
-    quantity: kitItem.quantity * multiplier,
-    unitPrice: chargePriceEach({
-      unitPrice: kitItem.unitPrice,
-      costPrice: kitItem.costPrice,
-    }),
-    itemType: "product" as const,
-    itemId: kitItem.productId,
-  }));
+  return kit.items.map((kitItem) => {
+    if (kitItem.itemType === "service") {
+      const price = parseFloat(String(kitItem.serviceDefaultPrice ?? "0"));
+      return {
+        description:
+          kitItem.serviceName?.trim() ||
+          kitDisplayName(kit) ||
+          item.description,
+        quantity: kitItem.quantity * multiplier,
+        unitPrice: (Number.isFinite(price) ? price : 0).toFixed(2),
+        itemType: "service" as const,
+        itemId: kitItem.serviceId ?? undefined,
+      };
+    }
+    return {
+      description:
+        planDisplayName(kitItem.productPlanName, kitItem.productName ?? "") ||
+        kitDisplayName(kit) ||
+        item.description,
+      quantity: kitItem.quantity * multiplier,
+      unitPrice: chargePriceEach({
+        unitPrice: kitItem.unitPrice,
+        costPrice: kitItem.costPrice,
+      }),
+      itemType: "product" as const,
+      itemId: kitItem.productId ?? undefined,
+    };
+  });
 }
 
 export function expandTemplateItems(

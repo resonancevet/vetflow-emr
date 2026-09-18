@@ -127,6 +127,13 @@
       "when": 1789000000000,
       "tag": "0017_service_packages",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0018_kit_item_services",
+      "breakpoints": true
     }
   ]
 }

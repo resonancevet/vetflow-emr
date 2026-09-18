@@ -10,7 +10,7 @@ import {
 import { relations } from "drizzle-orm";
 import { baseColumns } from "./common";
 import { practices } from "./practices";
-import { products } from "./billing";
+import { products, services } from "./billing";
 
 /** Practice-defined inventory kits (e.g. rabies dose + syringe + needle). */
 export const inventoryKits = pgTable(
@@ -45,9 +45,10 @@ export const inventoryKitItems = pgTable(
     kitId: uuid("kit_id")
       .notNull()
       .references(() => inventoryKits.id),
-    productId: uuid("product_id")
-      .notNull()
-      .references(() => products.id),
+    /** product = inventory stock; service = billable fee (e.g. outside lab). */
+    itemType: varchar("item_type", { length: 16 }).notNull().default("product"),
+    productId: uuid("product_id").references(() => products.id),
+    serviceId: uuid("service_id").references(() => services.id),
     quantity: integer("quantity").notNull().default(1),
     sortOrder: integer("sort_order").notNull().default(0),
     note: text("note"),
@@ -57,6 +58,7 @@ export const inventoryKitItems = pgTable(
       table.kitId,
       table.deletedAt
     ),
+    serviceIdx: index("inventory_kit_items_service_idx").on(table.serviceId),
   })
 );
 
@@ -81,6 +83,10 @@ export const inventoryKitItemsRelations = relations(
     product: one(products, {
       fields: [inventoryKitItems.productId],
       references: [products.id],
+    }),
+    service: one(services, {
+      fields: [inventoryKitItems.serviceId],
+      references: [services.id],
     }),
   })
 );

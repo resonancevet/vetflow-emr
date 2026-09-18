@@ -18,13 +18,17 @@ import {
 import { kitKindLabel, type KitKind } from "@/lib/kit-kind";
 
 type KitItemDraft = {
+  itemType: "product" | "service";
   product: CatalogProduct | null;
+  serviceId: string;
   quantity: number;
   note: string;
 };
 
-const emptyItem = (): KitItemDraft => ({
+const emptyItem = (itemType: "product" | "service" = "product"): KitItemDraft => ({
+  itemType,
   product: null,
+  serviceId: "",
   quantity: 1,
   note: "",
 });
@@ -32,6 +36,7 @@ const emptyItem = (): KitItemDraft => ({
 export function InventoryKitsTab() {
   const utils = trpc.useUtils();
   const { data: kits, isLoading } = trpc.inventoryKits.list.useQuery();
+  const { data: servicesList } = trpc.billing.listServices.useQuery();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -94,22 +99,36 @@ export function InventoryKitsTab() {
     setPlanName(kit.planName ?? "");
     setItems(
       kit.items.length > 0
-        ? kit.items.map((item) => ({
-            product: {
-              id: item.productId,
-              name: item.productName,
-              sku: item.productSku,
-              unitPrice: item.unitPrice,
-              costPrice: item.costPrice,
-              stockQuantity: item.stockQuantity,
-              units: item.units,
-              category: item.category,
-              lotNumber: item.productLotNumber,
-              planName: item.productPlanName,
-            },
-            quantity: item.quantity,
-            note: item.note ?? "",
-          }))
+        ? kit.items.map((item) =>
+            item.itemType === "service"
+              ? {
+                  itemType: "service" as const,
+                  product: null,
+                  serviceId: item.serviceId ?? "",
+                  quantity: item.quantity,
+                  note: item.note ?? "",
+                }
+              : {
+                  itemType: "product" as const,
+                  product: item.productId
+                    ? {
+                        id: item.productId,
+                        name: item.productName ?? "Product",
+                        sku: item.productSku,
+                        unitPrice: item.unitPrice ?? "0.00",
+                        costPrice: item.costPrice,
+                        stockQuantity: item.stockQuantity ?? 0,
+                        units: item.units,
+                        category: item.category,
+                        lotNumber: item.productLotNumber,
+                        planName: item.productPlanName,
+                      }
+                    : null,
+                  serviceId: "",
+                  quantity: item.quantity,
+                  note: item.note ?? "",
+                }
+          )
         : [emptyItem()]
     );
     const hasProtocol = Boolean(
@@ -130,13 +149,15 @@ export function InventoryKitsTab() {
   }
 
   function save() {
-    const validItems = items.filter((item) => item.product);
+    const validItems = items.filter((item) =>
+      item.itemType === "service" ? !!item.serviceId : !!item.product
+    );
     if (!name.trim()) {
       toast.error("Kit name is required");
       return;
     }
     if (validItems.length === 0) {
-      toast.error("Add at least one inventory item");
+      toast.error("Add at least one product or service");
       return;
     }
     const interval = Number(dueIntervalValue);
@@ -148,12 +169,23 @@ export function InventoryKitsTab() {
       planName: planName.trim() || null,
       dueIntervalValue: hasProtocol ? interval : null,
       dueIntervalUnit: hasProtocol ? dueIntervalUnit : null,
-      items: validItems.map((item, index) => ({
-        productId: item.product!.id,
-        quantity: item.quantity,
-        note: item.note.trim() || undefined,
-        sortOrder: index,
-      })),
+      items: validItems.map((item, index) =>
+        item.itemType === "service"
+          ? {
+              itemType: "service" as const,
+              serviceId: item.serviceId,
+              quantity: item.quantity,
+              note: item.note.trim() || undefined,
+              sortOrder: index,
+            }
+          : {
+              itemType: "product" as const,
+              productId: item.product!.id,
+              quantity: item.quantity,
+              note: item.note.trim() || undefined,
+              sortOrder: index,
+            }
+      ),
     };
     if (editingId) {
       updateKit.mutate({ id: editingId, ...payload });
@@ -178,8 +210,9 @@ export function InventoryKitsTab() {
         <div>
           <h3 className="text-sm font-semibold">Inventory kits</h3>
           <p className="text-xs text-muted-foreground">
-            Bundles deducted from inventory together. Tag as Vaccine or Lab so
-            they only appear under + Vaccine or + Lab test.
+            Bundles of inventory products and/or service fees (e.g. outside lab).
+            Tag as Vaccine or Lab so they only appear under + Vaccine or + Lab
+            test. Products deduct stock; services are for billing.
           </p>
         </div>
         <Button size="sm" onClick={startCreate}>
@@ -311,27 +344,81 @@ export function InventoryKitsTab() {
           )}
 
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">Inventory items</h4>
+            <h4 className="text-sm font-medium">Kit items</h4>
             {items.map((item, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,8rem)_auto] sm:items-start"
+                className="grid grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_5rem_minmax(0,8rem)_auto] sm:items-start"
               >
-                <div className="min-w-0">
-                  <label className="mb-1 block text-xs font-medium">
-                    Product
-                  </label>
-                  <ProductPicker
-                    value={item.product}
-                    placeholder="Search vaccine, syringe, needle..."
-                    onChange={(product) =>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Type</label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    value={item.itemType}
+                    onChange={(e) => {
+                      const nextType = e.target.value as "product" | "service";
                       setItems((prev) =>
                         prev.map((row, i) =>
-                          i === index ? { ...row, product } : row
+                          i === index
+                            ? {
+                                ...emptyItem(nextType),
+                                quantity: row.quantity,
+                                note: row.note,
+                              }
+                            : row
                         )
-                      )
-                    }
-                  />
+                      );
+                    }}
+                  >
+                    <option value="product">Product</option>
+                    <option value="service">Service</option>
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium">
+                    {item.itemType === "service" ? "Service / lab fee" : "Product"}
+                  </label>
+                  {item.itemType === "service" ? (
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={item.serviceId}
+                      onChange={(e) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index
+                              ? { ...row, serviceId: e.target.value }
+                              : row
+                          )
+                        )
+                      }
+                    >
+                      <option value="">
+                        {(servicesList ?? []).length === 0
+                          ? "No services — add under Settings → Services"
+                          : "Select a service..."}
+                      </option>
+                      {(servicesList ?? []).map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.category
+                            ? `${service.category}: ${service.name}`
+                            : service.name}{" "}
+                          — ${parseFloat(service.defaultPrice).toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <ProductPicker
+                      value={item.product}
+                      placeholder="Search vaccine, syringe, needle..."
+                      onChange={(product) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index ? { ...row, product } : row
+                          )
+                        )
+                      }
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium">Qty</label>
@@ -381,15 +468,26 @@ export function InventoryKitsTab() {
                 </Button>
               </div>
             ))}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setItems((prev) => [...prev, emptyItem()])}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add item
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setItems((prev) => [...prev, emptyItem("product")])}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add product
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setItems((prev) => [...prev, emptyItem("service")])}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add service / lab fee
+              </Button>
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -434,7 +532,15 @@ export function InventoryKitsTab() {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {kit.items
-                    .map((item) => `${item.quantity}× ${item.productName}`)
+                    .map((item) => {
+                      const label =
+                        item.itemType === "service"
+                          ? item.serviceName
+                          : item.productName;
+                      const kind =
+                        item.itemType === "service" ? "fee" : "stock";
+                      return `${item.quantity}× ${label ?? "—"} (${kind})`;
+                    })
                     .join(", ") || "—"}
                 </td>
                 <td className="px-4 py-3">
@@ -467,8 +573,8 @@ export function InventoryKitsTab() {
                   colSpan={3}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
-                  No inventory kits yet. Add one to deduct several products at
-                  once.
+                  No kits yet. Add products and/or service fees (e.g. outside
+                  lab) to deduct stock and bill together.
                 </td>
               </tr>
             )}

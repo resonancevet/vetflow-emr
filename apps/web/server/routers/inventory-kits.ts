@@ -2,7 +2,12 @@ import { z } from "zod";
 import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
-import { inventoryKits, inventoryKitItems, products } from "@openpims/db";
+import {
+  inventoryKits,
+  inventoryKitItems,
+  products,
+  services,
+} from "@openpims/db";
 import { DUE_INTERVAL_UNITS } from "@/lib/due-interval";
 import { KIT_KINDS } from "@/lib/kit-kind";
 
@@ -15,12 +20,54 @@ const dueIntervalFields = {
   kind: z.enum(KIT_KINDS).optional(),
 };
 
-const itemInput = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().min(1).default(1),
-  sortOrder: z.number().int().min(0).default(0),
-  note: z.string().optional(),
-});
+const itemInput = z
+  .object({
+    itemType: z.enum(["product", "service"]).default("product"),
+    productId: z.string().uuid().optional(),
+    serviceId: z.string().uuid().optional(),
+    quantity: z.number().int().min(1).default(1),
+    sortOrder: z.number().int().min(0).default(0),
+    note: z.string().optional(),
+  })
+  .superRefine((item, ctx) => {
+    if (item.itemType === "product" && !item.productId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Product is required for inventory kit lines",
+        path: ["productId"],
+      });
+    }
+    if (item.itemType === "service" && !item.serviceId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Service is required for fee kit lines",
+        path: ["serviceId"],
+      });
+    }
+  });
+
+const kitItemSelect = {
+  id: inventoryKitItems.id,
+  kitId: inventoryKitItems.kitId,
+  itemType: inventoryKitItems.itemType,
+  productId: inventoryKitItems.productId,
+  serviceId: inventoryKitItems.serviceId,
+  quantity: inventoryKitItems.quantity,
+  sortOrder: inventoryKitItems.sortOrder,
+  note: inventoryKitItems.note,
+  productName: products.name,
+  productPlanName: products.planName,
+  productSku: products.sku,
+  productLotNumber: products.lotNumber,
+  stockQuantity: products.stockQuantity,
+  units: products.units,
+  category: products.category,
+  unitPrice: products.unitPrice,
+  costPrice: products.costPrice,
+  serviceName: services.name,
+  serviceCategory: services.category,
+  serviceDefaultPrice: services.defaultPrice,
+};
 
 async function loadKit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,34 +95,34 @@ async function loadKit(
   }
 
   const items = await db
-    .select({
-      id: inventoryKitItems.id,
-      productId: inventoryKitItems.productId,
-      quantity: inventoryKitItems.quantity,
-      sortOrder: inventoryKitItems.sortOrder,
-      note: inventoryKitItems.note,
-      productName: products.name,
-      productPlanName: products.planName,
-      productSku: products.sku,
-      productLotNumber: products.lotNumber,
-      stockQuantity: products.stockQuantity,
-      units: products.units,
-      category: products.category,
-      unitPrice: products.unitPrice,
-      costPrice: products.costPrice,
-    })
+    .select(kitItemSelect)
     .from(inventoryKitItems)
-    .innerJoin(products, eq(inventoryKitItems.productId, products.id))
+    .leftJoin(products, eq(inventoryKitItems.productId, products.id))
+    .leftJoin(services, eq(inventoryKitItems.serviceId, services.id))
     .where(
       and(
         eq(inventoryKitItems.kitId, kitId),
-        isNull(inventoryKitItems.deletedAt),
-        isNull(products.deletedAt)
+        isNull(inventoryKitItems.deletedAt)
       )
     )
     .orderBy(asc(inventoryKitItems.sortOrder));
 
   return { ...kit, items };
+}
+
+function mapKitItemRows(
+  kitId: string,
+  items: z.infer<typeof itemInput>[]
+) {
+  return items.map((item, index) => ({
+    kitId,
+    itemType: item.itemType,
+    productId: item.itemType === "product" ? item.productId! : null,
+    serviceId: item.itemType === "service" ? item.serviceId! : null,
+    quantity: item.quantity,
+    sortOrder: item.sortOrder ?? index,
+    note: item.note || null,
+  }));
 }
 
 export const inventoryKitsRouter = createRouter({
@@ -94,33 +141,17 @@ export const inventoryKitsRouter = createRouter({
     if (kits.length === 0) return [];
 
     const items = await ctx.db
-      .select({
-        id: inventoryKitItems.id,
-        kitId: inventoryKitItems.kitId,
-        productId: inventoryKitItems.productId,
-        quantity: inventoryKitItems.quantity,
-        sortOrder: inventoryKitItems.sortOrder,
-        note: inventoryKitItems.note,
-        productName: products.name,
-        productPlanName: products.planName,
-        productSku: products.sku,
-        productLotNumber: products.lotNumber,
-        stockQuantity: products.stockQuantity,
-        units: products.units,
-        category: products.category,
-        unitPrice: products.unitPrice,
-        costPrice: products.costPrice,
-      })
+      .select(kitItemSelect)
       .from(inventoryKitItems)
-      .innerJoin(products, eq(inventoryKitItems.productId, products.id))
+      .leftJoin(products, eq(inventoryKitItems.productId, products.id))
+      .leftJoin(services, eq(inventoryKitItems.serviceId, services.id))
       .where(
         and(
           inArray(
             inventoryKitItems.kitId,
             kits.map((kit) => kit.id)
           ),
-          isNull(inventoryKitItems.deletedAt),
-          isNull(products.deletedAt)
+          isNull(inventoryKitItems.deletedAt)
         )
       )
       .orderBy(asc(inventoryKitItems.sortOrder));
@@ -159,15 +190,9 @@ export const inventoryKitsRouter = createRouter({
         })
         .returning();
 
-      await ctx.db.insert(inventoryKitItems).values(
-        input.items.map((item, index) => ({
-          kitId: kit!.id,
-          productId: item.productId,
-          quantity: item.quantity,
-          sortOrder: item.sortOrder ?? index,
-          note: item.note || null,
-        }))
-      );
+      await ctx.db
+        .insert(inventoryKitItems)
+        .values(mapKitItemRows(kit!.id, input.items));
 
       return loadKit(ctx.db, ctx.practiceId, kit!.id);
     }),
@@ -242,15 +267,9 @@ export const inventoryKitsRouter = createRouter({
             )
           );
 
-        await ctx.db.insert(inventoryKitItems).values(
-          items.map((item, index) => ({
-            kitId: id,
-            productId: item.productId,
-            quantity: item.quantity,
-            sortOrder: item.sortOrder ?? index,
-            note: item.note || null,
-          }))
-        );
+        await ctx.db
+          .insert(inventoryKitItems)
+          .values(mapKitItemRows(id, items));
       }
 
       return loadKit(ctx.db, ctx.practiceId, id);

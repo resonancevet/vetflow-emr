@@ -11,6 +11,7 @@ import {
   inventoryKits,
   inventoryKitItems,
   products,
+  services,
 } from "@openpims/db";
 import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
 import {
@@ -47,23 +48,27 @@ async function loadKitsForTemplate(
   const items = await db
     .select({
       kitId: inventoryKitItems.kitId,
+      itemType: inventoryKitItems.itemType,
       productId: inventoryKitItems.productId,
+      serviceId: inventoryKitItems.serviceId,
       quantity: inventoryKitItems.quantity,
       productName: products.name,
       productPlanName: products.planName,
       unitPrice: products.unitPrice,
       costPrice: products.costPrice,
+      serviceName: services.name,
+      serviceDefaultPrice: services.defaultPrice,
     })
     .from(inventoryKitItems)
-    .innerJoin(products, eq(inventoryKitItems.productId, products.id))
+    .leftJoin(products, eq(inventoryKitItems.productId, products.id))
+    .leftJoin(services, eq(inventoryKitItems.serviceId, services.id))
     .where(
       and(
         inArray(
           inventoryKitItems.kitId,
           kits.map((kit: { id: string }) => kit.id)
         ),
-        isNull(inventoryKitItems.deletedAt),
-        isNull(products.deletedAt)
+        isNull(inventoryKitItems.deletedAt)
       )
     );
 

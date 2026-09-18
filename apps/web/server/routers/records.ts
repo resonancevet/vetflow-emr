@@ -618,6 +618,7 @@ export const recordsRouter = createRouter({
             productId: inventoryKitItems.productId,
             quantity: inventoryKitItems.quantity,
             note: inventoryKitItems.note,
+            itemType: inventoryKitItems.itemType,
           })
           .from(inventoryKitItems)
           .where(
@@ -627,11 +628,17 @@ export const recordsRouter = createRouter({
             )
           );
         deductions.push(
-          ...kitItems.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            note: item.note ?? stockNote,
-          }))
+          ...kitItems
+            .filter(
+              (item) =>
+                (item.itemType === "product" || !item.itemType) &&
+                item.productId
+            )
+            .map((item) => ({
+              productId: item.productId!,
+              quantity: item.quantity,
+              note: item.note ?? stockNote,
+            }))
         );
       } else if (productId) {
         deductions.push({
@@ -1152,6 +1159,7 @@ export const recordsRouter = createRouter({
             productId: inventoryKitItems.productId,
             quantity: inventoryKitItems.quantity,
             note: inventoryKitItems.note,
+            itemType: inventoryKitItems.itemType,
           })
           .from(inventoryKitItems)
           .where(
@@ -1161,11 +1169,17 @@ export const recordsRouter = createRouter({
             )
           );
         deductions.push(
-          ...kitItems.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            note: item.note ?? undefined,
-          }))
+          ...kitItems
+            .filter(
+              (item) =>
+                (item.itemType === "product" || !item.itemType) &&
+                item.productId
+            )
+            .map((item) => ({
+              productId: item.productId!,
+              quantity: item.quantity,
+              note: item.note ?? undefined,
+            }))
         );
       }
 

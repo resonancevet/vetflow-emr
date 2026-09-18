@@ -466,15 +466,26 @@ export function VaccinationForm({
       setProduct(null);
       return;
     }
-    const first = kit.items[0];
-    if (first) {
+    const namingItem =
+      kit.items.find((item) => item.itemType === "service") ?? kit.items[0];
+    if (namingItem) {
       setVaccineName(
         planDisplayName(
           kit.planName,
-          planDisplayName(first.productPlanName, first.productName)
+          namingItem.itemType === "service"
+            ? namingItem.serviceName
+            : planDisplayName(
+                namingItem.productPlanName,
+                namingItem.productName
+              )
         )
       );
-      if (first.productLotNumber) setLotNumber(first.productLotNumber);
+      if (
+        namingItem.itemType !== "service" &&
+        namingItem.productLotNumber
+      ) {
+        setLotNumber(namingItem.productLotNumber);
+      }
     } else if (kit.planName) {
       setVaccineName(kit.planName);
     }
@@ -538,28 +549,69 @@ export function VaccinationForm({
       )}
       {selectedKit && (
         <div className="sm:col-span-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
-          <p className="font-medium">Deducts from inventory</p>
-          <ul className="mt-1 space-y-0.5 text-muted-foreground">
-            {selectedKit.items.map((item) => (
-              <li key={item.id}>
-                {item.quantity}× {item.productName}
-                {item.note ? ` (${item.note})` : ""}
-                {item.stockQuantity != null
-                  ? ` · on hand ${item.stockQuantity}`
-                  : ""}
-              </li>
-            ))}
-            {extras
-              .filter((row) => row.product)
-              .map((row) => (
-                <li key={row.key}>
-                  {row.quantity}× {row.product!.name}
-                  {row.product!.stockQuantity != null
-                    ? ` · on hand ${row.product!.stockQuantity}`
-                    : ""}
-                </li>
-              ))}
-          </ul>
+          {selectedKit.items.some(
+            (item) => item.itemType !== "service" && item.productId
+          ) && (
+            <>
+              <p className="font-medium">Deducts from inventory</p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                {selectedKit.items
+                  .filter(
+                    (item) => item.itemType !== "service" && item.productId
+                  )
+                  .map((item) => (
+                    <li key={item.id}>
+                      {item.quantity}× {item.productName}
+                      {item.note ? ` (${item.note})` : ""}
+                      {item.stockQuantity != null
+                        ? ` · on hand ${item.stockQuantity}`
+                        : ""}
+                    </li>
+                  ))}
+                {extras
+                  .filter((row) => row.product)
+                  .map((row) => (
+                    <li key={row.key}>
+                      {row.quantity}× {row.product!.name}
+                      {row.product!.stockQuantity != null
+                        ? ` · on hand ${row.product!.stockQuantity}`
+                        : ""}
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+          {selectedKit.items.some((item) => item.itemType === "service") && (
+            <>
+              <p
+                className={`font-medium ${
+                  selectedKit.items.some(
+                    (item) => item.itemType !== "service" && item.productId
+                  )
+                    ? "mt-2"
+                    : ""
+                }`}
+              >
+                Includes service fees
+              </p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                {selectedKit.items
+                  .filter((item) => item.itemType === "service")
+                  .map((item) => (
+                    <li key={item.id}>
+                      {item.quantity}× {item.serviceName}
+                      {item.serviceDefaultPrice
+                        ? ` · $${parseFloat(item.serviceDefaultPrice).toFixed(2)}`
+                        : ""}
+                      {item.note ? ` (${item.note})` : ""}
+                    </li>
+                  ))}
+              </ul>
+              <p className="mt-1 text-muted-foreground">
+                Add these on the invoice when billing (not deducted from stock).
+              </p>
+            </>
+          )}
         </div>
       )}
       {kitId && (
@@ -909,12 +961,18 @@ export function LabTestForm({
     setKitId(id);
     const kit = activeKits.find((row) => row.id === id);
     if (!kit) return;
-    const first = kit.items[0];
-    if (first) {
+    const namingItem =
+      kit.items.find((item) => item.itemType === "service") ?? kit.items[0];
+    if (namingItem) {
       setTestName(
         planDisplayName(
           kit.planName,
-          planDisplayName(first.productPlanName, first.productName)
+          namingItem.itemType === "service"
+            ? namingItem.serviceName
+            : planDisplayName(
+                namingItem.productPlanName,
+                namingItem.productName
+              )
         )
       );
     } else if (kit.planName) {
@@ -964,28 +1022,69 @@ export function LabTestForm({
       )}
       {selectedKit && (
         <div className="sm:col-span-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
-          <p className="font-medium">Deducts from inventory</p>
-          <ul className="mt-1 space-y-0.5 text-muted-foreground">
-            {selectedKit.items.map((item) => (
-              <li key={item.id}>
-                {item.quantity}× {item.productName}
-                {item.note ? ` (${item.note})` : ""}
-                {item.stockQuantity != null
-                  ? ` · on hand ${item.stockQuantity}`
-                  : ""}
-              </li>
-            ))}
-            {extras
-              .filter((row) => row.product)
-              .map((row) => (
-                <li key={row.key}>
-                  {row.quantity}× {row.product!.name}
-                  {row.product!.stockQuantity != null
-                    ? ` · on hand ${row.product!.stockQuantity}`
-                    : ""}
-                </li>
-              ))}
-          </ul>
+          {selectedKit.items.some(
+            (item) => item.itemType !== "service" && item.productId
+          ) && (
+            <>
+              <p className="font-medium">Deducts from inventory</p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                {selectedKit.items
+                  .filter(
+                    (item) => item.itemType !== "service" && item.productId
+                  )
+                  .map((item) => (
+                    <li key={item.id}>
+                      {item.quantity}× {item.productName}
+                      {item.note ? ` (${item.note})` : ""}
+                      {item.stockQuantity != null
+                        ? ` · on hand ${item.stockQuantity}`
+                        : ""}
+                    </li>
+                  ))}
+                {extras
+                  .filter((row) => row.product)
+                  .map((row) => (
+                    <li key={row.key}>
+                      {row.quantity}× {row.product!.name}
+                      {row.product!.stockQuantity != null
+                        ? ` · on hand ${row.product!.stockQuantity}`
+                        : ""}
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+          {selectedKit.items.some((item) => item.itemType === "service") && (
+            <>
+              <p
+                className={`font-medium ${
+                  selectedKit.items.some(
+                    (item) => item.itemType !== "service" && item.productId
+                  )
+                    ? "mt-2"
+                    : ""
+                }`}
+              >
+                Includes service fees
+              </p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                {selectedKit.items
+                  .filter((item) => item.itemType === "service")
+                  .map((item) => (
+                    <li key={item.id}>
+                      {item.quantity}× {item.serviceName}
+                      {item.serviceDefaultPrice
+                        ? ` · $${parseFloat(item.serviceDefaultPrice).toFixed(2)}`
+                        : ""}
+                      {item.note ? ` (${item.note})` : ""}
+                    </li>
+                  ))}
+              </ul>
+              <p className="mt-1 text-muted-foreground">
+                Add these on the invoice when billing (not deducted from stock).
+              </p>
+            </>
+          )}
         </div>
       )}
       {kitId && (
