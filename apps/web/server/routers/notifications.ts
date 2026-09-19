@@ -22,22 +22,10 @@ import {
   buildPortalUrl,
   generatePortalAccessToken,
 } from "@/lib/portal-token";
-
-function formatDate(d: Date | string): string {
-  return new Date(d).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatTime(d: Date | string): string {
-  return new Date(d).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import {
+  formatPracticeDate,
+  formatPracticeTime,
+} from "@/lib/practice-datetime";
 
 async function getPracticeEmailContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,6 +37,7 @@ async function getPracticeEmailContext(
       name: practices.name,
       phone: practices.phone,
       address: practices.address,
+      timezone: practices.timezone,
       settings: practices.settings,
     })
     .from(practices)
@@ -58,6 +47,7 @@ async function getPracticeEmailContext(
     practiceName: practice?.name ?? "",
     practicePhone: practice?.phone ?? undefined,
     practiceAddress: practice?.address ?? undefined,
+    timezone: practice?.timezone ?? "America/New_York",
     templates: getEmailTemplatesFromSettings(practice?.settings),
   };
 }
@@ -103,8 +93,8 @@ export const notificationsRouter = createRouter({
           to: appt.clientEmail,
           clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
           patientName: appt.patientName ?? "Unknown",
-          appointmentDate: formatDate(appt.startTime),
-          appointmentTime: formatTime(appt.startTime),
+          appointmentDate: formatPracticeDate(appt.startTime, emailCtx.timezone),
+          appointmentTime: formatPracticeTime(appt.startTime, emailCtx.timezone),
           practiceName: emailCtx.practiceName,
           practicePhone: emailCtx.practicePhone,
           practiceAddress: emailCtx.practiceAddress,
@@ -127,7 +117,7 @@ export const notificationsRouter = createRouter({
         channel: "email",
         direction: "outbound",
         subject: "Appointment Reminder",
-        content: `Appointment reminder sent for ${appt.patientName} on ${formatDate(appt.startTime)}`,
+        content: `Appointment reminder sent for ${appt.patientName} on ${formatPracticeDate(appt.startTime, emailCtx.timezone)}`,
         status: "sent",
       });
 
@@ -287,8 +277,8 @@ export const notificationsRouter = createRouter({
               to: appt.clientEmail,
               clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
               patientName: appt.patientName ?? "Unknown",
-              appointmentDate: formatDate(appt.startTime),
-              appointmentTime: formatTime(appt.startTime),
+              appointmentDate: formatPracticeDate(appt.startTime, emailCtx.timezone),
+              appointmentTime: formatPracticeTime(appt.startTime, emailCtx.timezone),
               practiceName: emailCtx.practiceName,
               practicePhone: emailCtx.practicePhone,
               practiceAddress: emailCtx.practiceAddress,
@@ -305,7 +295,7 @@ export const notificationsRouter = createRouter({
             channel: "email",
             direction: "outbound",
             subject: "Appointment Reminder",
-            content: `Reminder sent for ${appt.patientName} on ${formatDate(appt.startTime)}`,
+            content: `Reminder sent for ${appt.patientName} on ${formatPracticeDate(appt.startTime, emailCtx.timezone)}`,
             status: "sent",
           });
           sent++;

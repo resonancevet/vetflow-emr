@@ -12,6 +12,10 @@ import {
 import { sendAppointmentReminder } from "@/lib/email";
 import { isCronAuthorized } from "@/lib/cron-auth";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
+import {
+  formatPracticeDate,
+  formatPracticeTime,
+} from "@/lib/practice-datetime";
 
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -63,6 +67,7 @@ export async function GET(request: Request) {
           name: practices.name,
           phone: practices.phone,
           address: practices.address,
+          timezone: practices.timezone,
           settings: practices.settings,
         })
         .from(practices)
@@ -72,6 +77,7 @@ export async function GET(request: Request) {
         practiceName: practice?.name ?? "",
         practicePhone: practice?.phone ?? undefined,
         practiceAddress: practice?.address ?? undefined,
+        timezone: practice?.timezone ?? "America/New_York",
         templates: getEmailTemplatesFromSettings(practice?.settings),
       };
     }
@@ -89,22 +95,19 @@ export async function GET(request: Request) {
           practiceCache.set(appt.practiceId, emailCtx);
         }
 
-        const startDate = new Date(appt.startTime);
         const result = await sendAppointmentReminder(
           {
             to: appt.clientEmail,
             clientName: `${appt.clientFirstName} ${appt.clientLastName}`,
             patientName: appt.patientName ?? "Unknown",
-            appointmentDate: startDate.toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            }),
-            appointmentTime: startDate.toLocaleTimeString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-            }),
+            appointmentDate: formatPracticeDate(
+              appt.startTime,
+              emailCtx.timezone,
+            ),
+            appointmentTime: formatPracticeTime(
+              appt.startTime,
+              emailCtx.timezone,
+            ),
             practiceName: emailCtx.practiceName,
             practicePhone: emailCtx.practicePhone,
             practiceAddress: emailCtx.practiceAddress,
@@ -123,7 +126,7 @@ export async function GET(request: Request) {
           channel: "email",
           direction: "outbound",
           subject: "Appointment Reminder",
-          content: `Automated appointment reminder sent for ${appt.patientName} on ${appt.startTime.toISOString()}`,
+          content: `Automated appointment reminder sent for ${appt.patientName} on ${formatPracticeDate(appt.startTime, emailCtx.timezone)} ${formatPracticeTime(appt.startTime, emailCtx.timezone)}`,
           status: "sent",
         });
 

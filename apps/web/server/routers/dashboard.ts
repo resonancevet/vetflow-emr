@@ -33,22 +33,10 @@ import {
   sendAppointmentRequestDeclined,
 } from "@/lib/email";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
-
-function formatDate(d: Date | string): string {
-  return new Date(d).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatTime(d: Date | string): string {
-  return new Date(d).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import {
+  formatPracticeDate,
+  formatPracticeTime,
+} from "@/lib/practice-datetime";
 
 async function loadOpenAppointmentRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -400,6 +388,18 @@ export const dashboardRouter = createRouter({
         })
         .returning();
 
+      const [practice] = await ctx.db
+        .select({
+          name: practices.name,
+          phone: practices.phone,
+          address: practices.address,
+          timezone: practices.timezone,
+          settings: practices.settings,
+        })
+        .from(practices)
+        .where(eq(practices.id, ctx.practiceId))
+        .limit(1);
+
       await ctx.db
         .update(communications)
         .set({
@@ -409,7 +409,7 @@ export const dashboardRouter = createRouter({
             request.content ?? "",
             "",
             `Resolved: scheduled as appointment ${appt!.id}`,
-            `Scheduled for: ${formatDate(startTime)} ${formatTime(startTime)}`,
+            `Scheduled for: ${formatPracticeDate(startTime, practice?.timezone)} ${formatPracticeTime(startTime, practice?.timezone)}`,
           ].join("\n"),
         })
         .where(eq(communications.id, request.id));
@@ -417,16 +417,6 @@ export const dashboardRouter = createRouter({
       let emailSent = false;
       let emailError: string | undefined;
       if (request.clientEmail) {
-        const [practice] = await ctx.db
-          .select({
-            name: practices.name,
-            phone: practices.phone,
-            address: practices.address,
-            settings: practices.settings,
-          })
-          .from(practices)
-          .where(eq(practices.id, ctx.practiceId))
-          .limit(1);
         const templates = getEmailTemplatesFromSettings(practice?.settings);
         const patientName = resolved.patientName;
         const result = await sendAppointmentConfirmation(
@@ -436,8 +426,8 @@ export const dashboardRouter = createRouter({
               .filter(Boolean)
               .join(" "),
             patientName,
-            appointmentDate: formatDate(startTime),
-            appointmentTime: formatTime(startTime),
+            appointmentDate: formatPracticeDate(startTime, practice?.timezone),
+            appointmentTime: formatPracticeTime(startTime, practice?.timezone),
             practiceName: practice?.name ?? "Your veterinary clinic",
             practicePhone: practice?.phone ?? undefined,
             practiceAddress: practice?.address ?? undefined,
