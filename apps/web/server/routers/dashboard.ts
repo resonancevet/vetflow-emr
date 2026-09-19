@@ -16,11 +16,11 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
   appointments,
-  invoices,
   communications,
   clients,
   patients,
   practices,
+  soapNotes,
 } from "@openpims/db";
 import {
   isCallbackAppointmentRequestSubject,
@@ -37,6 +37,7 @@ import {
   formatPracticeDate,
   formatPracticeTime,
 } from "@/lib/practice-datetime";
+import { autoFinalizeStaleSoapNotes } from "@/lib/record-lockdown";
 
 async function loadOpenAppointmentRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,6 +146,8 @@ async function resolveRequestPatientId(
 
 export const dashboardRouter = createRouter({
   getStats: protectedProcedure.query(async ({ ctx }) => {
+    await autoFinalizeStaleSoapNotes(ctx.db);
+
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd = new Date(todayStart);
@@ -153,7 +156,7 @@ export const dashboardRouter = createRouter({
     const [
       todayAppointmentsResult,
       patientsSeenResult,
-      pendingInvoicesResult,
+      pendingSoapsResult,
       pendingApptRequestsResult,
     ] = await Promise.all([
       ctx.db
@@ -183,12 +186,12 @@ export const dashboardRouter = createRouter({
 
       ctx.db
         .select({ count: sql<number>`count(*)` })
-        .from(invoices)
+        .from(soapNotes)
         .where(
           and(
-            eq(invoices.practiceId, ctx.practiceId),
-            isNull(invoices.deletedAt),
-            inArray(invoices.status, ["sent", "overdue"])
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt),
+            isNull(soapNotes.finalizedAt)
           )
         ),
 
@@ -212,7 +215,7 @@ export const dashboardRouter = createRouter({
     return {
       todayAppointments: Number(todayAppointmentsResult[0]?.count ?? 0),
       patientsSeen: Number(patientsSeenResult[0]?.count ?? 0),
-      pendingInvoices: Number(pendingInvoicesResult[0]?.count ?? 0),
+      pendingSoaps: Number(pendingSoapsResult[0]?.count ?? 0),
       pendingAppointmentRequests: Number(
         pendingApptRequestsResult[0]?.count ?? 0
       ),

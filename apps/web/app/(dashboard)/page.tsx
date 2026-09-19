@@ -70,9 +70,9 @@ const kpiConfig = [
     format: (v: number) => String(v),
   },
   {
-    key: "pendingInvoices" as const,
-    label: "Pending Invoices",
-    description: "Sent or overdue",
+    key: "pendingSoaps" as const,
+    label: "Pending SOAPs",
+    description: "Draft notes not yet finalized",
     icon: FileText,
     format: (v: number) => String(v),
   },
