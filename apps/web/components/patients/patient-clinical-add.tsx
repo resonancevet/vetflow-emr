@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { overdueVaccinations } from "@/lib/vaccination-due";
+import { formatVisitDate } from "@/lib/practice-datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -1133,15 +1135,7 @@ function PatientAlerts({ patientId }: { patientId: string }) {
     patientId,
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const overdue = (vaccinations ?? []).filter((v) => {
-    if (!v.nextDueDate) return false;
-    const due = new Date(v.nextDueDate);
-    due.setHours(0, 0, 0, 0);
-    return due < today;
-  });
+  const overdue = overdueVaccinations(vaccinations ?? []);
 
   if (overdue.length === 0) return null;
 
@@ -1154,10 +1148,7 @@ function PatientAlerts({ patientId }: { patientId: string }) {
         <ul className="mt-1 list-inside list-disc text-amber-800 dark:text-amber-300">
           {overdue.map((v) => (
             <li key={v.id}>
-              {v.vaccineName} — due{" "}
-              {v.nextDueDate
-                ? new Date(v.nextDueDate).toLocaleDateString()
-                : "unknown"}
+              {v.vaccineName} — due {formatVisitDate(v.nextDueDate)}
             </li>
           ))}
         </ul>

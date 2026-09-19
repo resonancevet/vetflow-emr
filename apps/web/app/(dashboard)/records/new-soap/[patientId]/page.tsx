@@ -17,6 +17,7 @@ import {
   toastStock,
 } from "@/components/patients/patient-clinical-add";
 import { toKgString, useWeightUnit } from "@/lib/weight-units";
+import { toVisitDateInput } from "@/lib/practice-datetime";
 import {
   BCS_OPTIONS,
   FAS_OPTIONS,
@@ -35,7 +36,6 @@ import {
   type TempUnit,
 } from "@/lib/soap-form";
 import { cn } from "@/lib/utils";
-import { toVisitDateInput } from "@/lib/practice-datetime";
 
 function toFahrenheit(value: string, unit: TempUnit): string | null {
   const trimmed = value.trim();
@@ -106,6 +106,14 @@ export default function NewSoapNotePage() {
   const createPrescription = trpc.records.createPrescription.useMutation();
   const recordUsage = trpc.inventory.recordUsage.useMutation();
   const createLabResult = trpc.records.createLabResult.useMutation();
+
+  function invalidatePatientClinical() {
+    if (!params.patientId) return;
+    utils.records.listVaccinations.invalidate({ patientId: params.patientId });
+    utils.records.listPrescriptions.invalidate({ patientId: params.patientId });
+    utils.records.listLabResults.invalidate({ patientId: params.patientId });
+    utils.patients.getById.invalidate({ id: params.patientId });
+  }
 
   useEffect(() => {
     if (!noteId || !existingNoteQuery.data) return;
@@ -674,6 +682,7 @@ export default function NewSoapNotePage() {
                   });
                   toast.success("Vaccination recorded");
                   toastStock(result);
+                  invalidatePatientClinical();
                   if (includeInPlan) {
                     const due = data.nextDueDate
                       ? `; next due ${data.nextDueDate}`
@@ -701,6 +710,7 @@ export default function NewSoapNotePage() {
                   });
                   toast.success("Prescription added");
                   toastStock(result);
+                  invalidatePatientClinical();
                   if (includeInPlan) {
                     const extra = data.instructions
                       ? ` — ${data.instructions}`
