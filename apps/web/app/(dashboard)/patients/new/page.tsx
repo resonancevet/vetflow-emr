@@ -179,6 +179,11 @@ export default function NewPatientPage() {
                       >
                         <span className="font-medium">
                           {client.firstName} {client.lastName}
+                          {client.displayId ? (
+                            <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+                              {client.displayId}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="text-muted-foreground">
                           {client.email || formatPhoneDisplay(client.phone) || ""}

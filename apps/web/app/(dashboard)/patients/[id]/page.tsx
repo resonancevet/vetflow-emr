@@ -333,6 +333,11 @@ export default function PatientDetailPage() {
                   <h2 className="font-heading text-xl font-semibold">
                     {patient.name}
                   </h2>
+                  {patient.displayId && (
+                    <span className="font-mono text-sm text-muted-foreground">
+                      {patient.displayId}
+                    </span>
+                  )}
                   <span
                     className={cn(
                       "inline-block h-2.5 w-2.5 rounded-full",
@@ -352,6 +357,9 @@ export default function PatientDetailPage() {
                     >
                       <User className="h-3.5 w-3.5" />
                       {patient.clientFirstName} {patient.clientLastName}
+                      {patient.clientDisplayId
+                        ? ` (${patient.clientDisplayId})`
+                        : ""}
                     </button>
                     <ClientAlertIcon clientId={patient.clientId} />
                   </span>

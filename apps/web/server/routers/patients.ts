@@ -24,6 +24,8 @@ import {
   invoices,
 } from "@openpims/db";
 import { alias } from "drizzle-orm/pg-core";
+import { displayIdSearchPatterns } from "@/lib/display-ids";
+import { allocatePatientDisplayId } from "../lib/display-ids";
 
 export const patientsRouter = createRouter({
   list: protectedProcedure
@@ -43,10 +45,15 @@ export const patientsRouter = createRouter({
       ];
 
       if (input.search) {
+        const idPatterns = displayIdSearchPatterns(input.search);
         conditions.push(
           or(
             ilike(patients.name, `%${input.search}%`),
-            ilike(patients.breed, `%${input.search}%`)
+            ilike(patients.breed, `%${input.search}%`),
+            ilike(clients.firstName, `%${input.search}%`),
+            ilike(clients.lastName, `%${input.search}%`),
+            ...idPatterns.map((pattern) => ilike(patients.displayId, pattern)),
+            ...idPatterns.map((pattern) => ilike(clients.displayId, pattern))
           )!
         );
       }
@@ -68,9 +75,11 @@ export const patientsRouter = createRouter({
             dob: patients.dob,
             status: patients.status,
             photoUrl: patients.photoUrl,
+            displayId: patients.displayId,
             clientId: patients.clientId,
             clientFirstName: clients.firstName,
             clientLastName: clients.lastName,
+            clientDisplayId: clients.displayId,
             createdAt: patients.createdAt,
           })
           .from(patients)
@@ -82,6 +91,7 @@ export const patientsRouter = createRouter({
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(patients)
+          .leftJoin(clients, eq(patients.clientId, clients.id))
           .where(and(...conditions)),
       ]);
 
@@ -104,14 +114,17 @@ export const patientsRouter = createRouter({
 
       if (tokens.length === 0) return [];
 
-      const tokenConditions = tokens.map((token) =>
-        or(
+      const tokenConditions = tokens.map((token) => {
+        const idPatterns = displayIdSearchPatterns(token);
+        return or(
           ilike(patients.name, `%${token}%`),
           ilike(patients.breed, `%${token}%`),
           ilike(clients.firstName, `%${token}%`),
-          ilike(clients.lastName, `%${token}%`)
-        )!
-      );
+          ilike(clients.lastName, `%${token}%`),
+          ...idPatterns.map((pattern) => ilike(patients.displayId, pattern)),
+          ...idPatterns.map((pattern) => ilike(clients.displayId, pattern))
+        )!;
+      });
 
       return ctx.db
         .select({
@@ -119,8 +132,10 @@ export const patientsRouter = createRouter({
           name: patients.name,
           species: patients.species,
           breed: patients.breed,
+          displayId: patients.displayId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
+          clientDisplayId: clients.displayId,
         })
         .from(patients)
         .leftJoin(clients, eq(patients.clientId, clients.id))
@@ -173,12 +188,14 @@ export const patientsRouter = createRouter({
           microchipNumber: patients.microchipNumber,
           photoUrl: patients.photoUrl,
           status: patients.status,
+          displayId: patients.displayId,
           clientId: patients.clientId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
           clientPhone: clients.phone,
           clientAddress: clients.address,
+          clientDisplayId: clients.displayId,
           practiceId: patients.practiceId,
           createdAt: patients.createdAt,
         })
@@ -251,9 +268,14 @@ export const patientsRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const displayId = await allocatePatientDisplayId(
+        ctx.db,
+        ctx.practiceId,
+        input.clientId,
+      );
       const [patient] = await ctx.db
         .insert(patients)
-        .values({ ...input, practiceId: ctx.practiceId })
+        .values({ ...input, practiceId: ctx.practiceId, displayId })
         .returning();
       await writeAudit({
         practiceId: ctx.practiceId,
@@ -261,7 +283,7 @@ export const patientsRouter = createRouter({
         action: "patient.create",
         entityType: "patient",
         entityId: patient!.id,
-        changes: { name: input.name, species: input.species },
+        changes: { name: input.name, species: input.species, displayId },
         ipAddress: ctx.ipAddress,
       });
       return patient!;

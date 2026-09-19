@@ -71,7 +71,7 @@ export default function PatientsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search patients..."
+            placeholder="Search name, owner, or ID (e.g. 42)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -109,6 +109,9 @@ export default function PatientsPage() {
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  ID
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                   Name
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
@@ -132,6 +135,9 @@ export default function PatientsPage() {
                   onClick={() => router.push(`/patients/${patient.id}`)}
                   className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
                 >
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {patient.displayId || "\u2014"}
+                  </td>
                   <td className="px-4 py-3 font-medium">
                     <span className="mr-1.5">
                       {speciesEmoji[patient.species ?? "other"] ?? "\uD83D\uDC3E"}

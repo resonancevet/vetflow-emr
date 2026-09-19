@@ -82,6 +82,11 @@ export default function ClientDetailPage() {
             <h2 className="font-heading text-xl font-semibold">
               {client.firstName} {client.lastName}
             </h2>
+            {client.displayId && (
+              <p className="mt-1 font-mono text-sm text-muted-foreground">
+                {client.displayId}
+              </p>
+            )}
             <div className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
               {client.email && (
                 <span className="flex items-center gap-2">
@@ -173,6 +178,10 @@ export default function ClientDetailPage() {
                   <span className="font-medium">{patient.name}</span>
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
+                  {patient.displayId ? (
+                    <span className="font-mono text-xs">{patient.displayId}</span>
+                  ) : null}
+                  {patient.displayId ? " · " : ""}
                   {patient.species &&
                     patient.species.charAt(0).toUpperCase() +
                       patient.species.slice(1)}

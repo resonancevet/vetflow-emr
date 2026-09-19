@@ -63,11 +63,17 @@ export const patients = pgTable(
     microchipNumber: varchar("microchip_number", { length: 64 }),
     photoUrl: varchar("photo_url", { length: 512 }),
     status: patientStatusEnum("status").notNull().default("active"),
+    /** Human-readable ID, e.g. P0042-01. */
+    displayId: varchar("display_id", { length: 32 }),
   },
   (table) => ({
     practiceIdx: index("patients_practice_idx").on(table.practiceId, table.deletedAt),
     clientIdx: index("patients_client_idx").on(table.clientId),
     nameIdx: index("patients_name_idx").on(table.name),
+    displayIdIdx: index("patients_display_id_idx").on(
+      table.practiceId,
+      table.displayId,
+    ),
   })
 );
 

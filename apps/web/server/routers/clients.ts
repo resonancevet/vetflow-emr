@@ -8,6 +8,8 @@ import {
   generatePortalAccessToken,
 } from "@/lib/portal-token";
 import { sendPortalInviteEmail } from "@/lib/email";
+import { displayIdSearchPatterns } from "@/lib/display-ids";
+import { allocateClientDisplayId } from "../lib/display-ids";
 
 async function getClientForPractice(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,12 +50,14 @@ export const clientsRouter = createRouter({
       ];
 
       if (input.search) {
+        const idPatterns = displayIdSearchPatterns(input.search);
         conditions.push(
           or(
             ilike(clients.firstName, `%${input.search}%`),
             ilike(clients.lastName, `%${input.search}%`),
             ilike(clients.email, `%${input.search}%`),
-            ilike(clients.phone, `%${input.search}%`)
+            ilike(clients.phone, `%${input.search}%`),
+            ...idPatterns.map((pattern) => ilike(clients.displayId, pattern))
           )!
         );
       }
@@ -81,6 +85,7 @@ export const clientsRouter = createRouter({
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
+      const idPatterns = displayIdSearchPatterns(input.query);
       return ctx.db
         .select({
           id: clients.id,
@@ -88,6 +93,7 @@ export const clientsRouter = createRouter({
           lastName: clients.lastName,
           email: clients.email,
           phone: clients.phone,
+          displayId: clients.displayId,
         })
         .from(clients)
         .where(
@@ -97,7 +103,8 @@ export const clientsRouter = createRouter({
             or(
               ilike(clients.firstName, `%${input.query}%`),
               ilike(clients.lastName, `%${input.query}%`),
-              ilike(clients.email, `%${input.query}%`)
+              ilike(clients.email, `%${input.query}%`),
+              ...idPatterns.map((pattern) => ilike(clients.displayId, pattern))
             )
           )
         )
@@ -157,12 +164,14 @@ export const clientsRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const displayId = await allocateClientDisplayId(ctx.db, ctx.practiceId);
       const [client] = await ctx.db
         .insert(clients)
         .values({
           ...input,
           practiceId: ctx.practiceId,
           accessToken: generatePortalAccessToken(),
+          displayId,
         })
         .returning();
       return client!;

@@ -37,11 +37,17 @@ export const clients = pgTable(
     preferredContactMethod: contactMethodEnum("preferred_contact_method").default("phone"),
     notes: text("notes"),
     accessToken: varchar("access_token", { length: 64 }).unique(),
+    /** Human-readable ID, e.g. C0042. */
+    displayId: varchar("display_id", { length: 32 }),
   },
   (table) => ({
     practiceIdx: index("clients_practice_idx").on(table.practiceId, table.deletedAt),
     nameTrgmIdx: index("clients_name_trgm_idx").on(table.firstName, table.lastName),
     emailIdx: index("clients_email_idx").on(table.email),
+    displayIdIdx: index("clients_display_id_idx").on(
+      table.practiceId,
+      table.displayId,
+    ),
   })
 );
 
