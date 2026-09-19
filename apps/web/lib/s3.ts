@@ -39,6 +39,11 @@ function getS3(): S3Client {
     region: resolveRegion(),
     credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true, // Required for MinIO / S3-compatible stores
+    // AWS SDK v3 defaults to flexible CRC32 checksums on PutObject. Cloudflare
+    // R2 rejects those headers with SignatureDoesNotMatch; only sign checksums
+    // when the API requires them.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
   return _s3;
 }
