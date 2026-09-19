@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, lt, gte, lte, sql, desc } from "drizzle-orm";
+import { eq, and, isNull, gte, lte, sql, desc } from "drizzle-orm";
 import { createRouter, protectedProcedure } from "../trpc";
 import {
   soapNotes,
@@ -9,6 +9,7 @@ import {
   appointments,
   invoices,
 } from "@openpims/db";
+import { overdueVaccinations } from "@/lib/vaccination-due";
 
 export const aiRouter = createRouter({
   /**
@@ -43,19 +44,20 @@ export const aiRouter = createRouter({
 
   /**
    * Patients with overdue vaccinations
-   * Returns patients whose most recent vaccination nextDueDate has passed.
+   * Protocol-aware: a newer dose of the same vaccine type (different brand name)
+   * clears older overdue rows for that protocol.
    */
   patientsOverdueVaccinations: protectedProcedure.query(async ({ ctx }) => {
-    const today = new Date().toISOString().slice(0, 10);
-
     const rows = await ctx.db
       .select({
+        id: vaccinationRecords.id,
         patientId: patients.id,
         patientName: patients.name,
         species: patients.species,
         clientFirstName: clients.firstName,
         clientLastName: clients.lastName,
         vaccineName: vaccinationRecords.vaccineName,
+        administeredAt: vaccinationRecords.administeredAt,
         nextDueDate: vaccinationRecords.nextDueDate,
       })
       .from(vaccinationRecords)
@@ -66,24 +68,82 @@ export const aiRouter = createRouter({
           eq(vaccinationRecords.practiceId, ctx.practiceId),
           isNull(vaccinationRecords.deletedAt),
           isNull(patients.deletedAt),
-          lt(vaccinationRecords.nextDueDate, today)
         )
-      )
-      .orderBy(vaccinationRecords.nextDueDate);
+      );
 
-    return rows.map((r) => ({
-      patientId: r.patientId,
-      patientName: r.patientName,
-      species: r.species,
-      clientName: [r.clientFirstName, r.clientLastName]
-        .filter(Boolean)
-        .join(" "),
-      vaccineName: r.vaccineName,
-      nextDueDate: r.nextDueDate,
-      daysOverdue: Math.floor(
-        (Date.now() - new Date(r.nextDueDate!).getTime()) / 86_400_000
-      ),
-    }));
+    const byPatient = new Map<
+      string,
+      {
+        patientId: string;
+        patientName: string;
+        species: string | null;
+        clientFirstName: string | null;
+        clientLastName: string | null;
+        vaccinations: {
+          id: string;
+          vaccineName: string;
+          administeredAt: Date | string | null;
+          nextDueDate: string | null;
+        }[];
+      }
+    >();
+
+    for (const row of rows) {
+      const existing = byPatient.get(row.patientId);
+      const vax = {
+        id: row.id,
+        vaccineName: row.vaccineName,
+        administeredAt: row.administeredAt,
+        nextDueDate: row.nextDueDate,
+      };
+      if (existing) {
+        existing.vaccinations.push(vax);
+      } else {
+        byPatient.set(row.patientId, {
+          patientId: row.patientId,
+          patientName: row.patientName,
+          species: row.species,
+          clientFirstName: row.clientFirstName,
+          clientLastName: row.clientLastName,
+          vaccinations: [vax],
+        });
+      }
+    }
+
+    const result: {
+      patientId: string;
+      patientName: string;
+      species: string | null;
+      clientName: string;
+      vaccineName: string;
+      nextDueDate: string | null;
+      daysOverdue: number;
+    }[] = [];
+
+    for (const patient of byPatient.values()) {
+      for (const alert of overdueVaccinations(patient.vaccinations)) {
+        const due = alert.vaccination.nextDueDate;
+        result.push({
+          patientId: patient.patientId,
+          patientName: patient.patientName,
+          species: patient.species,
+          clientName: [patient.clientFirstName, patient.clientLastName]
+            .filter(Boolean)
+            .join(" "),
+          vaccineName: alert.protocolLabel,
+          nextDueDate: due ?? null,
+          daysOverdue: due
+            ? Math.floor(
+                (Date.now() - new Date(due).getTime()) / 86_400_000,
+              )
+            : 0,
+        });
+      }
+    }
+
+    return result.sort(
+      (a, b) => (a.nextDueDate ?? "").localeCompare(b.nextDueDate ?? ""),
+    );
   }),
 
   /**

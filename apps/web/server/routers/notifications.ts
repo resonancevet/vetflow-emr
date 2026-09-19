@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, gte, lte, lt, inArray } from "drizzle-orm";
+import { eq, and, isNull, gte, lte, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
 import {
@@ -26,6 +26,7 @@ import {
   formatPracticeDate,
   formatPracticeTime,
 } from "@/lib/practice-datetime";
+import { overdueVaccinations } from "@/lib/vaccination-due";
 
 async function getPracticeEmailContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -308,10 +309,9 @@ export const notificationsRouter = createRouter({
     }),
 
   getOverdueVaccinations: protectedProcedure.query(async ({ ctx }) => {
-    const today = new Date().toISOString().split("T")[0]!;
-
     const rows = await ctx.db
       .select({
+        id: vaccinationRecords.id,
         patientId: patients.id,
         patientName: patients.name,
         clientId: clients.id,
@@ -319,6 +319,7 @@ export const notificationsRouter = createRouter({
         clientLastName: clients.lastName,
         clientEmail: clients.email,
         vaccineName: vaccinationRecords.vaccineName,
+        administeredAt: vaccinationRecords.administeredAt,
         nextDueDate: vaccinationRecords.nextDueDate,
       })
       .from(vaccinationRecords)
@@ -329,12 +330,52 @@ export const notificationsRouter = createRouter({
           eq(vaccinationRecords.practiceId, ctx.practiceId),
           isNull(vaccinationRecords.deletedAt),
           isNull(patients.deletedAt),
-          lt(vaccinationRecords.nextDueDate, today)
         )
       )
       .orderBy(patients.name);
 
-    const grouped = new Map<string, {
+    const byPatient = new Map<
+      string,
+      {
+        patientId: string;
+        patientName: string;
+        clientId: string;
+        clientFirstName: string;
+        clientLastName: string;
+        clientEmail: string | null;
+        vaccinations: {
+          id: string;
+          vaccineName: string;
+          administeredAt: Date | string | null;
+          nextDueDate: string | null;
+        }[];
+      }
+    >();
+
+    for (const row of rows) {
+      const existing = byPatient.get(row.patientId);
+      const vax = {
+        id: row.id,
+        vaccineName: row.vaccineName,
+        administeredAt: row.administeredAt,
+        nextDueDate: row.nextDueDate,
+      };
+      if (existing) {
+        existing.vaccinations.push(vax);
+      } else {
+        byPatient.set(row.patientId, {
+          patientId: row.patientId,
+          patientName: row.patientName,
+          clientId: row.clientId,
+          clientFirstName: row.clientFirstName,
+          clientLastName: row.clientLastName,
+          clientEmail: row.clientEmail,
+          vaccinations: [vax],
+        });
+      }
+    }
+
+    const result: {
       patientId: string;
       patientName: string;
       clientId: string;
@@ -342,26 +383,26 @@ export const notificationsRouter = createRouter({
       clientLastName: string;
       clientEmail: string | null;
       overdueVaccines: { vaccineName: string; nextDueDate: string | null }[];
-    }>();
+    }[] = [];
 
-    for (const row of rows) {
-      const existing = grouped.get(row.patientId);
-      if (existing) {
-        existing.overdueVaccines.push({ vaccineName: row.vaccineName, nextDueDate: row.nextDueDate });
-      } else {
-        grouped.set(row.patientId, {
-          patientId: row.patientId,
-          patientName: row.patientName,
-          clientId: row.clientId,
-          clientFirstName: row.clientFirstName,
-          clientLastName: row.clientLastName,
-          clientEmail: row.clientEmail,
-          overdueVaccines: [{ vaccineName: row.vaccineName, nextDueDate: row.nextDueDate }],
-        });
-      }
+    for (const patient of byPatient.values()) {
+      const overdue = overdueVaccinations(patient.vaccinations);
+      if (overdue.length === 0) continue;
+      result.push({
+        patientId: patient.patientId,
+        patientName: patient.patientName,
+        clientId: patient.clientId,
+        clientFirstName: patient.clientFirstName,
+        clientLastName: patient.clientLastName,
+        clientEmail: patient.clientEmail,
+        overdueVaccines: overdue.map((alert) => ({
+          vaccineName: alert.protocolLabel,
+          nextDueDate: alert.vaccination.nextDueDate ?? null,
+        })),
+      });
     }
 
-    return Array.from(grouped.values());
+    return result;
   }),
 
   sendVaccinationReminders: protectedProcedure
@@ -370,10 +411,9 @@ export const notificationsRouter = createRouter({
     .mutation(async ({ ctx, input }) => {
       if (input.patientIds.length === 0) return { sent: 0, failed: 0 };
 
-      const today = new Date().toISOString().split("T")[0]!;
-
       const rows = await ctx.db
         .select({
+          id: vaccinationRecords.id,
           patientId: patients.id,
           patientName: patients.name,
           clientId: clients.id,
@@ -381,6 +421,7 @@ export const notificationsRouter = createRouter({
           clientLastName: clients.lastName,
           clientEmail: clients.email,
           vaccineName: vaccinationRecords.vaccineName,
+          administeredAt: vaccinationRecords.administeredAt,
           nextDueDate: vaccinationRecords.nextDueDate,
         })
         .from(vaccinationRecords)
@@ -392,29 +433,42 @@ export const notificationsRouter = createRouter({
             isNull(vaccinationRecords.deletedAt),
             isNull(patients.deletedAt),
             inArray(patients.id, input.patientIds),
-            lt(vaccinationRecords.nextDueDate, today)
           )
         );
 
-      const grouped = new Map<string, {
-        patientName: string;
-        clientId: string;
-        clientName: string;
-        clientEmail: string | null;
-        vaccines: { vaccineName: string; nextDueDate: string | null }[];
-      }>();
+      const byPatient = new Map<
+        string,
+        {
+          patientName: string;
+          clientId: string;
+          clientName: string;
+          clientEmail: string | null;
+          vaccinations: {
+            id: string;
+            vaccineName: string;
+            administeredAt: Date | string | null;
+            nextDueDate: string | null;
+          }[];
+        }
+      >();
 
       for (const row of rows) {
-        const existing = grouped.get(row.patientId);
+        const existing = byPatient.get(row.patientId);
+        const vax = {
+          id: row.id,
+          vaccineName: row.vaccineName,
+          administeredAt: row.administeredAt,
+          nextDueDate: row.nextDueDate,
+        };
         if (existing) {
-          existing.vaccines.push({ vaccineName: row.vaccineName, nextDueDate: row.nextDueDate });
+          existing.vaccinations.push(vax);
         } else {
-          grouped.set(row.patientId, {
+          byPatient.set(row.patientId, {
             patientName: row.patientName,
             clientId: row.clientId,
             clientName: `${row.clientFirstName} ${row.clientLastName}`,
             clientEmail: row.clientEmail,
-            vaccines: [{ vaccineName: row.vaccineName, nextDueDate: row.nextDueDate }],
+            vaccinations: [vax],
           });
         }
       }
@@ -423,18 +477,22 @@ export const notificationsRouter = createRouter({
       let failed = 0;
       const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
 
-      for (const [, data] of grouped) {
-        if (!data.clientEmail) { failed++; continue; }
+      for (const [, data] of byPatient) {
+        const overdue = overdueVaccinations(data.vaccinations);
+        if (overdue.length === 0) continue;
+        if (!data.clientEmail) {
+          failed++;
+          continue;
+        }
         try {
-          // Send one email per overdue vaccine (the email template handles a single vaccine)
-          for (const vax of data.vaccines) {
+          for (const alert of overdue) {
             const result = await sendVaccinationReminder(
               {
                 to: data.clientEmail,
                 clientName: data.clientName,
                 patientName: data.patientName,
-                vaccineName: vax.vaccineName,
-                dueDate: vax.nextDueDate ?? "overdue",
+                vaccineName: alert.protocolLabel,
+                dueDate: alert.vaccination.nextDueDate ?? "overdue",
                 practiceName: emailCtx.practiceName,
                 practicePhone: emailCtx.practicePhone,
               },
@@ -451,7 +509,7 @@ export const notificationsRouter = createRouter({
             channel: "email",
             direction: "outbound",
             subject: "Vaccination Reminder",
-            content: `Vaccination reminder sent for ${data.patientName}: ${data.vaccines.map((v) => v.vaccineName).join(", ")}`,
+            content: `Vaccination reminder sent for ${data.patientName}: ${overdue.map((a) => a.protocolLabel).join(", ")}`,
             status: "sent",
           });
           sent++;

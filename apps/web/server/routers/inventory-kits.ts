@@ -10,15 +10,40 @@ import {
 } from "@openpims/db";
 import { DUE_INTERVAL_UNITS } from "@/lib/due-interval";
 import { KIT_KINDS } from "@/lib/kit-kind";
+import { VACCINE_PROTOCOL_KEYS } from "@/lib/vaccination-due";
 
 const dueIntervalUnitSchema = z.enum(DUE_INTERVAL_UNITS);
+const reminderProtocolSchema = z.enum(
+  VACCINE_PROTOCOL_KEYS as [string, ...string[]],
+);
 
 const dueIntervalFields = {
   dueIntervalValue: z.number().int().min(1).max(3650).nullable().optional(),
   dueIntervalUnit: dueIntervalUnitSchema.nullable().optional(),
   planName: z.string().max(255).nullable().optional(),
   kind: z.enum(KIT_KINDS).optional(),
+  isCombo: z.boolean().optional(),
+  reminderProtocols: z.array(reminderProtocolSchema).optional(),
 };
+
+function normalizeReminderFields(input: {
+  kind?: string;
+  isCombo?: boolean;
+  reminderProtocols?: string[];
+}) {
+  const kind = input.kind ?? "vaccine";
+  if (kind !== "vaccine") {
+    return { isCombo: false, reminderProtocols: [] as string[] };
+  }
+  const protocols = [...new Set(input.reminderProtocols ?? [])];
+  const isCombo = Boolean(input.isCombo) && protocols.length > 1;
+  return {
+    isCombo,
+    reminderProtocols: isCombo
+      ? protocols
+      : protocols.slice(0, 1),
+  };
+}
 
 const itemInput = z
   .object({
@@ -178,6 +203,15 @@ export const inventoryKitsRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const reminders = normalizeReminderFields(input);
+      if (input.isCombo && reminders.reminderProtocols.length < 2) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Combination vaccines need at least two reminder types selected",
+        });
+      }
+
       const [kit] = await ctx.db
         .insert(inventoryKits)
         .values({
@@ -187,6 +221,8 @@ export const inventoryKitsRouter = createRouter({
           dueIntervalUnit: input.dueIntervalUnit ?? null,
           planName: input.planName?.trim() || null,
           kind: input.kind ?? "vaccine",
+          isCombo: reminders.isCombo,
+          reminderProtocols: reminders.reminderProtocols,
         })
         .returning();
 
@@ -212,7 +248,12 @@ export const inventoryKitsRouter = createRouter({
       const { id, items, ...fields } = input;
 
       const [existing] = await ctx.db
-        .select({ id: inventoryKits.id })
+        .select({
+          id: inventoryKits.id,
+          kind: inventoryKits.kind,
+          isCombo: inventoryKits.isCombo,
+          reminderProtocols: inventoryKits.reminderProtocols,
+        })
         .from(inventoryKits)
         .where(
           and(
@@ -243,6 +284,39 @@ export const inventoryKitsRouter = createRouter({
         updateValues.planName = fields.planName?.trim() || null;
       }
       if (fields.kind !== undefined) updateValues.kind = fields.kind;
+
+      if (
+        fields.isCombo !== undefined ||
+        fields.reminderProtocols !== undefined ||
+        fields.kind !== undefined
+      ) {
+        const reminders = normalizeReminderFields({
+          kind: fields.kind ?? existing.kind,
+          isCombo:
+            fields.isCombo ??
+            (fields.kind === "lab" ? false : existing.isCombo),
+          reminderProtocols:
+            fields.reminderProtocols ??
+            (fields.kind === "lab"
+              ? []
+              : (existing.reminderProtocols as string[] | null) ?? []),
+        });
+        if (
+          (fields.isCombo ?? existing.isCombo) &&
+          (fields.kind ?? existing.kind) === "vaccine" &&
+          reminders.reminderProtocols.length < 2 &&
+          (fields.isCombo === true ||
+            fields.reminderProtocols !== undefined)
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Combination vaccines need at least two reminder types selected",
+          });
+        }
+        updateValues.isCombo = reminders.isCombo;
+        updateValues.reminderProtocols = reminders.reminderProtocols;
+      }
 
       if (Object.keys(updateValues).length > 0) {
         await ctx.db

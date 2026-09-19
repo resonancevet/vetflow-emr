@@ -674,21 +674,34 @@ export default function NewSoapNotePage() {
           )}
           {planForm === "vaccine" && params.patientId && (
             <VaccinationForm
-              onSubmit={async (data) => {
+              onSubmit={async (entries) => {
                 try {
-                  const result = await createVaccination.mutateAsync({
-                    patientId: params.patientId,
-                    ...data,
-                  });
-                  toast.success("Vaccination recorded");
-                  toastStock(result);
+                  let lastResult: unknown;
+                  for (const entry of entries) {
+                    lastResult = await createVaccination.mutateAsync({
+                      patientId: params.patientId,
+                      ...entry,
+                    });
+                  }
+                  toast.success(
+                    entries.length > 1
+                      ? `Recorded ${entries.length} vaccine components`
+                      : "Vaccination recorded",
+                  );
+                  toastStock(lastResult as Parameters<typeof toastStock>[0]);
                   invalidatePatientClinical();
                   if (includeInPlan) {
-                    const due = data.nextDueDate
-                      ? `; next due ${data.nextDueDate}`
-                      : "";
-                    const lot = data.lotNumber ? ` (lot ${data.lotNumber})` : "";
-                    appendPlanLine(`Vaccine: ${data.vaccineName}${lot}${due}`);
+                    for (const entry of entries) {
+                      const due = entry.nextDueDate
+                        ? `; next due ${entry.nextDueDate}`
+                        : "";
+                      const lot = entry.lotNumber
+                        ? ` (lot ${entry.lotNumber})`
+                        : "";
+                      appendPlanLine(
+                        `Vaccine: ${entry.vaccineName}${lot}${due}`,
+                      );
+                    }
                   }
                   setPlanForm(null);
                 } catch (err) {

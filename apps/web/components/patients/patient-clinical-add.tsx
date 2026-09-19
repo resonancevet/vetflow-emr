@@ -6,6 +6,11 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { overdueVaccinations } from "@/lib/vaccination-due";
+import {
+  protocolLabel,
+  resolveVaccineProtocols,
+  vaccineProtocolKeys,
+} from "@/lib/vaccination-due";
 import { formatVisitDate } from "@/lib/practice-datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -185,7 +190,27 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
       )}
       {openForm === "vaccination" && (
         <VaccinationForm
-          onSubmit={(data) => createVaccination.mutate({ patientId, ...data })}
+          onSubmit={async (entries) => {
+            try {
+              let lastResult: unknown;
+              for (const entry of entries) {
+                lastResult = await createVaccination.mutateAsync({
+                  patientId,
+                  ...entry,
+                });
+              }
+              toast.success(
+                entries.length > 1
+                  ? `Recorded ${entries.length} vaccine components`
+                  : "Vaccination recorded",
+              );
+              toastStock(lastResult as Parameters<typeof toastStock>[0]);
+              setOpenForm(null);
+              invalidate();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Failed to save");
+            }
+          }}
           loading={createVaccination.isPending}
         />
       )}
@@ -400,27 +425,29 @@ function ExtraInventoryFields({
   );
 }
 
+export type VaccinationSubmitEntry = {
+  vaccineName: string;
+  lotNumber?: string;
+  administeredAt?: string;
+  nextDueDate?: string;
+  notes?: string;
+  manufacturer?: string;
+  kitId?: string;
+  productId?: string;
+  quantity?: number;
+  stockNote?: string;
+  extraItems?: Array<{
+    productId: string;
+    quantity: number;
+    note?: string;
+  }>;
+};
+
 export function VaccinationForm({
   onSubmit,
   loading,
 }: {
-  onSubmit: (data: {
-    vaccineName: string;
-    lotNumber?: string;
-    administeredAt?: string;
-    nextDueDate?: string;
-    notes?: string;
-    manufacturer?: string;
-    kitId?: string;
-    productId?: string;
-    quantity?: number;
-    stockNote?: string;
-    extraItems?: Array<{
-      productId: string;
-      quantity: number;
-      note?: string;
-    }>;
-  }) => void;
+  onSubmit: (entries: VaccinationSubmitEntry[]) => void | Promise<void>;
   loading: boolean;
 }) {
   const { data: kits } = trpc.inventoryKits.list.useQuery();
@@ -435,6 +462,7 @@ export function VaccinationForm({
     new Date().toISOString().slice(0, 10)
   );
   const [nextDueDate, setNextDueDate] = useState("");
+  const [protocolDues, setProtocolDues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
@@ -445,6 +473,15 @@ export function VaccinationForm({
   const kitDueLabel = selectedKit
     ? formatDueInterval(selectedKit.dueIntervalValue, selectedKit.dueIntervalUnit)
     : null;
+  const kitProtocols = Array.isArray(selectedKit?.reminderProtocols)
+    ? selectedKit.reminderProtocols
+    : [];
+  const protocols = resolveVaccineProtocols({
+    vaccineName,
+    reminderProtocols: kitProtocols,
+  });
+  const isCombo =
+    Boolean(selectedKit?.isCombo) || protocols.length > 1;
 
   useEffect(() => {
     if (!selectedKit?.dueIntervalValue || !selectedKit.dueIntervalUnit) return;
@@ -453,13 +490,43 @@ export function VaccinationForm({
       selectedKit.dueIntervalValue,
       selectedKit.dueIntervalUnit
     );
-    if (due) setNextDueDate(due);
+    if (due) {
+      setNextDueDate(due);
+      setProtocolDues((prev) => {
+        const next = { ...prev };
+        for (const key of resolveVaccineProtocols({
+          vaccineName,
+          reminderProtocols: Array.isArray(selectedKit.reminderProtocols)
+            ? selectedKit.reminderProtocols
+            : [],
+        })) {
+          if (!next[key]) next[key] = due;
+        }
+        return next;
+      });
+    }
   }, [
     administeredAt,
     selectedKit?.id,
     selectedKit?.dueIntervalValue,
     selectedKit?.dueIntervalUnit,
+    selectedKit?.reminderProtocols,
+    vaccineName,
   ]);
+
+  useEffect(() => {
+    const keys = resolveVaccineProtocols({
+      vaccineName,
+      reminderProtocols: kitProtocols,
+    });
+    setProtocolDues((prev) => {
+      const next: Record<string, string> = {};
+      for (const key of keys) {
+        next[key] = prev[key] || nextDueDate || "";
+      }
+      return next;
+    });
+  }, [vaccineName, nextDueDate, kitId, selectedKit?.isCombo, kitProtocols.join("|")]);
 
   function applyKit(id: string) {
     setKitId(id);
@@ -470,18 +537,18 @@ export function VaccinationForm({
     }
     const namingItem =
       kit.items.find((item) => item.itemType === "service") ?? kit.items[0];
+    let nextName = "";
     if (namingItem) {
-      setVaccineName(
-        planDisplayName(
-          kit.planName,
-          namingItem.itemType === "service"
-            ? namingItem.serviceName
-            : planDisplayName(
-                namingItem.productPlanName,
-                namingItem.productName
-              )
-        )
+      nextName = planDisplayName(
+        kit.planName,
+        namingItem.itemType === "service"
+          ? namingItem.serviceName
+          : planDisplayName(
+              namingItem.productPlanName,
+              namingItem.productName
+            )
       );
+      setVaccineName(nextName);
       if (
         namingItem.itemType !== "service" &&
         namingItem.productLotNumber
@@ -489,7 +556,8 @@ export function VaccinationForm({
         setLotNumber(namingItem.productLotNumber);
       }
     } else if (kit.planName) {
-      setVaccineName(kit.planName);
+      nextName = kit.planName;
+      setVaccineName(nextName);
     }
     setProduct(null);
     const due =
@@ -501,6 +569,19 @@ export function VaccinationForm({
           )
         : null;
     setNextDueDate(due ?? "");
+    const keys = resolveVaccineProtocols({
+      vaccineName: nextName,
+      reminderProtocols: Array.isArray(kit.reminderProtocols)
+        ? kit.reminderProtocols
+        : [],
+    });
+    if (keys.length > 0) {
+      const dues: Record<string, string> = {};
+      for (const key of keys) {
+        dues[key] = due ?? "";
+      }
+      setProtocolDues(dues);
+    }
   }
 
   return (
@@ -515,19 +596,55 @@ export function VaccinationForm({
             productId: row.product!.id,
             quantity: row.quantity,
           }));
-        onSubmit({
-          vaccineName: vaccineName.trim(),
+        const baseName = vaccineName.trim();
+        const shared = {
           lotNumber: lotNumber || undefined,
           manufacturer: manufacturer || undefined,
           administeredAt: administeredAt || undefined,
-          nextDueDate: nextDueDate || undefined,
           notes: notes || undefined,
+        };
+        const stockFields = {
           kitId: kitId || undefined,
           productId: kitId ? undefined : product?.id,
           quantity: kitId || !product ? undefined : quantity,
           stockNote: kitId || !product ? undefined : stockNote || undefined,
           extraItems: extraItems.length > 0 ? extraItems : undefined,
-        });
+        };
+
+        const splitCombo = isCombo && protocols.length > 1;
+        const entries: VaccinationSubmitEntry[] = splitCombo
+          ? protocols.map((key, index) => ({
+              ...shared,
+              vaccineName: `${baseName} (${protocolLabel(key)})`,
+              nextDueDate: protocolDues[key] || nextDueDate || undefined,
+              notes:
+                [
+                  notes.trim() || null,
+                  `Combo product: ${baseName}`,
+                ]
+                  .filter(Boolean)
+                  .join(" — ") || undefined,
+              ...(index === 0 ? stockFields : {}),
+            }))
+          : [
+              {
+                ...shared,
+                ...stockFields,
+                vaccineName: (() => {
+                  const key = protocols[0];
+                  if (!key) return baseName;
+                  const inferred = vaccineProtocolKeys(baseName);
+                  if (inferred.includes(key)) return baseName;
+                  return `${baseName} (${protocolLabel(key)})`;
+                })(),
+                nextDueDate:
+                  (protocols[0] && protocolDues[protocols[0]]) ||
+                  nextDueDate ||
+                  undefined,
+              },
+            ];
+
+        void onSubmit(entries);
       }}
     >
       {activeKits.length > 0 && (
@@ -671,19 +788,62 @@ export function VaccinationForm({
         <label className="mb-1 block text-xs font-medium">Lot number</label>
         <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
       </div>
-      <div>
-        <label className="mb-1 block text-xs font-medium">Next due</label>
-        <Input
-          type="date"
-          value={nextDueDate}
-          onChange={(e) => setNextDueDate(e.target.value)}
-        />
-        {kitDueLabel && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            From kit protocol: {kitDueLabel}
+      {isCombo ? (
+        <div className="sm:col-span-2 space-y-2 rounded-md border border-border bg-muted/30 p-3">
+          <p className="text-xs font-medium">
+            Combo product — set a next due date for each reminder
           </p>
-        )}
-      </div>
+          <p className="text-xs text-muted-foreground">
+            {selectedKit?.isCombo
+              ? "Marked as combination on the kit. "
+              : ""}
+            Detected: {protocols.map(protocolLabel).join(", ")}. Each gets its
+            own vaccine history row and overdue tracking.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {protocols.map((key) => (
+              <div key={key}>
+                <label className="mb-1 block text-xs font-medium">
+                  Next due — {protocolLabel(key)}
+                </label>
+                <Input
+                  type="date"
+                  value={protocolDues[key] ?? ""}
+                  onChange={(e) =>
+                    setProtocolDues((prev) => ({
+                      ...prev,
+                      [key]: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          {kitDueLabel && (
+            <p className="text-xs text-muted-foreground">
+              Kit default interval: {kitDueLabel} (pre-fills above; edit per
+              component as needed)
+            </p>
+          )}
+        </div>
+      ) : (
+        <div>
+          <label className="mb-1 block text-xs font-medium">
+            Next due
+            {protocols[0] ? ` (${protocolLabel(protocols[0])})` : ""}
+          </label>
+          <Input
+            type="date"
+            value={nextDueDate}
+            onChange={(e) => setNextDueDate(e.target.value)}
+          />
+          {kitDueLabel && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              From kit protocol: {kitDueLabel}
+            </p>
+          )}
+        </div>
+      )}
       <div className="sm:col-span-2">
         <label className="mb-1 block text-xs font-medium">Notes</label>
         <Input
@@ -1146,9 +1306,14 @@ function PatientAlerts({ patientId }: { patientId: string }) {
           Overdue vaccinations ({overdue.length})
         </p>
         <ul className="mt-1 list-inside list-disc text-amber-800 dark:text-amber-300">
-          {overdue.map((v) => (
-            <li key={v.id}>
-              {v.vaccineName} — due {formatVisitDate(v.nextDueDate)}
+          {overdue.map((alert) => (
+            <li key={`${alert.protocolKey}-${alert.vaccination.id}`}>
+              {alert.protocolLabel} — due{" "}
+              {formatVisitDate(alert.vaccination.nextDueDate)}
+              <span className="text-amber-700/80 dark:text-amber-400/80">
+                {" "}
+                (last: {alert.vaccination.vaccineName})
+              </span>
             </li>
           ))}
         </ul>

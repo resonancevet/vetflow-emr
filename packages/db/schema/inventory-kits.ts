@@ -5,6 +5,7 @@ import {
   text,
   integer,
   boolean,
+  jsonb,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -29,6 +30,13 @@ export const inventoryKits = pgTable(
     /** Optional protocol: next vaccine due date = administered date + this interval. */
     dueIntervalValue: integer("due_interval_value"),
     dueIntervalUnit: varchar("due_interval_unit", { length: 16 }),
+    /** Combination vaccine: needs a separate due date / reminder per protocol. */
+    isCombo: boolean("is_combo").notNull().default(false),
+    /** Which overdue reminder groups this kit satisfies (lyme, lepto, …). */
+    reminderProtocols: jsonb("reminder_protocols")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
   },
   (table) => ({
     practiceIdx: index("inventory_kits_practice_idx").on(

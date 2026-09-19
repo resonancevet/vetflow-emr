@@ -16,6 +16,10 @@ import {
   type DueIntervalUnit,
 } from "@/lib/due-interval";
 import { kitKindLabel, type KitKind } from "@/lib/kit-kind";
+import {
+  protocolLabel,
+  VACCINE_PROTOCOL_OPTIONS,
+} from "@/lib/vaccination-due";
 
 type KitItemDraft = {
   itemType: "product" | "service";
@@ -47,6 +51,8 @@ export function InventoryKitsTab() {
   const [dueIntervalValue, setDueIntervalValue] = useState("");
   const [dueIntervalUnit, setDueIntervalUnit] =
     useState<DueIntervalUnit>("years");
+  const [isCombo, setIsCombo] = useState(false);
+  const [reminderProtocols, setReminderProtocols] = useState<string[]>([]);
 
   const createKit = trpc.inventoryKits.create.useMutation({
     onSuccess: () => {
@@ -84,11 +90,24 @@ export function InventoryKitsTab() {
     setShowProtocol(false);
     setDueIntervalValue("");
     setDueIntervalUnit("years");
+    setIsCombo(false);
+    setReminderProtocols([]);
   }
 
   function startCreate() {
     resetForm();
     setShowForm(true);
+  }
+
+  function toggleReminder(key: string) {
+    setReminderProtocols((prev) => {
+      if (isCombo) {
+        return prev.includes(key)
+          ? prev.filter((k) => k !== key)
+          : [...prev, key];
+      }
+      return prev.includes(key) ? [] : [key];
+    });
   }
 
   function startEdit(kit: NonNullable<typeof kits>[number]) {
@@ -146,6 +165,11 @@ export function InventoryKitsTab() {
         ? kit.dueIntervalUnit
         : "years"
     );
+    const protocols = Array.isArray(kit.reminderProtocols)
+      ? kit.reminderProtocols
+      : [];
+    setIsCombo(Boolean(kit.isCombo));
+    setReminderProtocols(protocols);
   }
 
   function save() {
@@ -160,6 +184,10 @@ export function InventoryKitsTab() {
       toast.error("Add at least one product or service");
       return;
     }
+    if (kind === "vaccine" && isCombo && reminderProtocols.length < 2) {
+      toast.error("Combination vaccines need at least two reminder types");
+      return;
+    }
     const interval = Number(dueIntervalValue);
     const hasProtocol =
       kind === "vaccine" && Number.isFinite(interval) && interval >= 1;
@@ -169,6 +197,8 @@ export function InventoryKitsTab() {
       planName: planName.trim() || null,
       dueIntervalValue: hasProtocol ? interval : null,
       dueIntervalUnit: hasProtocol ? dueIntervalUnit : null,
+      isCombo: kind === "vaccine" ? isCombo : false,
+      reminderProtocols: kind === "vaccine" ? reminderProtocols : [],
       items: validItems.map((item, index) =>
         item.itemType === "service"
           ? {
@@ -243,9 +273,15 @@ export function InventoryKitsTab() {
             <label className="mb-1 block text-xs font-medium">Type</label>
             <select
               value={kind}
-              onChange={(e) =>
-                setKind(e.target.value === "lab" ? "lab" : "vaccine")
-              }
+              onChange={(e) => {
+                const next = e.target.value === "lab" ? "lab" : "vaccine";
+                setKind(next);
+                if (next === "lab") {
+                  setIsCombo(false);
+                  setReminderProtocols([]);
+                  setShowProtocol(false);
+                }
+              }}
               className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
               <option value="vaccine">Vaccine</option>
@@ -269,78 +305,144 @@ export function InventoryKitsTab() {
           </div>
 
           {kind === "vaccine" && (
-          <div className="rounded-md border border-border">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium"
-              onClick={() => {
-                setShowProtocol((open) => {
-                  if (!open && !dueIntervalValue) setDueIntervalValue("1");
-                  return !open;
-                });
-              }}
-            >
-              <span>Due date protocol</span>
-              {showProtocol ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
-            {showProtocol && (
-              <div className="space-y-2 border-t border-border px-3 py-3">
-                <p className="text-xs text-muted-foreground">
-                  Optional. Automatically calculates the next vaccine due date
-                  from the date given.
-                </p>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium">
-                      Interval
-                    </label>
-                    <Input
-                      type="number"
-                      min={1}
-                      className="w-24"
-                      value={dueIntervalValue}
-                      onChange={(e) => setDueIntervalValue(e.target.value)}
-                      placeholder="1"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium">
-                      Unit
-                    </label>
-                    <select
-                      value={dueIntervalUnit}
-                      onChange={(e) =>
-                        setDueIntervalUnit(e.target.value as DueIntervalUnit)
-                      }
-                      className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {DUE_INTERVAL_UNITS.map((unit) => (
-                        <option key={unit} value={unit}>
-                          {unit.charAt(0).toUpperCase() + unit.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setDueIntervalValue("");
-                      setDueIntervalUnit("years");
-                      setShowProtocol(false);
-                    }}
-                  >
-                    Remove
-                  </Button>
+            <>
+              <div className="space-y-3 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">Reminders / alerts</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Which overdue reminder(s) this kit clears when given.
+                    Optional — if blank, we infer from the vaccine name.
+                  </p>
                 </div>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-input"
+                    checked={isCombo}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsCombo(checked);
+                      if (!checked && reminderProtocols.length > 1) {
+                        setReminderProtocols((prev) => prev.slice(0, 1));
+                      }
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium">Combination vaccine</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Needs more than one due date and reminder (e.g.
+                      Lyme + Leptospirosis in one shot).
+                    </span>
+                  </span>
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {VACCINE_PROTOCOL_OPTIONS.map((opt) => {
+                    const checked = reminderProtocols.includes(opt.key);
+                    return (
+                      <label
+                        key={opt.key}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type={isCombo ? "checkbox" : "radio"}
+                          name={
+                            isCombo
+                              ? `reminder-${opt.key}`
+                              : "reminder-protocol"
+                          }
+                          className="h-4 w-4 border-input"
+                          checked={checked}
+                          onChange={() => toggleReminder(opt.key)}
+                        />
+                        {opt.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                {isCombo && reminderProtocols.length < 2 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Select at least two reminder types for a combination
+                    vaccine.
+                  </p>
+                )}
               </div>
-            )}
-          </div>
+
+              <div className="rounded-md border border-border">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium"
+                  onClick={() => {
+                    setShowProtocol((open) => {
+                      if (!open && !dueIntervalValue) setDueIntervalValue("1");
+                      return !open;
+                    });
+                  }}
+                >
+                  <span>Due date interval</span>
+                  {showProtocol ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+                {showProtocol && (
+                  <div className="space-y-2 border-t border-border px-3 py-3">
+                    <p className="text-xs text-muted-foreground">
+                      Optional. Pre-fills next due date(s) from the date given.
+                      For combination vaccines, the same interval is applied to
+                      each reminder (you can edit individually when recording).
+                    </p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium">
+                          Interval
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="w-24"
+                          value={dueIntervalValue}
+                          onChange={(e) => setDueIntervalValue(e.target.value)}
+                          placeholder="1"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium">
+                          Unit
+                        </label>
+                        <select
+                          value={dueIntervalUnit}
+                          onChange={(e) =>
+                            setDueIntervalUnit(
+                              e.target.value as DueIntervalUnit
+                            )
+                          }
+                          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          {DUE_INTERVAL_UNITS.map((unit) => (
+                            <option key={unit} value={unit}>
+                              {unit.charAt(0).toUpperCase() + unit.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setDueIntervalValue("");
+                          setDueIntervalUnit("years");
+                          setShowProtocol(false);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           <div className="space-y-2">
@@ -519,6 +621,13 @@ export function InventoryKitsTab() {
                     {kitKindLabel(kit.kind)} ·{" "}
                     {kit.isActive ? "Active" : "Inactive"}
                     {kit.planName ? ` · Plan: ${kit.planName}` : ""}
+                    {kit.isCombo ? " · Combo" : ""}
+                    {Array.isArray(kit.reminderProtocols) &&
+                    kit.reminderProtocols.length > 0
+                      ? ` · Reminders: ${kit.reminderProtocols
+                          .map((key) => protocolLabel(key))
+                          .join(", ")}`
+                      : ""}
                     {formatDueInterval(
                       kit.dueIntervalValue,
                       kit.dueIntervalUnit
