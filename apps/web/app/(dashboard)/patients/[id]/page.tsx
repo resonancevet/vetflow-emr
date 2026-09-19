@@ -43,6 +43,7 @@ import {
   ProceduresTab,
 } from "@/components/patients/patient-clinical-tabs";
 import { PatientComplianceSection } from "@/components/patients/patient-compliance-section";
+import { PatientDocumentsSection } from "@/components/patients/patient-documents-section";
 import { PatientCommunicationsTab } from "@/components/patients/patient-communications-tab";
 import {
   PatientAlertsBanner,
@@ -74,6 +75,7 @@ type ChartSection =
   | "vaccines"
   | "prescriptions"
   | "labs"
+  | "documents"
   | "compliance";
 
 function formatSex(sex: string | null): string {
@@ -272,6 +274,7 @@ export default function PatientDetailPage() {
       ? [
           { id: "prescriptions" as const, label: "Prescriptions" },
           { id: "labs" as const, label: "Lab Results" },
+          { id: "documents" as const, label: "Documents" },
           { id: "compliance" as const, label: "Compliance" },
         ]
       : []),
@@ -668,6 +671,18 @@ export default function PatientDetailPage() {
                 clientLastName: patient.clientLastName ?? null,
               }}
               canManage={canManagePrescriptions}
+            />
+          </section>
+        )}
+
+        {activeChartSection === "documents" && (
+          <section>
+            <h3 className="mb-3 font-heading text-base font-semibold">
+              Documents
+            </h3>
+            <PatientDocumentsSection
+              patientId={patient.id}
+              canManage={canManageClinicalRecords}
             />
           </section>
         )}
