@@ -179,7 +179,8 @@ export async function POST(req: NextRequest) {
   const rawName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload";
   const extMatch = rawName.match(/(\.[a-zA-Z0-9]{1,8})$/);
   const ext = extMatch?.[1] ?? "";
-  const base = rawName.slice(0, Math.max(1, 80 - ext.length));
+  const withoutExt = ext ? rawName.slice(0, -ext.length) : rawName;
+  const base = (withoutExt.slice(0, Math.max(1, 80 - ext.length)) || "upload");
   const safeName = `${base}${ext}`;
   const storedName = file.name.slice(0, 255);
   const key = `${practiceId}/${category}/${uuid}-${safeName}`;
