@@ -35,6 +35,7 @@ import {
   type TempUnit,
 } from "@/lib/soap-form";
 import { cn } from "@/lib/utils";
+import { toVisitDateInput } from "@/lib/practice-datetime";
 
 function toFahrenheit(value: string, unit: TempUnit): string | null {
   const trimmed = value.trim();
@@ -56,6 +57,7 @@ export default function NewSoapNotePage() {
   const [hydratedNoteId, setHydratedNoteId] = useState<string | null>(null);
 
   const [reasonForVisit, setReasonForVisit] = useState("");
+  const [visitDate, setVisitDate] = useState(toVisitDateInput());
   const [history, setHistory] = useState("");
 
   const [weight, setWeight] = useState("");
@@ -123,6 +125,7 @@ export default function NewSoapNotePage() {
 
     const draft = soapFormFromNote(note, weightUnit);
     setReasonForVisit(draft.reasonForVisit);
+    setVisitDate(toVisitDateInput(note.visitDate ?? note.createdAt));
     setHistory(draft.history);
     setWeight(draft.weight);
     setWeightUnit(draft.weightUnit);
@@ -229,6 +232,7 @@ export default function NewSoapNotePage() {
             assessment: assessment.trim(),
             plan: planText ?? "",
             reasonForVisit: reasonForVisit.trim(),
+            visitDate,
             formDraft,
             clientUpdatedAt: existingNoteQuery.data?.updatedAt
               ? new Date(existingNoteQuery.data.updatedAt)
@@ -241,6 +245,7 @@ export default function NewSoapNotePage() {
             assessment: assessment.trim() || undefined,
             plan: planText,
             reasonForVisit: reasonForVisit.trim() || undefined,
+            visitDate,
             formDraft,
           });
 
@@ -373,6 +378,23 @@ export default function NewSoapNotePage() {
       </div>
 
       <div className="mt-6 space-y-6">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <FormField id="visit-date" label="Exam / visit date">
+            <Input
+              id="visit-date"
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              className="max-w-xs"
+              required
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use the date the exam was performed, even if you write the note
+              later.
+            </p>
+          </FormField>
+        </div>
+
         <SoapSection
           letter="S"
           title="Subjective"

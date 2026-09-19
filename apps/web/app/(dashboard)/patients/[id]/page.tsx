@@ -50,6 +50,7 @@ import {
   PatientAlertsManageButton,
 } from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
+import { formatVisitDate } from "@/lib/practice-datetime";
 import { recordPatientView } from "@/lib/recent-patients";
 import {
   kgToLb,
@@ -216,9 +217,7 @@ export default function PatientDetailPage() {
             : undefined,
         })),
         recentNotes: soapNotes.slice(0, 5).map((n) => ({
-          date: n.createdAt
-            ? new Date(n.createdAt).toLocaleDateString()
-            : "Unknown",
+          date: formatVisitDate(n.visitDate ?? n.createdAt),
           subjective: n.subjective ?? undefined,
           objective: n.objective ?? undefined,
           assessment: n.assessment ?? undefined,

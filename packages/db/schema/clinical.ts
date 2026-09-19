@@ -12,7 +12,7 @@ import {
   jsonb,
   index,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { baseColumns } from "./common";
 import { practices } from "./practices";
 import { users } from "./users";
@@ -68,6 +68,8 @@ export const soapNotes = pgTable(
     diagnosis: varchar("diagnosis", { length: 500 }),
     prognosis: text("prognosis"),
     reasonForVisit: varchar("reason_for_visit", { length: 500 }),
+    /** Calendar date of the exam/visit (may differ from when the note was written). */
+    visitDate: date("visit_date").notNull().default(sql`CURRENT_DATE`),
     /** Structured New SOAP form fields so a draft can be resumed. */
     formDraft: jsonb("form_draft"),
     finalizedAt: timestamp("finalized_at", { withTimezone: true }),
@@ -77,6 +79,10 @@ export const soapNotes = pgTable(
   (table) => ({
     patientIdx: index("soap_notes_patient_idx").on(table.patientId),
     practiceIdx: index("soap_notes_practice_idx").on(table.practiceId, table.deletedAt),
+    visitDateIdx: index("soap_notes_visit_date_idx").on(
+      table.patientId,
+      table.visitDate
+    ),
   })
 );
 

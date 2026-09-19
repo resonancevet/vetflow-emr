@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { generatePrescriptionLabelPdf } from "@/lib/pdf";
 import { uploadFileToApi } from "@/lib/upload";
+import { formatVisitDate } from "@/lib/practice-datetime";
 
 /**
  * Patient-scoped clinical tab bodies.
@@ -162,9 +163,7 @@ export function SoapNotesTab({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium">
-                          {note.createdAt
-                            ? new Date(note.createdAt).toLocaleDateString()
-                            : "No date"}
+                          {formatVisitDate(note.visitDate ?? note.createdAt)}
                         </p>
                         <span
                           className={cn(

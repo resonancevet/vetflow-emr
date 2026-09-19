@@ -47,6 +47,7 @@ export const recordsRouter = createRouter({
           diagnosis: soapNotes.diagnosis,
           prognosis: soapNotes.prognosis,
           reasonForVisit: soapNotes.reasonForVisit,
+          visitDate: soapNotes.visitDate,
           authorName: users.name,
           finalizedAt: soapNotes.finalizedAt,
           finalizedByName: finalizedByUser.name,
@@ -67,7 +68,7 @@ export const recordsRouter = createRouter({
             isNull(soapNotes.deletedAt)
           )
         )
-        .orderBy(desc(soapNotes.createdAt));
+        .orderBy(desc(soapNotes.visitDate), desc(soapNotes.createdAt));
     }),
 
   getSoapNote: protectedProcedure
@@ -86,6 +87,7 @@ export const recordsRouter = createRouter({
           diagnosis: soapNotes.diagnosis,
           prognosis: soapNotes.prognosis,
           reasonForVisit: soapNotes.reasonForVisit,
+          visitDate: soapNotes.visitDate,
           formDraft: soapNotes.formDraft,
           finalizedAt: soapNotes.finalizedAt,
           autoFinalized: soapNotes.autoFinalized,
@@ -134,15 +136,17 @@ export const recordsRouter = createRouter({
         diagnosis: z.string().optional(),
         prognosis: z.string().optional(),
         reasonForVisit: z.string().optional(),
+        visitDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         formDraft: soapFormDraftSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { formDraft, ...fields } = input;
+      const { formDraft, visitDate, ...fields } = input;
       const [note] = await ctx.db
         .insert(soapNotes)
         .values({
           ...fields,
+          visitDate: visitDate ?? diagnosisDate(new Date()),
           formDraft: formDraft ?? null,
           authorId: ctx.user.id,
           practiceId: ctx.practiceId,
@@ -153,7 +157,7 @@ export const recordsRouter = createRouter({
           practiceId: ctx.practiceId,
           patientId: input.patientId,
           assessment: note.assessment,
-          onsetDate: diagnosisDate(note.createdAt),
+          onsetDate: diagnosisDate(note.visitDate ?? note.createdAt),
         });
       }
       return note!;
@@ -171,12 +175,13 @@ export const recordsRouter = createRouter({
         diagnosis: z.string().optional(),
         prognosis: z.string().optional(),
         reasonForVisit: z.string().optional(),
+        visitDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         formDraft: soapFormDraftSchema.optional(),
         clientUpdatedAt: clientUpdatedAtSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, clientUpdatedAt, formDraft, ...fields } = input;
+      const { id, clientUpdatedAt, formDraft, visitDate, ...fields } = input;
 
       const [existing] = await ctx.db
         .select({
@@ -211,6 +216,7 @@ export const recordsRouter = createRouter({
         diagnosis?: string;
         prognosis?: string;
         reasonForVisit?: string;
+        visitDate?: string;
         formDraft?: z.infer<typeof soapFormDraftSchema>;
       } = {};
       for (const key of [
@@ -225,6 +231,7 @@ export const recordsRouter = createRouter({
         const value = fields[key];
         if (value !== undefined) updateValues[key] = value;
       }
+      if (visitDate !== undefined) updateValues.visitDate = visitDate;
       if (formDraft !== undefined) updateValues.formDraft = formDraft;
       const [note] = await ctx.db
         .update(soapNotes)
@@ -243,7 +250,7 @@ export const recordsRouter = createRouter({
           practiceId: ctx.practiceId,
           patientId: note.patientId,
           assessment: note.assessment,
-          onsetDate: diagnosisDate(note.createdAt),
+          onsetDate: diagnosisDate(note.visitDate ?? note.createdAt),
         });
       }
       await writeAudit({

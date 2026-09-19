@@ -3,6 +3,10 @@ import { problemList } from "@openpims/db";
 import type { Database } from "@openpims/db/client";
 
 export function diagnosisDate(value: Date | string | null | undefined): string {
+  if (typeof value === "string") {
+    const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1]!;
+  }
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) {
     return new Date().toISOString().slice(0, 10);

@@ -29,3 +29,39 @@ export function formatPracticeTime(
     minute: "2-digit",
   });
 }
+
+/** Format a calendar visit date (YYYY-MM-DD) without timezone day-shift. */
+export function formatVisitDate(d: Date | string | null | undefined): string {
+  if (!d) return "No date";
+  if (typeof d === "string") {
+    const match = d.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      return new Date(year, month - 1, day).toLocaleDateString("en-US");
+    }
+  }
+  return new Date(d).toLocaleDateString("en-US");
+}
+
+export function toVisitDateInput(d?: Date | string | null): string {
+  if (typeof d === "string") {
+    const match = d.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1]!;
+  }
+  const date = d ? new Date(d) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    const now = new Date();
+    return [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
