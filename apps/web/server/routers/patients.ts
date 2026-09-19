@@ -197,8 +197,15 @@ export const patientsRouter = createRouter({
 
       const [weights, allergies] = await Promise.all([
         ctx.db
-          .select()
+          .select({
+            id: patientWeights.id,
+            weightKg: patientWeights.weightKg,
+            recordedAt: patientWeights.recordedAt,
+            recordedBy: users.name,
+            updatedAt: patientWeights.updatedAt,
+          })
           .from(patientWeights)
+          .leftJoin(users, eq(patientWeights.recordedBy, users.id))
           .where(
             and(
               eq(patientWeights.patientId, input.id),
