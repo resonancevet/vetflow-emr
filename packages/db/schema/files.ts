@@ -4,11 +4,19 @@ import {
   varchar,
   integer,
   index,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { baseColumns } from "./common";
 import { practices } from "./practices";
 import { users } from "./users";
+
+/** Optional inline bytes when object storage is unavailable (e.g. misconfigured host env). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const files = pgTable(
   "files",
@@ -28,6 +36,7 @@ export const files = pgTable(
     category: varchar("category", { length: 64 }),
     entityType: varchar("entity_type", { length: 64 }),
     entityId: uuid("entity_id"),
+    content: bytea("content"),
   },
   (table) => ({
     practiceIdx: index("files_practice_idx").on(table.practiceId, table.deletedAt),

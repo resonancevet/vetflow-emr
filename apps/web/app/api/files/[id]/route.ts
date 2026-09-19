@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@openpims/db/client";
 import { files } from "@openpims/db";
-import { getObject } from "@/lib/s3";
+import { getObject, storageErrorMessage } from "@/lib/s3";
 
 /**
  * Stream a stored attachment back to the browser. We do this through the app
@@ -29,6 +29,7 @@ export async function GET(
       fileKey: files.fileKey,
       fileName: files.fileName,
       mimeType: files.mimeType,
+      content: files.content,
     })
     .from(files)
     .where(
@@ -44,6 +45,20 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const safeName = row.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+  // Prefer inline DB bytes when present (fallback path when object storage
+  // was unavailable at upload time, or after a backfill).
+  if (row.content && row.content.length > 0) {
+    return new Response(new Uint8Array(row.content), {
+      headers: {
+        "Content-Type": row.mimeType ?? "application/octet-stream",
+        "Content-Disposition": `inline; filename="${safeName}"`,
+        "Cache-Control": "private, max-age=300",
+      },
+    });
+  }
+
   try {
     const obj = await getObject(row.fileKey);
     if (!obj.Body) {
@@ -56,7 +71,6 @@ export async function GET(
       transformToWebStream: () => ReadableStream;
     };
 
-    const safeName = row.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     return new Response(body.transformToWebStream(), {
       headers: {
         "Content-Type":
@@ -68,7 +82,7 @@ export async function GET(
   } catch (err) {
     console.error("File fetch failed:", err);
     return NextResponse.json(
-      { error: "Failed to fetch file" },
+      { error: storageErrorMessage(err) },
       { status: 500 },
     );
   }

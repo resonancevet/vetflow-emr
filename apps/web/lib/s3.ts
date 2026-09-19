@@ -8,17 +8,53 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const s3 = new S3Client({
-  endpoint: process.env.S3_ENDPOINT,
-  region: process.env.S3_REGION ?? "us-east-1",
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY ?? "",
-    secretAccessKey: process.env.S3_SECRET_KEY ?? "",
-  },
-  forcePathStyle: true, // Required for MinIO / S3-compatible stores
-});
+let _s3: S3Client | null = null;
 
-const bucket = process.env.S3_BUCKET ?? "openpims";
+function resolveRegion(): string {
+  const configured = process.env.S3_REGION?.trim();
+  if (configured) return configured;
+  // Cloudflare R2 accepts "auto"; defaulting here avoids signature mismatches
+  // when the host env omits S3_REGION.
+  if (process.env.S3_ENDPOINT?.includes("r2.cloudflarestorage.com")) {
+    return "auto";
+  }
+  return "us-east-1";
+}
+
+function getS3(): S3Client {
+  if (_s3) return _s3;
+
+  const accessKeyId = process.env.S3_ACCESS_KEY?.trim() ?? "";
+  const secretAccessKey = process.env.S3_SECRET_KEY?.trim() ?? "";
+  const endpoint = process.env.S3_ENDPOINT?.trim();
+
+  if (!accessKeyId || !secretAccessKey || !endpoint) {
+    throw new Error(
+      "File storage is not configured. Set S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, and S3_BUCKET on the host.",
+    );
+  }
+
+  _s3 = new S3Client({
+    endpoint,
+    region: resolveRegion(),
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true, // Required for MinIO / S3-compatible stores
+  });
+  return _s3;
+}
+
+function getBucket(): string {
+  return process.env.S3_BUCKET?.trim() || "openpims";
+}
+
+export function isObjectStorageConfigured(): boolean {
+  return Boolean(
+    process.env.S3_ENDPOINT?.trim() &&
+      process.env.S3_ACCESS_KEY?.trim() &&
+      process.env.S3_SECRET_KEY?.trim() &&
+      process.env.S3_BUCKET?.trim(),
+  );
+}
 
 // In dev, an empty MinIO volume won't have the bucket yet. Create it on first
 // upload so devs don't hit a confusing "NoSuchBucket" error after a volume
@@ -31,10 +67,10 @@ async function ensureBucket(): Promise<void> {
   if (!bucketReadyPromise) {
     bucketReadyPromise = (async () => {
       try {
-        await s3.send(new HeadBucketCommand({ Bucket: bucket }));
+        await getS3().send(new HeadBucketCommand({ Bucket: getBucket() }));
       } catch {
         try {
-          await s3.send(new CreateBucketCommand({ Bucket: bucket }));
+          await getS3().send(new CreateBucketCommand({ Bucket: getBucket() }));
         } catch (err: unknown) {
           const code =
             (err as { name?: string; Code?: string }).name ??
@@ -67,9 +103,9 @@ export async function uploadFile(
   contentType: string,
 ): Promise<string> {
   await ensureBucket();
-  await s3.send(
+  await getS3().send(
     new PutObjectCommand({
-      Bucket: bucket,
+      Bucket: getBucket(),
       Key: key,
       Body: body,
       ContentType: contentType,
@@ -78,7 +114,7 @@ export async function uploadFile(
 
   // Build the URL from the endpoint so it works for both AWS S3 and MinIO
   const endpoint = process.env.S3_ENDPOINT ?? "https://s3.amazonaws.com";
-  return `${endpoint}/${bucket}/${key}`;
+  return `${endpoint}/${getBucket()}/${key}`;
 }
 
 /**
@@ -93,11 +129,11 @@ export async function getSignedUrl(
   expiresIn = 3600,
 ): Promise<string> {
   const command = new GetObjectCommand({
-    Bucket: bucket,
+    Bucket: getBucket(),
     Key: key,
   });
 
-  return awsGetSignedUrl(s3, command, { expiresIn });
+  return awsGetSignedUrl(getS3(), command, { expiresIn });
 }
 
 /**
@@ -107,9 +143,9 @@ export async function getSignedUrl(
  * devices).
  */
 export async function getObject(key: string) {
-  return s3.send(
+  return getS3().send(
     new GetObjectCommand({
-      Bucket: bucket,
+      Bucket: getBucket(),
       Key: key,
     }),
   );
@@ -121,10 +157,31 @@ export async function getObject(key: string) {
  * @param key Object key to delete
  */
 export async function deleteFile(key: string): Promise<void> {
-  await s3.send(
+  await getS3().send(
     new DeleteObjectCommand({
-      Bucket: bucket,
+      Bucket: getBucket(),
       Key: key,
     }),
   );
+}
+
+/** User-facing message for storage failures (safe to return in API JSON). */
+export function storageErrorMessage(err: unknown): string {
+  if (!isObjectStorageConfigured()) {
+    return "File storage is not configured. Set S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, and S3_BUCKET on the host.";
+  }
+  const name = err instanceof Error ? err.name : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  if (
+    name === "CredentialsProviderError" ||
+    /access key|invalid.?access|signature|security token|forbidden|unauthorized/i.test(
+      msg,
+    )
+  ) {
+    return "File storage credentials were rejected. Check S3_ACCESS_KEY and S3_SECRET_KEY on the host.";
+  }
+  if (/NoSuchBucket/i.test(msg) || /bucket/i.test(name)) {
+    return `File storage bucket not found (${getBucket()}). Check S3_BUCKET on the host.`;
+  }
+  return `Upload failed (${name || "Error"}: ${msg})`;
 }

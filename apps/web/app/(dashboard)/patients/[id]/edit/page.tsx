@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { uploadFileToApi } from "@/lib/upload";
+import { normalizeImageForUpload, uploadFileToApi } from "@/lib/upload";
 
 const speciesOptions = [
   { value: "canine", label: "Canine" },
@@ -97,15 +97,18 @@ export default function EditPatientPage() {
 
     setUploadingPhoto(true);
     try {
-      const data = await uploadFileToApi(file, {
+      const normalized = await normalizeImageForUpload(file);
+      const data = await uploadFileToApi(normalized, {
         category: "patient-photos",
         entityType: "patient",
         entityId: params.id,
       });
       const photoUrl = data.id ? `/api/files/${data.id}` : data.url;
       updatePhoto.mutate({ id: params.id, photoUrl });
-    } catch {
-      toast.error("Failed to upload photo");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to upload photo",
+      );
     } finally {
       setUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -186,7 +189,7 @@ export default function EditPatientPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
                 onChange={handlePhotoUpload}
                 className="hidden"
               />
@@ -205,7 +208,7 @@ export default function EditPatientPage() {
                     : "Upload photo"}
               </Button>
               <p className="mt-1 text-xs text-muted-foreground">
-                JPEG, PNG, or WebP up to 10 MB.
+                Photos up to 10 MB. iPhone HEIC is converted when possible.
               </p>
             </div>
           </div>

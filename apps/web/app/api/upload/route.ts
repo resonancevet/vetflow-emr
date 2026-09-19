@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { randomUUID } from "crypto";
 import { authOptions } from "@/lib/auth";
-import { uploadFile } from "@/lib/s3";
+import { uploadFile, storageErrorMessage } from "@/lib/s3";
 import { db } from "@openpims/db/client";
 import { files } from "@openpims/db";
 
@@ -26,6 +26,78 @@ const ALLOWED_MIME_TYPES: Record<string, string> = {
   "image/webp": ".webp",
   "application/pdf": ".pdf",
 };
+
+const MIME_ALIASES: Record<string, string> = {
+  "image/jpg": "image/jpeg",
+  "image/pjpeg": "image/jpeg",
+  "image/x-png": "image/png",
+};
+
+const MIME_BY_EXT: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+};
+
+function extensionOf(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i).toLowerCase() : "";
+}
+
+function sniffMime(buffer: Buffer): string | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (buffer.length >= 4 && buffer.toString("ascii", 0, 4) === "%PDF") {
+    return "application/pdf";
+  }
+  // HEIC/HEIF often starts with ....ftypheic / ftypheif / ftypmif1
+  if (buffer.length >= 12 && buffer.toString("ascii", 4, 8) === "ftyp") {
+    const brand = buffer.toString("ascii", 8, 12).toLowerCase();
+    if (
+      brand.startsWith("heic") ||
+      brand.startsWith("heif") ||
+      brand.startsWith("mif1") ||
+      brand.startsWith("msf1")
+    ) {
+      return "image/heic";
+    }
+  }
+  return null;
+}
+
+function resolveMimeType(file: File, buffer: Buffer): string | null {
+  const raw = (file.type || "").toLowerCase().trim();
+  const aliased = MIME_ALIASES[raw] ?? raw;
+  if (ALLOWED_MIME_TYPES[aliased]) return aliased;
+  if (aliased === "image/heic" || aliased === "image/heif") return "image/heic";
+
+  const ext = extensionOf(file.name);
+  if (ext === ".heic" || ext === ".heif") return "image/heic";
+  if (MIME_BY_EXT[ext] && ALLOWED_MIME_TYPES[MIME_BY_EXT[ext]]) {
+    return MIME_BY_EXT[ext];
+  }
+
+  return sniffMime(buffer);
+}
 
 export async function POST(req: NextRequest) {
   // ---------- Auth ----------
@@ -70,17 +142,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ---------- Validate MIME type ----------
-  const mimeType = file.type;
-  if (!ALLOWED_MIME_TYPES[mimeType]) {
-    return NextResponse.json(
-      {
-        error: `File type not allowed. Accepted: ${Object.keys(ALLOWED_MIME_TYPES).join(", ")}`,
-      },
-      { status: 400 },
-    );
-  }
-
   // ---------- Validate size ----------
   if (file.size > MAX_FILE_SIZE) {
     return NextResponse.json(
@@ -89,24 +150,65 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = resolveMimeType(file, buffer);
+
+  if (mimeType === "image/heic") {
+    return NextResponse.json(
+      {
+        error:
+          "HEIC photos aren't supported. Export or share the photo as JPEG and try again.",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (!mimeType || !ALLOWED_MIME_TYPES[mimeType]) {
+    return NextResponse.json(
+      {
+        error: `File type not allowed. Accepted: ${Object.keys(ALLOWED_MIME_TYPES).join(", ")}`,
+      },
+      { status: 400 },
+    );
+  }
+
   // ---------- Build S3 key ----------
   const practiceId = session.user.practiceId;
   const uuid = randomUUID();
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  // Keep keys/names short so varchar(255/512) columns and R2 URLs stay valid.
+  const rawName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload";
+  const extMatch = rawName.match(/(\.[a-zA-Z0-9]{1,8})$/);
+  const ext = extMatch?.[1] ?? "";
+  const base = rawName.slice(0, Math.max(1, 80 - ext.length));
+  const safeName = `${base}${ext}`;
+  const storedName = file.name.slice(0, 255);
   const key = `${practiceId}/${category}/${uuid}-${safeName}`;
 
-  // ---------- Upload ----------
+  // ---------- Upload (object storage, with DB byte fallback) ----------
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const url = await uploadFile(key, buffer, mimeType);
+    let url: string;
+    let content: Buffer | null = null;
 
-    // Persist metadata in the database
+    try {
+      url = await uploadFile(key, buffer, mimeType);
+    } catch (storageErr) {
+      // Host env often lacks working R2/S3 credentials (common on fresh Vercel
+      // projects). Keep the upload working by storing bytes in Postgres and
+      // serving them through /api/files.
+      console.error(
+        "Object storage upload failed; storing file in database:",
+        storageErr,
+      );
+      url = "db-store";
+      content = buffer;
+    }
+
     const [fileRow] = await db
       .insert(files)
       .values({
         practiceId,
         uploadedBy: session.user.id,
-        fileName: file.name,
+        fileName: storedName,
         fileKey: key,
         fileUrl: url,
         mimeType,
@@ -114,6 +216,7 @@ export async function POST(req: NextRequest) {
         category,
         entityType: entityType ?? null,
         entityId: entityId ?? null,
+        content,
       })
       .returning({ id: files.id });
 
@@ -124,7 +227,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Upload failed:", err);
     return NextResponse.json(
-      { error: "Upload failed" },
+      { error: storageErrorMessage(err) },
       { status: 500 },
     );
   }
