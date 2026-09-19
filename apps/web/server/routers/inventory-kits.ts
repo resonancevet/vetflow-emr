@@ -8,7 +8,7 @@ import {
   products,
   services,
 } from "@openpims/db";
-import { DUE_INTERVAL_UNITS } from "@/lib/due-interval";
+import { DUE_INTERVAL_UNITS, isDueIntervalUnit } from "@/lib/due-interval";
 import { KIT_KINDS } from "@/lib/kit-kind";
 import { VACCINE_PROTOCOL_KEYS } from "@/lib/vaccination-due";
 
@@ -17,6 +17,11 @@ const reminderProtocolSchema = z.enum(
   VACCINE_PROTOCOL_KEYS as [string, ...string[]],
 );
 
+const reminderDueIntervalSchema = z.object({
+  value: z.number().int().min(1).max(3650),
+  unit: dueIntervalUnitSchema,
+});
+
 const dueIntervalFields = {
   dueIntervalValue: z.number().int().min(1).max(3650).nullable().optional(),
   dueIntervalUnit: dueIntervalUnitSchema.nullable().optional(),
@@ -24,24 +29,56 @@ const dueIntervalFields = {
   kind: z.enum(KIT_KINDS).optional(),
   isCombo: z.boolean().optional(),
   reminderProtocols: z.array(reminderProtocolSchema).optional(),
+  reminderDueIntervals: z
+    .record(reminderProtocolSchema, reminderDueIntervalSchema)
+    .optional(),
 };
 
 function normalizeReminderFields(input: {
   kind?: string;
   isCombo?: boolean;
   reminderProtocols?: string[];
+  reminderDueIntervals?: Record<string, { value: number; unit: string }>;
+  dueIntervalValue?: number | null;
+  dueIntervalUnit?: string | null;
 }) {
   const kind = input.kind ?? "vaccine";
   if (kind !== "vaccine") {
-    return { isCombo: false, reminderProtocols: [] as string[] };
+    return {
+      isCombo: false,
+      reminderProtocols: [] as string[],
+      reminderDueIntervals: {} as Record<
+        string,
+        { value: number; unit: string }
+      >,
+    };
   }
   const protocols = [...new Set(input.reminderProtocols ?? [])];
   const isCombo = Boolean(input.isCombo) && protocols.length > 1;
+  const kept = isCombo ? protocols : protocols.slice(0, 1);
+  const rawIntervals = input.reminderDueIntervals ?? {};
+  const reminderDueIntervals: Record<string, { value: number; unit: string }> =
+    {};
+  for (const key of kept) {
+    const row = rawIntervals[key];
+    if (row && row.value >= 1 && isDueIntervalUnit(row.unit)) {
+      reminderDueIntervals[key] = { value: row.value, unit: row.unit };
+    } else if (
+      !isCombo &&
+      input.dueIntervalValue &&
+      input.dueIntervalValue >= 1 &&
+      isDueIntervalUnit(input.dueIntervalUnit)
+    ) {
+      reminderDueIntervals[key] = {
+        value: input.dueIntervalValue,
+        unit: input.dueIntervalUnit,
+      };
+    }
+  }
   return {
     isCombo,
-    reminderProtocols: isCombo
-      ? protocols
-      : protocols.slice(0, 1),
+    reminderProtocols: kept,
+    reminderDueIntervals,
   };
 }
 
@@ -223,6 +260,7 @@ export const inventoryKitsRouter = createRouter({
           kind: input.kind ?? "vaccine",
           isCombo: reminders.isCombo,
           reminderProtocols: reminders.reminderProtocols,
+          reminderDueIntervals: reminders.reminderDueIntervals,
         })
         .returning();
 
@@ -253,6 +291,9 @@ export const inventoryKitsRouter = createRouter({
           kind: inventoryKits.kind,
           isCombo: inventoryKits.isCombo,
           reminderProtocols: inventoryKits.reminderProtocols,
+          reminderDueIntervals: inventoryKits.reminderDueIntervals,
+          dueIntervalValue: inventoryKits.dueIntervalValue,
+          dueIntervalUnit: inventoryKits.dueIntervalUnit,
         })
         .from(inventoryKits)
         .where(
@@ -288,7 +329,10 @@ export const inventoryKitsRouter = createRouter({
       if (
         fields.isCombo !== undefined ||
         fields.reminderProtocols !== undefined ||
-        fields.kind !== undefined
+        fields.reminderDueIntervals !== undefined ||
+        fields.kind !== undefined ||
+        fields.dueIntervalValue !== undefined ||
+        fields.dueIntervalUnit !== undefined
       ) {
         const reminders = normalizeReminderFields({
           kind: fields.kind ?? existing.kind,
@@ -300,6 +344,22 @@ export const inventoryKitsRouter = createRouter({
             (fields.kind === "lab"
               ? []
               : (existing.reminderProtocols as string[] | null) ?? []),
+          reminderDueIntervals:
+            fields.reminderDueIntervals ??
+            (fields.kind === "lab"
+              ? {}
+              : (existing.reminderDueIntervals as Record<
+                  string,
+                  { value: number; unit: string }
+                > | null) ?? {}),
+          dueIntervalValue:
+            fields.dueIntervalValue !== undefined
+              ? fields.dueIntervalValue
+              : existing.dueIntervalValue,
+          dueIntervalUnit:
+            fields.dueIntervalUnit !== undefined
+              ? fields.dueIntervalUnit
+              : existing.dueIntervalUnit,
         });
         if (
           (fields.isCombo ?? existing.isCombo) &&
@@ -316,6 +376,7 @@ export const inventoryKitsRouter = createRouter({
         }
         updateValues.isCombo = reminders.isCombo;
         updateValues.reminderProtocols = reminders.reminderProtocols;
+        updateValues.reminderDueIntervals = reminders.reminderDueIntervals;
       }
 
       if (Object.keys(updateValues).length > 0) {

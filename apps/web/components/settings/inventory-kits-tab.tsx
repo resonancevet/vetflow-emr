@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,12 @@ type KitItemDraft = {
   note: string;
 };
 
+type ComboSlot = {
+  protocol: string;
+  value: string;
+  unit: DueIntervalUnit;
+};
+
 const emptyItem = (itemType: "product" | "service" = "product"): KitItemDraft => ({
   itemType,
   product: null,
@@ -36,6 +42,87 @@ const emptyItem = (itemType: "product" | "service" = "product"): KitItemDraft =>
   quantity: 1,
   note: "",
 });
+
+const emptySlot = (): ComboSlot => ({
+  protocol: "",
+  value: "1",
+  unit: "years",
+});
+
+function unitFrom(value: string | null | undefined): DueIntervalUnit {
+  return value === "days" ||
+    value === "weeks" ||
+    value === "months" ||
+    value === "years"
+    ? value
+    : "years";
+}
+
+function ProtocolDueRow({
+  label,
+  slot,
+  excludeProtocol,
+  onChange,
+}: {
+  label: string;
+  slot: ComboSlot;
+  excludeProtocol?: string;
+  onChange: (next: ComboSlot) => void;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5.5rem_8rem] sm:items-end">
+      <div className="min-w-0">
+        <label className="mb-1 block text-xs font-medium">{label}</label>
+        <select
+          value={slot.protocol}
+          onChange={(e) => onChange({ ...slot, protocol: e.target.value })}
+          className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="">Select vaccine…</option>
+          {VACCINE_PROTOCOL_OPTIONS.map((opt) => (
+            <option
+              key={opt.key}
+              value={opt.key}
+              disabled={
+                Boolean(excludeProtocol) &&
+                excludeProtocol === opt.key &&
+                slot.protocol !== opt.key
+              }
+            >
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium">Interval</label>
+        <Input
+          type="number"
+          min={1}
+          value={slot.value}
+          onChange={(e) => onChange({ ...slot, value: e.target.value })}
+          placeholder="1"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium">Unit</label>
+        <select
+          value={slot.unit}
+          onChange={(e) =>
+            onChange({ ...slot, unit: e.target.value as DueIntervalUnit })
+          }
+          className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {DUE_INTERVAL_UNITS.map((unit) => (
+            <option key={unit} value={unit}>
+              {unit.charAt(0).toUpperCase() + unit.slice(1)}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
 
 export function InventoryKitsTab() {
   const utils = trpc.useUtils();
@@ -47,12 +134,10 @@ export function InventoryKitsTab() {
   const [kind, setKind] = useState<KitKind>("vaccine");
   const [planName, setPlanName] = useState("");
   const [items, setItems] = useState<KitItemDraft[]>([emptyItem()]);
-  const [showProtocol, setShowProtocol] = useState(false);
-  const [dueIntervalValue, setDueIntervalValue] = useState("");
-  const [dueIntervalUnit, setDueIntervalUnit] =
-    useState<DueIntervalUnit>("years");
   const [isCombo, setIsCombo] = useState(false);
-  const [reminderProtocols, setReminderProtocols] = useState<string[]>([]);
+  const [singleSlot, setSingleSlot] = useState<ComboSlot>(emptySlot());
+  const [comboSlot1, setComboSlot1] = useState<ComboSlot>(emptySlot());
+  const [comboSlot2, setComboSlot2] = useState<ComboSlot>(emptySlot());
 
   const createKit = trpc.inventoryKits.create.useMutation({
     onSuccess: () => {
@@ -87,11 +172,10 @@ export function InventoryKitsTab() {
     setKind("vaccine");
     setPlanName("");
     setItems([emptyItem()]);
-    setShowProtocol(false);
-    setDueIntervalValue("");
-    setDueIntervalUnit("years");
     setIsCombo(false);
-    setReminderProtocols([]);
+    setSingleSlot(emptySlot());
+    setComboSlot1(emptySlot());
+    setComboSlot2(emptySlot());
   }
 
   function startCreate() {
@@ -99,15 +183,23 @@ export function InventoryKitsTab() {
     setShowForm(true);
   }
 
-  function toggleReminder(key: string) {
-    setReminderProtocols((prev) => {
-      if (isCombo) {
-        return prev.includes(key)
-          ? prev.filter((k) => k !== key)
-          : [...prev, key];
-      }
-      return prev.includes(key) ? [] : [key];
-    });
+  function slotFromStored(
+    key: string | undefined,
+    stored: Record<string, { value?: number; unit?: string }>,
+    fallbackValue?: number | null,
+    fallbackUnit?: string | null,
+  ): ComboSlot {
+    if (!key) return emptySlot();
+    const row = stored[key];
+    return {
+      protocol: key,
+      value: row?.value
+        ? String(row.value)
+        : fallbackValue
+          ? String(fallbackValue)
+          : "1",
+      unit: unitFrom(row?.unit ?? fallbackUnit),
+    };
   }
 
   function startEdit(kit: NonNullable<typeof kits>[number]) {
@@ -150,26 +242,63 @@ export function InventoryKitsTab() {
           )
         : [emptyItem()]
     );
-    const hasProtocol = Boolean(
-      kit.dueIntervalValue && kit.dueIntervalUnit
-    );
-    setShowProtocol(hasProtocol);
-    setDueIntervalValue(
-      kit.dueIntervalValue ? String(kit.dueIntervalValue) : ""
-    );
-    setDueIntervalUnit(
-      kit.dueIntervalUnit === "days" ||
-        kit.dueIntervalUnit === "weeks" ||
-        kit.dueIntervalUnit === "months" ||
-        kit.dueIntervalUnit === "years"
-        ? kit.dueIntervalUnit
-        : "years"
-    );
+
     const protocols = Array.isArray(kit.reminderProtocols)
       ? kit.reminderProtocols
       : [];
-    setIsCombo(Boolean(kit.isCombo));
-    setReminderProtocols(protocols);
+    const stored =
+      kit.reminderDueIntervals &&
+      typeof kit.reminderDueIntervals === "object" &&
+      !Array.isArray(kit.reminderDueIntervals)
+        ? (kit.reminderDueIntervals as Record<
+            string,
+            { value?: number; unit?: string }
+          >)
+        : {};
+    const combo = Boolean(kit.isCombo) && protocols.length >= 2;
+    setIsCombo(combo);
+
+    if (combo) {
+      setComboSlot1(
+        slotFromStored(
+          protocols[0],
+          stored,
+          kit.dueIntervalValue,
+          kit.dueIntervalUnit,
+        ),
+      );
+      setComboSlot2(
+        slotFromStored(
+          protocols[1],
+          stored,
+          kit.dueIntervalValue,
+          kit.dueIntervalUnit,
+        ),
+      );
+      setSingleSlot(emptySlot());
+    } else {
+      const key = protocols[0];
+      if (key) {
+        setSingleSlot(
+          slotFromStored(
+            key,
+            stored,
+            kit.dueIntervalValue,
+            kit.dueIntervalUnit,
+          ),
+        );
+      } else if (kit.dueIntervalValue) {
+        setSingleSlot({
+          protocol: "",
+          value: String(kit.dueIntervalValue),
+          unit: unitFrom(kit.dueIntervalUnit),
+        });
+      } else {
+        setSingleSlot(emptySlot());
+      }
+      setComboSlot1(emptySlot());
+      setComboSlot2(emptySlot());
+    }
   }
 
   function save() {
@@ -184,21 +313,65 @@ export function InventoryKitsTab() {
       toast.error("Add at least one product or service");
       return;
     }
-    if (kind === "vaccine" && isCombo && reminderProtocols.length < 2) {
-      toast.error("Combination vaccines need at least two reminder types");
-      return;
+
+    let reminderProtocols: string[] = [];
+    let reminderDueIntervals: Record<
+      string,
+      { value: number; unit: DueIntervalUnit }
+    > = {};
+    let dueIntervalValue: number | null = null;
+    let dueIntervalUnit: DueIntervalUnit | null = null;
+    let combo = false;
+
+    if (kind === "vaccine" && isCombo) {
+      if (!comboSlot1.protocol || !comboSlot2.protocol) {
+        toast.error("Select both vaccines for the combination");
+        return;
+      }
+      if (comboSlot1.protocol === comboSlot2.protocol) {
+        toast.error("Choose two different vaccines for the combination");
+        return;
+      }
+      const v1 = Number(comboSlot1.value);
+      const v2 = Number(comboSlot2.value);
+      if (!Number.isFinite(v1) || v1 < 1 || !Number.isFinite(v2) || v2 < 1) {
+        toast.error("Enter a due interval for each vaccine");
+        return;
+      }
+      combo = true;
+      reminderProtocols = [comboSlot1.protocol, comboSlot2.protocol];
+      reminderDueIntervals = {
+        [comboSlot1.protocol]: { value: v1, unit: comboSlot1.unit },
+        [comboSlot2.protocol]: { value: v2, unit: comboSlot2.unit },
+      };
+    } else if (kind === "vaccine") {
+      if (singleSlot.protocol) {
+        reminderProtocols = [singleSlot.protocol];
+      }
+      const interval = Number(singleSlot.value);
+      if (Number.isFinite(interval) && interval >= 1) {
+        dueIntervalValue = interval;
+        dueIntervalUnit = singleSlot.unit;
+        if (singleSlot.protocol) {
+          reminderDueIntervals = {
+            [singleSlot.protocol]: {
+              value: interval,
+              unit: singleSlot.unit,
+            },
+          };
+        }
+      }
     }
-    const interval = Number(dueIntervalValue);
-    const hasProtocol =
-      kind === "vaccine" && Number.isFinite(interval) && interval >= 1;
+
     const payload = {
       name: name.trim(),
       kind,
       planName: planName.trim() || null,
-      dueIntervalValue: hasProtocol ? interval : null,
-      dueIntervalUnit: hasProtocol ? dueIntervalUnit : null,
-      isCombo: kind === "vaccine" ? isCombo : false,
-      reminderProtocols: kind === "vaccine" ? reminderProtocols : [],
+      dueIntervalValue,
+      dueIntervalUnit,
+      isCombo: combo,
+      reminderProtocols,
+      reminderDueIntervals,
       items: validItems.map((item, index) =>
         item.itemType === "service"
           ? {
@@ -266,37 +439,72 @@ export function InventoryKitsTab() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Rabies canine"
+              placeholder="e.g. DA2PPL canine"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">Type</label>
-            <select
-              value={kind}
-              onChange={(e) => {
-                const next = e.target.value === "lab" ? "lab" : "vaccine";
-                setKind(next);
-                if (next === "lab") {
-                  setIsCombo(false);
-                  setReminderProtocols([]);
-                  setShowProtocol(false);
-                }
-              }}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="vaccine">Vaccine</option>
-              <option value="lab">Lab</option>
-            </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Vaccine kits show on + Vaccine. Lab kits show on + Lab test.
-            </p>
+
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div>
+              <label className="mb-1 block text-xs font-medium">Type</label>
+              <select
+                value={kind}
+                onChange={(e) => {
+                  const next = e.target.value === "lab" ? "lab" : "vaccine";
+                  setKind(next);
+                  if (next === "lab") {
+                    setIsCombo(false);
+                    setSingleSlot(emptySlot());
+                    setComboSlot1(emptySlot());
+                    setComboSlot2(emptySlot());
+                  }
+                }}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="vaccine">Vaccine</option>
+                <option value="lab">Lab</option>
+              </select>
+            </div>
+            {kind === "vaccine" && (
+              <label className="flex h-10 items-center gap-2 whitespace-nowrap text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-input"
+                  checked={isCombo}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsCombo(checked);
+                    if (checked) {
+                      setComboSlot1(
+                        singleSlot.protocol
+                          ? { ...singleSlot }
+                          : emptySlot(),
+                      );
+                      setComboSlot2(emptySlot());
+                    } else {
+                      setSingleSlot(
+                        comboSlot1.protocol
+                          ? { ...comboSlot1 }
+                          : emptySlot(),
+                      );
+                      setComboSlot1(emptySlot());
+                      setComboSlot2(emptySlot());
+                    }
+                  }}
+                />
+                Combination vaccine
+              </label>
+            )}
           </div>
+          <p className="-mt-1 text-xs text-muted-foreground">
+            Vaccine kits show on + Vaccine. Lab kits show on + Lab test.
+          </p>
+
           <div>
             <label className="mb-1 block text-xs font-medium">Plan name</label>
             <Input
               value={planName}
               onChange={(e) => setPlanName(e.target.value)}
-              placeholder="e.g. Rabies"
+              placeholder="e.g. DA2PPL"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               How this appears in the SOAP plan. Leave blank to use the
@@ -304,146 +512,29 @@ export function InventoryKitsTab() {
             </p>
           </div>
 
-          {kind === "vaccine" && (
-            <>
-              <div className="space-y-3 rounded-md border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium">Reminders / alerts</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Which overdue reminder(s) this kit clears when given.
-                    Optional — if blank, we infer from the vaccine name.
-                  </p>
-                </div>
-                <label className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-input"
-                    checked={isCombo}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setIsCombo(checked);
-                      if (!checked && reminderProtocols.length > 1) {
-                        setReminderProtocols((prev) => prev.slice(0, 1));
-                      }
-                    }}
-                  />
-                  <span>
-                    <span className="font-medium">Combination vaccine</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      Needs more than one due date and reminder (e.g.
-                      Lyme + Leptospirosis in one shot).
-                    </span>
-                  </span>
-                </label>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {VACCINE_PROTOCOL_OPTIONS.map((opt) => {
-                    const checked = reminderProtocols.includes(opt.key);
-                    return (
-                      <label
-                        key={opt.key}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <input
-                          type={isCombo ? "checkbox" : "radio"}
-                          name={
-                            isCombo
-                              ? `reminder-${opt.key}`
-                              : "reminder-protocol"
-                          }
-                          className="h-4 w-4 border-input"
-                          checked={checked}
-                          onChange={() => toggleReminder(opt.key)}
-                        />
-                        {opt.label}
-                      </label>
-                    );
-                  })}
-                </div>
-                {isCombo && reminderProtocols.length < 2 && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Select at least two reminder types for a combination
-                    vaccine.
-                  </p>
-                )}
+          {kind === "vaccine" &&
+            (isCombo ? (
+              <div className="space-y-3">
+                <ProtocolDueRow
+                  label="First vaccine"
+                  slot={comboSlot1}
+                  excludeProtocol={comboSlot2.protocol}
+                  onChange={setComboSlot1}
+                />
+                <ProtocolDueRow
+                  label="Second vaccine"
+                  slot={comboSlot2}
+                  excludeProtocol={comboSlot1.protocol}
+                  onChange={setComboSlot2}
+                />
               </div>
-
-              <div className="rounded-md border border-border">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium"
-                  onClick={() => {
-                    setShowProtocol((open) => {
-                      if (!open && !dueIntervalValue) setDueIntervalValue("1");
-                      return !open;
-                    });
-                  }}
-                >
-                  <span>Due date interval</span>
-                  {showProtocol ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
-                {showProtocol && (
-                  <div className="space-y-2 border-t border-border px-3 py-3">
-                    <p className="text-xs text-muted-foreground">
-                      Optional. Pre-fills next due date(s) from the date given.
-                      For combination vaccines, the same interval is applied to
-                      each reminder (you can edit individually when recording).
-                    </p>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium">
-                          Interval
-                        </label>
-                        <Input
-                          type="number"
-                          min={1}
-                          className="w-24"
-                          value={dueIntervalValue}
-                          onChange={(e) => setDueIntervalValue(e.target.value)}
-                          placeholder="1"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium">
-                          Unit
-                        </label>
-                        <select
-                          value={dueIntervalUnit}
-                          onChange={(e) =>
-                            setDueIntervalUnit(
-                              e.target.value as DueIntervalUnit
-                            )
-                          }
-                          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          {DUE_INTERVAL_UNITS.map((unit) => (
-                            <option key={unit} value={unit}>
-                              {unit.charAt(0).toUpperCase() + unit.slice(1)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setDueIntervalValue("");
-                          setDueIntervalUnit("years");
-                          setShowProtocol(false);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+            ) : (
+              <ProtocolDueRow
+                label="Vaccine reminder"
+                slot={singleSlot}
+                onChange={setSingleSlot}
+              />
+            ))}
 
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Kit items</h4>
@@ -478,7 +569,9 @@ export function InventoryKitsTab() {
                 </div>
                 <div className="min-w-0">
                   <label className="mb-1 block text-xs font-medium">
-                    {item.itemType === "service" ? "Service / lab fee" : "Product"}
+                    {item.itemType === "service"
+                      ? "Service / lab fee"
+                      : "Product"}
                   </label>
                   {item.itemType === "service" ? (
                     <select
@@ -534,7 +627,10 @@ export function InventoryKitsTab() {
                           i === index
                             ? {
                                 ...row,
-                                quantity: Math.max(1, Number(e.target.value) || 1),
+                                quantity: Math.max(
+                                  1,
+                                  parseInt(e.target.value, 10) || 1
+                                ),
                               }
                             : row
                         )
@@ -542,7 +638,7 @@ export function InventoryKitsTab() {
                     }
                   />
                 </div>
-                <div className="min-w-0">
+                <div>
                   <label className="mb-1 block text-xs font-medium">Note</label>
                   <Input
                     value={item.note}
@@ -553,21 +649,22 @@ export function InventoryKitsTab() {
                         )
                       )
                     }
-                    placeholder="optional"
+                    placeholder="Optional"
                   />
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="sm:mt-5"
-                  onClick={() =>
-                    setItems((prev) => prev.filter((_, i) => i !== index))
-                  }
-                  disabled={items.length === 1}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={items.length <= 1}
+                    onClick={() =>
+                      setItems((prev) => prev.filter((_, i) => i !== index))
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))}
             <div className="flex flex-wrap gap-2">
@@ -575,7 +672,7 @@ export function InventoryKitsTab() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => setItems((prev) => [...prev, emptyItem("product")])}
+                onClick={() => setItems((prev) => [...prev, emptyItem()])}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add product
@@ -584,7 +681,9 @@ export function InventoryKitsTab() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => setItems((prev) => [...prev, emptyItem("service")])}
+                onClick={() =>
+                  setItems((prev) => [...prev, emptyItem("service")])
+                }
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add service / lab fee
@@ -625,18 +724,38 @@ export function InventoryKitsTab() {
                     {Array.isArray(kit.reminderProtocols) &&
                     kit.reminderProtocols.length > 0
                       ? ` · Reminders: ${kit.reminderProtocols
-                          .map((key) => protocolLabel(key))
+                          .map((key) => {
+                            const intervals =
+                              kit.reminderDueIntervals &&
+                              typeof kit.reminderDueIntervals === "object" &&
+                              !Array.isArray(kit.reminderDueIntervals)
+                                ? (kit.reminderDueIntervals as Record<
+                                    string,
+                                    { value?: number; unit?: string }
+                                  >)
+                                : {};
+                            const row = intervals[key];
+                            const due = formatDueInterval(
+                              row?.value ??
+                                (!kit.isCombo ? kit.dueIntervalValue : null),
+                              row?.unit ??
+                                (!kit.isCombo ? kit.dueIntervalUnit : null),
+                            );
+                            return due
+                              ? `${protocolLabel(key)} (${due})`
+                              : protocolLabel(key);
+                          })
                           .join(", ")}`
-                      : ""}
-                    {formatDueInterval(
-                      kit.dueIntervalValue,
-                      kit.dueIntervalUnit
-                    )
-                      ? ` · Due in ${formatDueInterval(
-                          kit.dueIntervalValue,
-                          kit.dueIntervalUnit
-                        )}`
-                      : ""}
+                      : !kit.isCombo &&
+                          formatDueInterval(
+                            kit.dueIntervalValue,
+                            kit.dueIntervalUnit
+                          )
+                        ? ` · Due in ${formatDueInterval(
+                            kit.dueIntervalValue,
+                            kit.dueIntervalUnit
+                          )}`
+                        : ""}
                   </p>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
@@ -682,8 +801,7 @@ export function InventoryKitsTab() {
                   colSpan={3}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
-                  No kits yet. Add products and/or service fees (e.g. outside
-                  lab) to deduct stock and bill together.
+                  No inventory kits yet.
                 </td>
               </tr>
             )}

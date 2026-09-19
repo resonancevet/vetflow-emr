@@ -37,6 +37,14 @@ export const inventoryKits = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    /**
+     * Per-reminder due intervals for combo kits, e.g.
+     * { dhpp: { value: 3, unit: "years" }, lepto: { value: 1, unit: "years" } }.
+     */
+    reminderDueIntervals: jsonb("reminder_due_intervals")
+      .$type<Record<string, { value: number; unit: string }>>()
+      .notNull()
+      .default({}),
   },
   (table) => ({
     practiceIdx: index("inventory_kits_practice_idx").on(

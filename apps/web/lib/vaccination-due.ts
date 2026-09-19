@@ -20,7 +20,7 @@ export function parseDateOnly(
 export const VACCINE_PROTOCOL_LABELS: Record<string, string> = {
   lyme: "Lyme",
   lepto: "Leptospirosis",
-  dhpp: "DHPP / DAPPv",
+  dhpp: "DHPP / DA2PP",
   fvrcp: "FVRCP",
   rabies: "Rabies",
   bordetella: "Bordetella",
@@ -79,7 +79,9 @@ export function vaccineProtocolKeys(name: string): string[] {
   const keys = new Set<string>();
 
   if (/lyme|borrelia/.test(n)) keys.add("lyme");
-  if (/\blepto|\bleptosp|\bl4\b/.test(n)) keys.add("lepto");
+  if (/\blepto|\bleptosp|\bl4\b|da2ppl|dappv?\s*\+?\s*l\b/.test(n)) {
+    keys.add("lepto");
+  }
   if (/bordetella|kennel\s*cough|bronchicine|intratrac/.test(n)) {
     keys.add("bordetella");
   }
@@ -96,7 +98,7 @@ export function vaccineProtocolKeys(name: string): string[] {
     keys.add("fvrcp");
   }
   if (
-    /\bdhpp\b|\bdappv\b|\bdapp\b|\bdap\b|distemper|parvo|adenovirus|hepatitis|parainfluenza|vanguard|nobivac\s*canine\s*1|duramune\s*max/.test(
+    /\bdhpp\b|\bdappv\b|\bdapp\b|\bdap\b|\bda2pp|\bda2ppl\b|distemper|parvo|adenovirus|hepatitis|parainfluenza|vanguard|nobivac\s*canine\s*1|duramune\s*max/.test(
       n,
     )
   ) {

@@ -470,9 +470,36 @@ export function VaccinationForm({
   const [extras, setExtras] = useState<ExtraStockItem[]>([]);
 
   const selectedKit = activeKits.find((kit) => kit.id === kitId);
-  const kitDueLabel = selectedKit
-    ? formatDueInterval(selectedKit.dueIntervalValue, selectedKit.dueIntervalUnit)
-    : null;
+  const kitDueIntervals =
+    selectedKit?.reminderDueIntervals &&
+    typeof selectedKit.reminderDueIntervals === "object" &&
+    !Array.isArray(selectedKit.reminderDueIntervals)
+      ? (selectedKit.reminderDueIntervals as Record<
+          string,
+          { value?: number; unit?: string }
+        >)
+      : {};
+  const kitDueLabel = (() => {
+    if (!selectedKit) return null;
+    if (selectedKit.isCombo) {
+      const parts = (
+        Array.isArray(selectedKit.reminderProtocols)
+          ? selectedKit.reminderProtocols
+          : []
+      )
+        .map((key) => {
+          const row = kitDueIntervals[key];
+          const due = formatDueInterval(row?.value ?? null, row?.unit ?? null);
+          return due ? `${protocolLabel(key)} ${due}` : null;
+        })
+        .filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : null;
+    }
+    return formatDueInterval(
+      selectedKit.dueIntervalValue,
+      selectedKit.dueIntervalUnit,
+    );
+  })();
   const kitProtocols = Array.isArray(selectedKit?.reminderProtocols)
     ? selectedKit.reminderProtocols
     : [];
@@ -483,27 +510,43 @@ export function VaccinationForm({
   const isCombo =
     Boolean(selectedKit?.isCombo) || protocols.length > 1;
 
+  function dueDateForProtocol(key: string, administered: string): string | null {
+    const row = kitDueIntervals[key];
+    if (row?.value && row.unit) {
+      return addDueInterval(administered, row.value, row.unit);
+    }
+    if (selectedKit?.dueIntervalValue && selectedKit.dueIntervalUnit) {
+      return addDueInterval(
+        administered,
+        selectedKit.dueIntervalValue,
+        selectedKit.dueIntervalUnit,
+      );
+    }
+    return null;
+  }
+
   useEffect(() => {
-    if (!selectedKit?.dueIntervalValue || !selectedKit.dueIntervalUnit) return;
-    const due = addDueInterval(
-      administeredAt,
-      selectedKit.dueIntervalValue,
-      selectedKit.dueIntervalUnit
-    );
-    if (due) {
-      setNextDueDate(due);
-      setProtocolDues((prev) => {
-        const next = { ...prev };
-        for (const key of resolveVaccineProtocols({
-          vaccineName,
-          reminderProtocols: Array.isArray(selectedKit.reminderProtocols)
-            ? selectedKit.reminderProtocols
-            : [],
-        })) {
-          if (!next[key]) next[key] = due;
-        }
-        return next;
-      });
+    if (!selectedKit) return;
+    const keys = resolveVaccineProtocols({
+      vaccineName,
+      reminderProtocols: Array.isArray(selectedKit.reminderProtocols)
+        ? selectedKit.reminderProtocols
+        : [],
+    });
+    if (keys.length === 0) return;
+
+    const dues: Record<string, string> = {};
+    let shared: string | null = null;
+    for (const key of keys) {
+      const due = dueDateForProtocol(key, administeredAt);
+      if (due) {
+        dues[key] = due;
+        shared = shared ?? due;
+      }
+    }
+    if (Object.keys(dues).length > 0) {
+      setProtocolDues((prev) => ({ ...prev, ...dues }));
+      if (shared) setNextDueDate(shared);
     }
   }, [
     administeredAt,
@@ -511,6 +554,7 @@ export function VaccinationForm({
     selectedKit?.dueIntervalValue,
     selectedKit?.dueIntervalUnit,
     selectedKit?.reminderProtocols,
+    selectedKit?.reminderDueIntervals,
     vaccineName,
   ]);
 
@@ -522,7 +566,11 @@ export function VaccinationForm({
     setProtocolDues((prev) => {
       const next: Record<string, string> = {};
       for (const key of keys) {
-        next[key] = prev[key] || nextDueDate || "";
+        next[key] =
+          prev[key] ||
+          dueDateForProtocol(key, administeredAt) ||
+          nextDueDate ||
+          "";
       }
       return next;
     });
@@ -560,28 +608,42 @@ export function VaccinationForm({
       setVaccineName(nextName);
     }
     setProduct(null);
-    const due =
-      kit.dueIntervalValue != null
-        ? addDueInterval(
-            administeredAt,
-            kit.dueIntervalValue,
-            kit.dueIntervalUnit
-          )
-        : null;
-    setNextDueDate(due ?? "");
+
+    const intervals =
+      kit.reminderDueIntervals &&
+      typeof kit.reminderDueIntervals === "object" &&
+      !Array.isArray(kit.reminderDueIntervals)
+        ? (kit.reminderDueIntervals as Record<
+            string,
+            { value?: number; unit?: string }
+          >)
+        : {};
     const keys = resolveVaccineProtocols({
       vaccineName: nextName,
       reminderProtocols: Array.isArray(kit.reminderProtocols)
         ? kit.reminderProtocols
         : [],
     });
-    if (keys.length > 0) {
-      const dues: Record<string, string> = {};
-      for (const key of keys) {
-        dues[key] = due ?? "";
+    const dues: Record<string, string> = {};
+    let shared: string | null = null;
+    for (const key of keys) {
+      const row = intervals[key];
+      const due = row?.value && row.unit
+        ? addDueInterval(administeredAt, row.value, row.unit)
+        : kit.dueIntervalValue != null
+          ? addDueInterval(
+              administeredAt,
+              kit.dueIntervalValue,
+              kit.dueIntervalUnit,
+            )
+          : null;
+      if (due) {
+        dues[key] = due;
+        shared = shared ?? due;
       }
-      setProtocolDues(dues);
     }
+    setNextDueDate(shared ?? "");
+    setProtocolDues(dues);
   }
 
   return (
@@ -821,8 +883,8 @@ export function VaccinationForm({
           </div>
           {kitDueLabel && (
             <p className="text-xs text-muted-foreground">
-              Kit default interval: {kitDueLabel} (pre-fills above; edit per
-              component as needed)
+              From kit: {kitDueLabel} (pre-fills above; edit per component as
+              needed)
             </p>
           )}
         </div>
