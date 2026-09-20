@@ -29,6 +29,7 @@ import {
   composeSubjective,
   emptyPeFindings,
   inferExamStatus,
+  isCrtProlonged,
   soapFormFromNote,
   type FindingStatus,
   type PeFinding,
@@ -83,9 +84,7 @@ export default function NewSoapNotePage() {
   const [includeInPlan, setIncludeInPlan] = useState(true);
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
 
-  const crtValue = Number(crt.trim());
-  const crtProlonged =
-    crt.trim() !== "" && Number.isFinite(crtValue) && crtValue >= 3;
+  const crtProlonged = isCrtProlonged(crt);
 
   const { data: patient, isLoading: patientLoading } =
     trpc.patients.getById.useQuery(
@@ -489,15 +488,14 @@ export default function NewSoapNotePage() {
                 placeholder="bpm"
               />
             </FormField>
-            <FormField id="crt" label="Capillary refill time (sec)">
+            <FormField id="crt" label="Capillary refill time">
               <Input
                 id="crt"
-                type="number"
-                step="0.5"
-                min="0"
+                type="text"
+                inputMode="text"
                 value={crt}
                 onChange={(e) => setCrt(e.target.value)}
-                placeholder="seconds"
+                placeholder="e.g. <3 sec"
                 aria-invalid={crtProlonged}
                 className={cn(crtProlonged && "border-destructive")}
               />
@@ -698,8 +696,11 @@ export default function NewSoapNotePage() {
                       const lot = entry.lotNumber
                         ? ` (lot ${entry.lotNumber})`
                         : "";
+                      const tag = entry.tagNumber
+                        ? `; tag ${entry.tagNumber}`
+                        : "";
                       appendPlanLine(
-                        `Vaccine: ${entry.vaccineName}${lot}${due}`,
+                        `Vaccine: ${entry.vaccineName}${lot}${tag}${due}`,
                       );
                     }
                   }

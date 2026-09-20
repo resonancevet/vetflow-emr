@@ -428,6 +428,7 @@ function ExtraInventoryFields({
 export type VaccinationSubmitEntry = {
   vaccineName: string;
   lotNumber?: string;
+  tagNumber?: string;
   administeredAt?: string;
   nextDueDate?: string;
   notes?: string;
@@ -457,6 +458,7 @@ export function VaccinationForm({
   const [kitId, setKitId] = useState("");
   const [vaccineName, setVaccineName] = useState("");
   const [lotNumber, setLotNumber] = useState("");
+  const [tagNumber, setTagNumber] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [administeredAt, setAdministeredAt] = useState(
     new Date().toISOString().slice(0, 10)
@@ -509,6 +511,7 @@ export function VaccinationForm({
   });
   const isCombo =
     Boolean(selectedKit?.isCombo) || protocols.length > 1;
+  const isRabies = protocols.includes("rabies");
 
   function dueDateForProtocol(key: string, administered: string): string | null {
     const row = kitDueIntervals[key];
@@ -679,6 +682,10 @@ export function VaccinationForm({
               ...shared,
               vaccineName: `${baseName} (${protocolLabel(key)})`,
               nextDueDate: protocolDues[key] || nextDueDate || undefined,
+              tagNumber:
+                key === "rabies" && tagNumber.trim()
+                  ? tagNumber.trim()
+                  : undefined,
               notes:
                 [
                   notes.trim() || null,
@@ -703,6 +710,10 @@ export function VaccinationForm({
                   (protocols[0] && protocolDues[protocols[0]]) ||
                   nextDueDate ||
                   undefined,
+                tagNumber:
+                  isRabies && tagNumber.trim()
+                    ? tagNumber.trim()
+                    : undefined,
               },
             ];
 
@@ -850,6 +861,18 @@ export function VaccinationForm({
         <label className="mb-1 block text-xs font-medium">Lot number</label>
         <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
       </div>
+      {isRabies && (
+        <div>
+          <label className="mb-1 block text-xs font-medium">
+            Rabies tag number
+          </label>
+          <Input
+            value={tagNumber}
+            onChange={(e) => setTagNumber(e.target.value)}
+            placeholder="Tag #"
+          />
+        </div>
+      )}
       {isCombo ? (
         <div className="sm:col-span-2 space-y-2 rounded-md border border-border bg-muted/30 p-3">
           <p className="text-xs font-medium">

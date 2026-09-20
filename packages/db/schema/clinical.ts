@@ -120,6 +120,8 @@ export const vaccinationRecords = pgTable("vaccination_records", {
     .references(() => patients.id),
   vaccineName: varchar("vaccine_name", { length: 255 }).notNull(),
   lotNumber: varchar("lot_number", { length: 64 }),
+  /** Rabies tag / certificate tag number. */
+  tagNumber: varchar("tag_number", { length: 64 }),
   manufacturer: varchar("manufacturer", { length: 128 }),
   administeredBy: uuid("administered_by").references(() => users.id),
   administeredAt: timestamp("administered_at", { withTimezone: true })

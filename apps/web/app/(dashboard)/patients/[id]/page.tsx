@@ -51,6 +51,7 @@ import {
 } from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
 import { formatVisitDate } from "@/lib/practice-datetime";
+import { vaccineProtocolKeys } from "@/lib/vaccination-due";
 import { recordPatientView } from "@/lib/recent-patients";
 import {
   kgToLb,
@@ -814,6 +815,7 @@ function VaccinationsTab({
   const [form, setForm] = useState({
     vaccineName: "",
     lotNumber: "",
+    tagNumber: "",
     manufacturer: "",
     administeredAt: "",
     nextDueDate: "",
@@ -847,6 +849,7 @@ function VaccinationsTab({
     setForm({
       vaccineName: vax.vaccineName,
       lotNumber: vax.lotNumber ?? "",
+      tagNumber: vax.tagNumber ?? "",
       manufacturer: vax.manufacturer ?? "",
       administeredAt: vax.administeredAt
         ? new Date(vax.administeredAt).toISOString().slice(0, 10)
@@ -862,6 +865,7 @@ function VaccinationsTab({
       id: editingId,
       vaccineName: form.vaccineName.trim(),
       lotNumber: form.lotNumber || undefined,
+      tagNumber: form.tagNumber || undefined,
       manufacturer: form.manufacturer || undefined,
       administeredAt: form.administeredAt || undefined,
       nextDueDate: form.nextDueDate || undefined,
@@ -902,6 +906,9 @@ function VaccinationsTab({
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Lot Number
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Tag #
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
               Notes
@@ -991,6 +998,21 @@ function VaccinationsTab({
                     </div>
                   ) : (
                     vax.lotNumber ?? "\u2014"
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {isEditing &&
+                  vaccineProtocolKeys(form.vaccineName).includes("rabies") ? (
+                    <Input
+                      value={form.tagNumber}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, tagNumber: e.target.value }))
+                      }
+                      placeholder="Rabies tag #"
+                      className="min-w-[8rem]"
+                    />
+                  ) : (
+                    vax.tagNumber ?? "\u2014"
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">

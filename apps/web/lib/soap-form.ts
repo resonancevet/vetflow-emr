@@ -214,6 +214,33 @@ export function statusLabel(status: FindingStatus | ""): string {
   return "";
 }
 
+/**
+ * Prolonged CRT when a numeric value is ≥ 3 sec.
+ * Values like "<3" / "< 2" are treated as normal (not prolonged).
+ */
+export function isCrtProlonged(raw: string): boolean {
+  const s = raw.trim().toLowerCase();
+  if (!s) return false;
+  if (/\bprolong/.test(s)) return true;
+  // Less-than comparisons are normal CRT phrasing (e.g. "<3 sec")
+  if (/^<\s*=?\s*\d/.test(s)) return false;
+
+  const match = s.match(/^>=?\s*(\d+(?:\.\d+)?)|^(\d+(?:\.\d+)?)/);
+  if (!match) return false;
+  const n = Number(match[1] ?? match[2]);
+  return Number.isFinite(n) && n >= 3;
+}
+
+export function formatCrtForSoap(
+  crt: string,
+  prolonged: boolean,
+): string {
+  const t = crt.trim();
+  if (!t) return "";
+  const hasUnit = /\bsecs?\b/i.test(t);
+  return `${t}${hasUnit ? "" : " sec"}${prolonged ? " (prolonged)" : ""}`;
+}
+
 export function composeSubjective(input: {
   reasonForVisit: string;
   history: string;
@@ -264,9 +291,7 @@ export function composeObjective(input: {
     ],
     [
       "Capillary refill time",
-      input.crt.trim()
-        ? `${input.crt.trim()} sec${input.crtProlonged ? " (prolonged)" : ""}`
-        : "",
+      formatCrtForSoap(input.crt, input.crtProlonged),
     ],
     ["Mucous membranes", input.mucousMembrane],
     ["Hydration", input.hydration],
