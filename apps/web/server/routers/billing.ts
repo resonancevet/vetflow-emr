@@ -220,23 +220,14 @@ export const billingRouter = createRouter({
     .input(
       z.object({
         id: z.string().uuid(),
-        status: z.enum(["draft", "sent", "paid", "overdue", "void"]),
+        /** Use recordPayment to mark an invoice paid (captures amount + method). */
+        status: z.enum(["draft", "sent", "overdue", "void"]),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const updates: Record<string, any> = { status: input.status };
-      if (input.status === "paid") {
-        // Get the invoice total
-        const [inv] = await ctx.db
-          .select({ total: invoices.total })
-          .from(invoices)
-          .where(eq(invoices.id, input.id));
-        if (inv) updates.paidAmount = inv.total;
-      }
-
       const [invoice] = await ctx.db
         .update(invoices)
-        .set(updates)
+        .set({ status: input.status })
         .where(
           and(
             eq(invoices.id, input.id),

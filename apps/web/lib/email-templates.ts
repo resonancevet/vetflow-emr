@@ -117,13 +117,17 @@ export const EMAIL_TEMPLATE_META: {
     mergeFields: [
       { token: "{{clientName}}", meaning: "Client full name" },
       { token: "{{patientName}}", meaning: "Patient name (may be empty)" },
-      { token: "{{invoiceTotal}}", meaning: "Formatted total" },
+      { token: "{{invoiceTotal}}", meaning: "Formatted invoice total" },
+      { token: "{{paidAmount}}", meaning: "Amount already paid" },
+      { token: "{{balanceDue}}", meaning: "Remaining balance" },
       { token: "{{dueDate}}", meaning: "Due date (may be empty)" },
+      { token: "{{status}}", meaning: "Invoice status (e.g. paid, sent)" },
+      { token: "{{venmoHandle}}", meaning: "Practice Venmo handle (may be empty)" },
       { token: "{{practiceName}}", meaning: "Practice name" },
       { token: "{{practicePhone}}", meaning: "Practice phone" },
       {
         token: "{{invoiceCard}}",
-        meaning: "Styled amount-due box (HTML)",
+        meaning: "Styled balance/paid/due summary box (HTML)",
       },
       {
         token: "{{portalButton}}",
@@ -200,12 +204,14 @@ Please contact us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}} to sc
 Keeping vaccinations up to date is important for your pet's health and safety.`,
   },
   invoiceEmail: {
-    subject: "Invoice from {{practiceName}} – {{invoiceTotal}}",
+    subject: "Invoice from {{practiceName}} – {{balanceDue}} due",
     body: `Hi {{clientName}},
 
 Here is your invoice{{#patientName}} for {{patientName}}{{/patientName}} from {{practiceName}}.
 
 {{invoiceCard}}
+
+{{#venmoHandle}}You can pay via Venmo: {{venmoHandle}}{{/venmoHandle}}
 
 {{portalButton}}
 

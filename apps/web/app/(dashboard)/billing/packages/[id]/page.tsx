@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { formatVisitDate } from "@/lib/practice-datetime";
 
 function formatMoney(value: string | number | null | undefined) {
   const n = Number(value ?? 0);
@@ -131,7 +132,7 @@ export default function PackageSaleDetailPage() {
                 className="border-b border-border last:border-0"
               >
                 <td className="px-4 py-3">{row.sequenceNumber}</td>
-                <td className="px-4 py-3">{row.dueDate}</td>
+                <td className="px-4 py-3">{formatVisitDate(row.dueDate)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">
                   {formatMoney(row.amount)}
                 </td>

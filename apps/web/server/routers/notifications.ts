@@ -25,8 +25,10 @@ import {
 import {
   formatPracticeDate,
   formatPracticeTime,
+  formatVisitDate,
 } from "@/lib/practice-datetime";
 import { overdueVaccinations } from "@/lib/vaccination-due";
+import { getVenmoHandle } from "@/lib/tax";
 
 async function getPracticeEmailContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +52,7 @@ async function getPracticeEmailContext(
     practiceAddress: practice?.address ?? undefined,
     timezone: practice?.timezone ?? "America/New_York",
     templates: getEmailTemplatesFromSettings(practice?.settings),
+    venmoHandle: getVenmoHandle(practice?.settings),
   };
 }
 
@@ -133,15 +136,19 @@ export const notificationsRouter = createRouter({
         .select({
           id: invoices.id,
           total: invoices.total,
+          paidAmount: invoices.paidAmount,
+          status: invoices.status,
           dueDate: invoices.dueDate,
           clientId: invoices.clientId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
           clientAccessToken: clients.accessToken,
+          patientName: patients.name,
         })
         .from(invoices)
         .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .leftJoin(patients, eq(invoices.patientId, patients.id))
         .where(
           and(
             eq(invoices.id, input.invoiceId),
@@ -172,12 +179,23 @@ export const notificationsRouter = createRouter({
         portalUrl = buildPortalUrl(token);
       }
 
+      const total = Number(invoice.total ?? 0);
+      const paid = Number(invoice.paidAmount ?? 0);
+      const balance = Math.max(0, total - paid);
+
       const result = await sendInvoiceEmail(
         {
           to: invoice.clientEmail,
           clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`,
-          invoiceTotal: `$${Number(invoice.total ?? 0).toFixed(2)}`,
-          dueDate: invoice.dueDate ?? undefined,
+          patientName: invoice.patientName ?? undefined,
+          invoiceTotal: `$${total.toFixed(2)}`,
+          paidAmount: `$${paid.toFixed(2)}`,
+          balanceDue: `$${balance.toFixed(2)}`,
+          dueDate: invoice.dueDate
+            ? formatVisitDate(invoice.dueDate)
+            : undefined,
+          status: invoice.status,
+          venmoHandle: emailCtx.venmoHandle || undefined,
           practiceName: emailCtx.practiceName,
           practicePhone: emailCtx.practicePhone,
           portalUrl,

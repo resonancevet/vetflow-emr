@@ -416,9 +416,9 @@ function PracticeInfoTab() {
               className="max-w-[16rem]"
             />
             <p className="text-xs text-muted-foreground">
-              Shown as a payment option when recording package and invoice
-              payments. Clients pay you on Venmo; staff records the payment
-              here.
+              Shown on invoice PDFs and emails as payment instructions. Clients
+              pay you on Venmo; staff records the payment here. Save settings
+              after editing.
             </p>
           </label>
         </div>

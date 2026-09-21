@@ -43,11 +43,19 @@ export const settingsRouter = createRouter({
   /** Tax rate for invoice UI / anyone who can bill (not admin-only). */
   getBillingSettings: protectedProcedure.query(async ({ ctx }) => {
     const [practice] = await ctx.db
-      .select({ settings: practices.settings })
+      .select({
+        name: practices.name,
+        phone: practices.phone,
+        address: practices.address,
+        settings: practices.settings,
+      })
       .from(practices)
       .where(eq(practices.id, ctx.practiceId))
       .limit(1);
     return {
+      practiceName: practice?.name ?? "",
+      practicePhone: practice?.phone ?? "",
+      practiceAddress: practice?.address ?? "",
       taxEnabled: isTaxEnabled(practice?.settings),
       taxRatePercent: getTaxRatePercent(practice?.settings),
       effectiveTaxRatePercent: getEffectiveTaxRatePercent(practice?.settings),

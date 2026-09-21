@@ -126,6 +126,8 @@ export interface InvoiceData {
   tax: string;
   total: string;
   paidAmount: string;
+  /** Optional Venmo handle shown as payment instructions. */
+  venmoHandle?: string;
 }
 
 export function generateInvoicePdf(data: InvoiceData): jsPDF {
@@ -300,6 +302,20 @@ export function generateInvoicePdf(data: InvoiceData): jsPDF {
   setColor(doc, COLOR_TEAL);
   doc.text("Balance Due:", totalsX, y);
   doc.text(`$${balance}`, totalsValX, y, { align: "right" });
+  y += 10;
+
+  if (data.venmoHandle) {
+    y = ensureSpace(doc, y, 16);
+    doc.setFont(FONT, "bold");
+    doc.setFontSize(10);
+    setColor(doc, COLOR_DARK);
+    doc.text("Payment instructions", PAGE_MARGIN, y);
+    y += 5;
+    doc.setFont(FONT, "normal");
+    doc.setFontSize(9);
+    setColor(doc, COLOR_GRAY);
+    doc.text(`Venmo: ${data.venmoHandle}`, PAGE_MARGIN, y);
+  }
 
   // --- Footer ----------------------------------------------------------------
   const pageHeight = doc.internal.pageSize.getHeight();

@@ -367,7 +367,11 @@ export async function sendInvoiceEmail(
     clientName: string;
     patientName?: string;
     invoiceTotal: string;
+    paidAmount?: string;
+    balanceDue?: string;
     dueDate?: string;
+    status?: string;
+    venmoHandle?: string;
     portalUrl?: string;
     practiceName: string;
     practicePhone?: string;
@@ -375,17 +379,40 @@ export async function sendInvoiceEmail(
   template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.invoiceEmail
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   const invoiceRows: { label: string; value: string; large?: boolean }[] = [
-    { label: "Amount Due", value: data.invoiceTotal, large: true },
+    {
+      label: "Balance Due",
+      value: data.balanceDue ?? data.invoiceTotal,
+      large: true,
+    },
   ];
+  if (data.invoiceTotal) {
+    invoiceRows.push({ label: "Invoice Total", value: data.invoiceTotal });
+  }
+  if (data.paidAmount) {
+    invoiceRows.push({ label: "Paid", value: data.paidAmount });
+  }
   if (data.dueDate) {
     invoiceRows.push({ label: "Due Date", value: data.dueDate });
+  }
+  if (data.status) {
+    invoiceRows.push({
+      label: "Status",
+      value: data.status.replace(/_/g, " "),
+    });
+  }
+  if (data.venmoHandle) {
+    invoiceRows.push({ label: "Pay via Venmo", value: data.venmoHandle });
   }
 
   const textVars = {
     clientName: data.clientName,
     patientName: data.patientName ?? "",
     invoiceTotal: data.invoiceTotal,
+    paidAmount: data.paidAmount ?? "",
+    balanceDue: data.balanceDue ?? data.invoiceTotal,
     dueDate: data.dueDate ?? "",
+    status: data.status ?? "",
+    venmoHandle: data.venmoHandle ?? "",
     practiceName: data.practiceName,
     practicePhone: data.practicePhone ?? "",
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { generateInvoicePdf } from "@/lib/pdf";
+import { formatVisitDate } from "@/lib/practice-datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
@@ -86,6 +87,7 @@ function getDisplayStatus(invoice: {
 export default function BillingPage() {
   const [activeTab, setActiveTab] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [openPaymentForId, setOpenPaymentForId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 25;
 
@@ -99,6 +101,7 @@ export default function BillingPage() {
     limit,
     offset,
   });
+  const billingSettings = trpc.settings.getBillingSettings.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -126,10 +129,16 @@ export default function BillingPage() {
   const handleStatusChange = (
     e: React.MouseEvent,
     id: string,
-    status: "sent" | "paid"
+    status: "sent"
   ) => {
     e.stopPropagation();
     updateStatus.mutate({ id, status });
+  };
+
+  const handleRecordPayment = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setExpandedId(id);
+    setOpenPaymentForId(id);
   };
 
   const handleConvertEstimate = (e: React.MouseEvent, id: string) => {
@@ -232,10 +241,23 @@ export default function BillingPage() {
                       )
                     }
                     onStatusChange={handleStatusChange}
+                    onRecordPayment={handleRecordPayment}
+                    openPaymentForm={openPaymentForId === invoice.id}
+                    onPaymentFormOpened={() => {
+                      if (openPaymentForId === invoice.id) {
+                        setOpenPaymentForId(null);
+                      }
+                    }}
                     onConvertEstimate={handleConvertEstimate}
                     isMutating={
                       updateStatus.isPending || convertEstimate.isPending
                     }
+                    practiceName={
+                      billingSettings.data?.practiceName || "Your Practice"
+                    }
+                    practicePhone={billingSettings.data?.practicePhone}
+                    practiceAddress={billingSettings.data?.practiceAddress}
+                    venmoHandle={billingSettings.data?.venmoHandle}
                   />
                 ))}
               </tbody>
@@ -289,8 +311,15 @@ function InvoiceRow({
   isExpanded,
   onToggle,
   onStatusChange,
+  onRecordPayment,
+  openPaymentForm,
+  onPaymentFormOpened,
   onConvertEstimate,
   isMutating,
+  practiceName,
+  practicePhone,
+  practiceAddress,
+  venmoHandle,
 }: {
   invoice: {
     id: string;
@@ -310,13 +339,16 @@ function InvoiceRow({
   };
   isExpanded: boolean;
   onToggle: () => void;
-  onStatusChange: (
-    e: React.MouseEvent,
-    id: string,
-    status: "sent" | "paid"
-  ) => void;
+  onStatusChange: (e: React.MouseEvent, id: string, status: "sent") => void;
+  onRecordPayment: (e: React.MouseEvent, id: string) => void;
+  openPaymentForm: boolean;
+  onPaymentFormOpened: () => void;
   onConvertEstimate: (e: React.MouseEvent, id: string) => void;
   isMutating: boolean;
+  practiceName: string;
+  practicePhone?: string;
+  practiceAddress?: string;
+  venmoHandle?: string;
 }) {
   const detail = trpc.billing.getInvoice.useQuery(
     { id: invoice.id },
@@ -365,9 +397,7 @@ function InvoiceRow({
           {formatCurrency(invoice.paidAmount)}
         </td>
         <td className="px-4 py-3 text-muted-foreground">
-          {invoice.dueDate
-            ? new Date(invoice.dueDate).toLocaleDateString()
-            : "\u2014"}
+          {invoice.dueDate ? formatVisitDate(invoice.dueDate) : "\u2014"}
         </td>
         <td className="px-4 py-3 text-muted-foreground">
           {invoice.createdAt
@@ -441,11 +471,10 @@ function InvoiceRow({
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={isMutating}
-                    onClick={(e) => onStatusChange(e, invoice.id, "paid")}
-                    title="Mark as Paid"
+                    onClick={(e) => onRecordPayment(e, invoice.id)}
+                    title="Record payment"
                   >
-                    <CheckCircle className="h-3.5 w-3.5" />
+                    <DollarSign className="h-3.5 w-3.5" />
                   </Button>
                 </>
               )}
@@ -508,7 +537,9 @@ function InvoiceRow({
                             invoice.name ||
                             "Estimate";
                           generateInvoicePdf({
-                            practiceName: "Your Practice",
+                            practiceName,
+                            practicePhone: practicePhone || undefined,
+                            practiceAddress: practiceAddress || undefined,
                             clientName,
                             clientEmail: d.clientEmail ?? undefined,
                             patientName: d.patientName ?? undefined,
@@ -516,7 +547,7 @@ function InvoiceRow({
                               ? new Date(d.createdAt).toLocaleDateString()
                               : new Date().toLocaleDateString(),
                             dueDate: d.dueDate
-                              ? new Date(d.dueDate).toLocaleDateString()
+                              ? formatVisitDate(d.dueDate)
                               : undefined,
                             status: "estimate",
                             items: d.items.map((item) => ({
@@ -529,6 +560,7 @@ function InvoiceRow({
                             tax: formatCurrency(d.tax),
                             total: formatCurrency(d.total),
                             paidAmount: formatCurrency(d.paidAmount),
+                            venmoHandle: venmoHandle || undefined,
                           }).save(`estimate-${clientName || "unknown"}.pdf`);
                         }}
                       >
@@ -652,7 +684,9 @@ function InvoiceRow({
                             .filter(Boolean)
                             .join(" ");
                           generateInvoicePdf({
-                            practiceName: "Your Practice",
+                            practiceName,
+                            practicePhone: practicePhone || undefined,
+                            practiceAddress: practiceAddress || undefined,
                             clientName,
                             clientEmail: d.clientEmail ?? undefined,
                             patientName: d.patientName ?? undefined,
@@ -660,7 +694,7 @@ function InvoiceRow({
                               ? new Date(d.createdAt).toLocaleDateString()
                               : new Date().toLocaleDateString(),
                             dueDate: d.dueDate
-                              ? new Date(d.dueDate).toLocaleDateString()
+                              ? formatVisitDate(d.dueDate)
                               : undefined,
                             status: d.status,
                             items: d.items.map((item) => ({
@@ -673,13 +707,73 @@ function InvoiceRow({
                             tax: formatCurrency(d.tax),
                             total: formatCurrency(d.total),
                             paidAmount: formatCurrency(d.paidAmount),
+                            venmoHandle: venmoHandle || undefined,
                           }).save(`invoice-${clientName || "unknown"}.pdf`);
                         }}
                       >
                         <Download className="mr-1 h-3.5 w-3.5" />
                         Download PDF
                       </Button>
-                      <EmailInvoiceButton invoiceId={invoice.id} />
+                      <EmailInvoiceButton
+                        invoiceId={invoice.id}
+                        preview={{
+                          clientName: [
+                            detail.data.clientFirstName,
+                            detail.data.clientLastName,
+                          ]
+                            .filter(Boolean)
+                            .join(" "),
+                          clientEmail: detail.data.clientEmail,
+                          patientName: detail.data.patientName,
+                          total: formatCurrency(detail.data.total),
+                          paid: formatCurrency(detail.data.paidAmount),
+                          balance: formatCurrency(
+                            Number(detail.data.total ?? 0) -
+                              Number(detail.data.paidAmount ?? 0)
+                          ),
+                          dueDate: detail.data.dueDate
+                            ? formatVisitDate(detail.data.dueDate)
+                            : null,
+                          status: detail.data.status,
+                          venmoHandle: venmoHandle || null,
+                          onPreviewPdf: () => {
+                            const d = detail.data!;
+                            const clientName = [
+                              d.clientFirstName,
+                              d.clientLastName,
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
+                            const doc = generateInvoicePdf({
+                              practiceName,
+                              practicePhone: practicePhone || undefined,
+                              practiceAddress: practiceAddress || undefined,
+                              clientName,
+                              clientEmail: d.clientEmail ?? undefined,
+                              patientName: d.patientName ?? undefined,
+                              invoiceDate: d.createdAt
+                                ? new Date(d.createdAt).toLocaleDateString()
+                                : new Date().toLocaleDateString(),
+                              dueDate: d.dueDate
+                                ? formatVisitDate(d.dueDate)
+                                : undefined,
+                              status: d.status,
+                              items: d.items.map((item) => ({
+                                description: item.description ?? "",
+                                quantity: Number(item.quantity ?? 1),
+                                unitPrice: formatCurrency(item.unitPrice),
+                                total: formatCurrency(item.total),
+                              })),
+                              subtotal: formatCurrency(d.subtotal),
+                              tax: formatCurrency(d.tax),
+                              total: formatCurrency(d.total),
+                              paidAmount: formatCurrency(d.paidAmount),
+                              venmoHandle: venmoHandle || undefined,
+                            });
+                            window.open(doc.output("bloburl"), "_blank");
+                          },
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -691,6 +785,8 @@ function InvoiceRow({
                     invoiceTotal={detail.data.total}
                     invoicePaidAmount={detail.data.paidAmount}
                     invoiceStatus={invoice.status}
+                    autoOpen={openPaymentForm}
+                    onAutoOpened={onPaymentFormOpened}
                   />
                 )}
               </div>
@@ -706,7 +802,25 @@ function InvoiceRow({
   );
 }
 
-function EmailInvoiceButton({ invoiceId }: { invoiceId: string }) {
+function EmailInvoiceButton({
+  invoiceId,
+  preview,
+}: {
+  invoiceId: string;
+  preview: {
+    clientName: string;
+    clientEmail: string | null;
+    patientName: string | null;
+    total: string;
+    paid: string;
+    balance: string;
+    dueDate: string | null;
+    status: string;
+    venmoHandle: string | null;
+    onPreviewPdf: () => void;
+  };
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const sendInvoiceEmail = trpc.notifications.sendInvoiceEmail.useMutation({
     onSuccess: (data) => {
       toast.success(
@@ -714,6 +828,7 @@ function EmailInvoiceButton({ invoiceId }: { invoiceId: string }) {
           ? `Invoice emailed (Resend id: ${data.emailId})`
           : "Invoice emailed"
       );
+      setConfirmOpen(false);
     },
     onError: (err) => {
       toast.error(err.message);
@@ -721,22 +836,129 @@ function EmailInvoiceButton({ invoiceId }: { invoiceId: string }) {
   });
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={sendInvoiceEmail.isPending}
-      onClick={(e) => {
-        e.stopPropagation();
-        sendInvoiceEmail.mutate({ invoiceId });
-      }}
-    >
-      {sendInvoiceEmail.isPending ? (
-        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-      ) : (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmOpen(true);
+        }}
+      >
         <Mail className="mr-1 h-3.5 w-3.5" />
+        Email Invoice
+      </Button>
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!sendInvoiceEmail.isPending) setConfirmOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-border bg-background p-5 shadow-lg space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="text-base font-semibold">Preview before sending</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Confirm what the client will see, then send.
+              </p>
+            </div>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">To</dt>
+                <dd className="text-right font-medium">
+                  {preview.clientEmail || "No email on file"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Client</dt>
+                <dd className="text-right">{preview.clientName || "—"}</dd>
+              </div>
+              {preview.patientName && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Patient</dt>
+                  <dd className="text-right">{preview.patientName}</dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Status</dt>
+                <dd className="text-right capitalize">{preview.status}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Total</dt>
+                <dd className="text-right tabular-nums">{preview.total}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Paid</dt>
+                <dd className="text-right tabular-nums text-green-600">
+                  {preview.paid}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-border pt-2">
+                <dt className="font-medium">Balance due</dt>
+                <dd className="text-right tabular-nums font-semibold">
+                  {preview.balance}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Due date</dt>
+                <dd className="text-right">{preview.dueDate || "—"}</dd>
+              </div>
+              {preview.venmoHandle && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Venmo</dt>
+                  <dd className="text-right">{preview.venmoHandle}</dd>
+                </div>
+              )}
+            </dl>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  preview.onPreviewPdf();
+                }}
+              >
+                <Download className="mr-1 h-3.5 w-3.5" />
+                Open PDF preview
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={sendInvoiceEmail.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={
+                  sendInvoiceEmail.isPending || !preview.clientEmail
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sendInvoiceEmail.mutate({ invoiceId });
+                }}
+              >
+                {sendInvoiceEmail.isPending ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Mail className="mr-1 h-3.5 w-3.5" />
+                )}
+                Send email
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
-      Email Invoice
-    </Button>
+    </>
   );
 }
 
@@ -745,11 +967,15 @@ function PaymentSection({
   invoiceTotal,
   invoicePaidAmount,
   invoiceStatus,
+  autoOpen,
+  onAutoOpened,
 }: {
   invoiceId: string;
   invoiceTotal: string | null;
   invoicePaidAmount: string | null;
   invoiceStatus: string;
+  autoOpen?: boolean;
+  onAutoOpened?: () => void;
 }) {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -780,18 +1006,45 @@ function PaymentSection({
     0,
     Number(invoiceTotal ?? 0) - Number(invoicePaidAmount ?? 0)
   );
+  const hasPayments = (paymentsQuery.data?.length ?? 0) > 0;
+  /** Allow documenting method when status was marked paid without a payment row. */
+  const canRecord =
+    remaining > 0 ||
+    (!hasPayments &&
+      !paymentsQuery.isLoading &&
+      invoiceStatus === "paid" &&
+      Number(invoicePaidAmount ?? 0) > 0);
 
   const handleOpenForm = () => {
-    setPaymentAmount(remaining.toFixed(2));
+    setPaymentAmount(
+      (remaining > 0
+        ? remaining
+        : Number(invoicePaidAmount ?? invoiceTotal ?? 0)
+      ).toFixed(2)
+    );
     setShowPaymentForm(true);
   };
+
+  useEffect(() => {
+    if (!autoOpen || showPaymentForm || !canRecord) return;
+    handleOpenForm();
+    onAutoOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when Actions triggers expand
+  }, [autoOpen, canRecord, showPaymentForm]);
 
   const handleRecordPayment = () => {
     if (!paymentAmount || parseFloat(paymentAmount) <= 0) return;
     recordPayment.mutate({
       invoiceId,
       amount: paymentAmount,
-      method: paymentMethod as any,
+      method: paymentMethod as
+        | "cash"
+        | "credit_card"
+        | "debit_card"
+        | "check"
+        | "venmo"
+        | "online"
+        | "other",
       notes: paymentNotes || undefined,
     });
   };
@@ -800,21 +1053,20 @@ function PaymentSection({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium">Payment History</h4>
-        {invoiceStatus !== "paid" && remaining > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenForm}
-          >
+        {canRecord && !showPaymentForm && (
+          <Button variant="outline" size="sm" onClick={handleOpenForm}>
             <DollarSign className="mr-1 h-3.5 w-3.5" />
             Record Payment
           </Button>
         )}
       </div>
 
-      {/* Payment form */}
       {showPaymentForm && (
         <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Enter the amount received and how it was paid. This updates the
+            invoice balance and status.
+          </p>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
@@ -824,7 +1076,6 @@ function PaymentSection({
                 type="number"
                 step="0.01"
                 min="0.01"
-                max={remaining.toString()}
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
                 placeholder="0.00"
@@ -885,7 +1136,6 @@ function PaymentSection({
         </div>
       )}
 
-      {/* Payment list */}
       {paymentsQuery.isLoading ? (
         <p className="text-xs text-muted-foreground">Loading payments...</p>
       ) : paymentsQuery.data && paymentsQuery.data.length > 0 ? (
@@ -937,7 +1187,12 @@ function PaymentSection({
           </tbody>
         </table>
       ) : (
-        <p className="text-xs text-muted-foreground">No payments recorded.</p>
+        <p className="text-xs text-muted-foreground">
+          No payments recorded yet.
+          {invoiceStatus === "paid"
+            ? " Use Record Payment to document how this was paid."
+            : ""}
+        </p>
       )}
     </div>
   );
