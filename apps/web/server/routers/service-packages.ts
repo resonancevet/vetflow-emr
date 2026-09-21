@@ -47,10 +47,11 @@ async function createInvoiceForInstallment(
   const tax = opts.taxable ? calcTax(subtotal, opts.taxRatePercent) : 0;
   const total = Math.round((subtotal + tax) * 100) / 100;
 
-  const description =
+  const description = (
     opts.billingMode === "pay_in_full"
       ? `${opts.packageName} (paid in full)`
-      : `${opts.packageName} — Installment ${opts.sequenceNumber} of ${opts.installmentCount}`;
+      : `${opts.packageName} — Installment ${opts.sequenceNumber} of ${opts.installmentCount}`
+  ).slice(0, 255);
 
   const [invoice] = await db
     .insert(invoices)
@@ -522,68 +523,70 @@ export const servicePackagesRouter = createRouter({
         count
       );
 
-      const [sale] = await ctx.db
-        .insert(servicePackageSales)
-        .values({
+      return ctx.db.transaction(async (tx) => {
+        const [sale] = await tx
+          .insert(servicePackageSales)
+          .values({
+            practiceId: ctx.practiceId,
+            packageId: pkg.id,
+            clientId: input.clientId,
+            patientId: input.patientId ?? null,
+            billingMode: input.billingMode,
+            status: "active",
+            startDate,
+            endDate,
+            contractTotal: pkg.priceTotal,
+            packageName: pkg.name,
+            enrolledBy: ctx.user.id,
+            notes: input.notes?.trim() || null,
+          })
+          .returning();
+
+        const installmentRows = amounts.map((amount, i) => ({
+          saleId: sale!.id,
+          sequenceNumber: i + 1,
+          dueDate: addMonthsToDateString(startDate, i),
+          amount,
+          status: "scheduled" as const,
+        }));
+
+        const inserted = await tx
+          .insert(servicePackageInstallments)
+          .values(installmentRows)
+          .returning();
+
+        // Always invoice the first installment (pay-in-full or first month).
+        const first = inserted[0]!;
+        const invoice = await createInvoiceForInstallment(tx, {
           practiceId: ctx.practiceId,
-          packageId: pkg.id,
           clientId: input.clientId,
           patientId: input.patientId ?? null,
-          billingMode: input.billingMode,
-          status: "active",
-          startDate,
-          endDate,
-          contractTotal: pkg.priceTotal,
           packageName: pkg.name,
-          enrolledBy: ctx.user.id,
-          notes: input.notes?.trim() || null,
-        })
-        .returning();
+          billingMode: input.billingMode,
+          sequenceNumber: 1,
+          installmentCount: count,
+          amount: first.amount,
+          dueDate: first.dueDate,
+          taxable: pkg.taxable,
+          taxRatePercent,
+        });
 
-      const installmentRows = amounts.map((amount, i) => ({
-        saleId: sale!.id,
-        sequenceNumber: i + 1,
-        dueDate: addMonthsToDateString(startDate, i),
-        amount,
-        status: "scheduled" as const,
-      }));
+        await tx
+          .update(servicePackageInstallments)
+          .set({
+            status: "invoiced",
+            invoiceId: invoice.id,
+            generatedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(servicePackageInstallments.id, first.id));
 
-      const inserted = await ctx.db
-        .insert(servicePackageInstallments)
-        .values(installmentRows)
-        .returning();
-
-      // Always invoice the first installment (pay-in-full or first month).
-      const first = inserted[0]!;
-      const invoice = await createInvoiceForInstallment(ctx.db, {
-        practiceId: ctx.practiceId,
-        clientId: input.clientId,
-        patientId: input.patientId ?? null,
-        packageName: pkg.name,
-        billingMode: input.billingMode,
-        sequenceNumber: 1,
-        installmentCount: count,
-        amount: first.amount,
-        dueDate: first.dueDate,
-        taxable: pkg.taxable,
-        taxRatePercent,
+        return {
+          saleId: sale!.id,
+          firstInvoiceId: invoice.id,
+          installmentCount: count,
+        };
       });
-
-      await ctx.db
-        .update(servicePackageInstallments)
-        .set({
-          status: "invoiced",
-          invoiceId: invoice.id,
-          generatedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(servicePackageInstallments.id, first.id));
-
-      return {
-        saleId: sale!.id,
-        firstInvoiceId: invoice.id,
-        installmentCount: count,
-      };
     }),
 
   cancelSale: protectedProcedure
