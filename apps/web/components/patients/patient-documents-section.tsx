@@ -18,22 +18,14 @@ export function PatientDocumentsSection({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { data: files, isLoading } = trpc.records.listFilesForEntity.useQuery({
-    entityType: "patient",
-    entityId: patientId,
-  });
-
-  const documents = (files ?? []).filter(
-    (f) => f.category === "documents" || f.category === "lab-results",
-  );
+  const { data: documents, isLoading } =
+    trpc.records.listPatientDocuments.useQuery({ patientId });
 
   const deleteFile = trpc.records.deleteFile.useMutation({
     onSuccess: () => {
       toast.success("Document removed");
-      utils.records.listFilesForEntity.invalidate({
-        entityType: "patient",
-        entityId: patientId,
-      });
+      utils.records.listPatientDocuments.invalidate({ patientId });
+      utils.records.listFilesForEntity.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -57,10 +49,7 @@ export function PatientDocumentsSection({
       toast.success(
         selected.length === 1 ? "Document uploaded" : "Documents uploaded",
       );
-      utils.records.listFilesForEntity.invalidate({
-        entityType: "patient",
-        entityId: patientId,
-      });
+      utils.records.listPatientDocuments.invalidate({ patientId });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -73,8 +62,8 @@ export function PatientDocumentsSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Prior records, referral letters, outside lab PDFs, and other chart
-          files — no SOAP note required.
+          Chart uploads and files attached to SOAP notes (e.g. rabies
+          certificates, referral letters, outside labs).
         </p>
         {canManage && (
           <>
@@ -102,9 +91,9 @@ export function PatientDocumentsSection({
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading documents...</p>
-      ) : documents.length === 0 ? (
+      ) : !documents || documents.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-          No documents yet. Upload prior medical records as PDF or images.
+          No documents yet. Upload files here or attach them to a SOAP note.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -128,7 +117,7 @@ export function PatientDocumentsSection({
                     {file.createdAt
                       ? new Date(file.createdAt).toLocaleDateString()
                       : ""}
-                    {file.category === "lab-results" ? " · Lab result" : ""}
+                    {file.sourceLabel ? ` · ${file.sourceLabel}` : ""}
                   </p>
                 </div>
               </div>

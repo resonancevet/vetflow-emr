@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, inArray, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { autoFinalizeStaleSoapNotes } from "@/lib/record-lockdown";
 import {
@@ -28,6 +28,27 @@ import { writeAudit } from "../lib/audit";
 import { soapFormDraftSchema } from "@/lib/soap-form";
 import { addDueInterval, toDateInput } from "@/lib/due-interval";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
+
+function mapFileRow(row: {
+  id: string;
+  fileName: string;
+  mimeType: string | null;
+  category: string | null;
+  createdAt: Date | null;
+  entityType?: string | null;
+  entityId?: string | null;
+}) {
+  return {
+    id: row.id,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    category: row.category,
+    createdAt: row.createdAt,
+    entityType: row.entityType ?? null,
+    entityId: row.entityId ?? null,
+    fileUrl: `/api/files/${row.id}`,
+  };
+}
 
 export const recordsRouter = createRouter({
   // SOAP Notes
@@ -435,14 +456,182 @@ export const recordsRouter = createRouter({
 
       // Hand back a path to our own proxy route instead of a presigned S3
       // URL — see apps/web/app/api/files/[id]/route.ts for why.
-      return rows.map((row) => ({
-        id: row.id,
-        fileName: row.fileName,
-        mimeType: row.mimeType,
-        category: row.category,
-        createdAt: row.createdAt,
-        fileUrl: `/api/files/${row.id}`,
-      }));
+      return rows.map((row) => mapFileRow(row));
+    }),
+
+  /**
+   * Chart Documents tab: patient uploads plus files attached to this patient's
+   * SOAP notes / addenda.
+   */
+  listPatientDocuments: protectedProcedure
+    .input(z.object({ patientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const [patient] = await ctx.db
+        .select({ id: patients.id })
+        .from(patients)
+        .where(
+          and(
+            eq(patients.id, input.patientId),
+            eq(patients.practiceId, ctx.practiceId),
+            isNull(patients.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!patient) throw new Error("Patient not found");
+
+      const notes = await ctx.db
+        .select({
+          id: soapNotes.id,
+          visitDate: soapNotes.visitDate,
+          createdAt: soapNotes.createdAt,
+        })
+        .from(soapNotes)
+        .where(
+          and(
+            eq(soapNotes.patientId, input.patientId),
+            eq(soapNotes.practiceId, ctx.practiceId),
+            isNull(soapNotes.deletedAt),
+          ),
+        );
+      const noteIds = notes.map((n) => n.id);
+      const noteById = new Map(notes.map((n) => [n.id, n]));
+
+      const addenda =
+        noteIds.length > 0
+          ? await ctx.db
+              .select({
+                id: soapNoteAddenda.id,
+                soapNoteId: soapNoteAddenda.soapNoteId,
+              })
+              .from(soapNoteAddenda)
+              .where(
+                and(
+                  inArray(soapNoteAddenda.soapNoteId, noteIds),
+                  isNull(soapNoteAddenda.deletedAt),
+                ),
+              )
+          : [];
+      const addendumIds = addenda.map((a) => a.id);
+      const addendumNoteId = new Map(
+        addenda.map((a) => [a.id, a.soapNoteId]),
+      );
+
+      const fileSelect = {
+        id: files.id,
+        fileName: files.fileName,
+        mimeType: files.mimeType,
+        category: files.category,
+        createdAt: files.createdAt,
+        entityType: files.entityType,
+        entityId: files.entityId,
+      };
+
+      const [patientFiles, soapFiles, addendumFiles] = await Promise.all([
+        ctx.db
+          .select(fileSelect)
+          .from(files)
+          .where(
+            and(
+              eq(files.practiceId, ctx.practiceId),
+              eq(files.entityType, "patient"),
+              eq(files.entityId, input.patientId),
+              isNull(files.deletedAt),
+              or(
+                eq(files.category, "documents"),
+                eq(files.category, "lab-results"),
+                isNull(files.category),
+              ),
+            ),
+          ),
+        noteIds.length > 0
+          ? ctx.db
+              .select(fileSelect)
+              .from(files)
+              .where(
+                and(
+                  eq(files.practiceId, ctx.practiceId),
+                  eq(files.entityType, "soap_note"),
+                  inArray(files.entityId, noteIds),
+                  isNull(files.deletedAt),
+                ),
+              )
+          : Promise.resolve([]),
+        addendumIds.length > 0
+          ? ctx.db
+              .select(fileSelect)
+              .from(files)
+              .where(
+                and(
+                  eq(files.practiceId, ctx.practiceId),
+                  eq(files.entityType, "soap_note_addendum"),
+                  inArray(files.entityId, addendumIds),
+                  isNull(files.deletedAt),
+                ),
+              )
+          : Promise.resolve([]),
+      ]);
+
+      type Doc = ReturnType<typeof mapFileRow> & {
+        source: "documents" | "lab" | "soap" | "soap_addendum";
+        sourceLabel: string;
+        soapNoteId: string | null;
+      };
+
+      const docs: Doc[] = [];
+
+      for (const row of patientFiles) {
+        const mapped = mapFileRow(row);
+        docs.push({
+          ...mapped,
+          source: row.category === "lab-results" ? "lab" : "documents",
+          sourceLabel:
+            row.category === "lab-results" ? "Lab result" : "Chart upload",
+          soapNoteId: null,
+        });
+      }
+
+      for (const row of soapFiles) {
+        const note = row.entityId ? noteById.get(row.entityId) : undefined;
+        const when =
+          note?.visitDate ||
+          (note?.createdAt
+            ? new Date(note.createdAt).toLocaleDateString()
+            : null);
+        docs.push({
+          ...mapFileRow(row),
+          source: "soap",
+          sourceLabel: when ? `SOAP · ${when}` : "SOAP attachment",
+          soapNoteId: row.entityId ?? null,
+        });
+      }
+
+      for (const row of addendumFiles) {
+        const parentNoteId = row.entityId
+          ? addendumNoteId.get(row.entityId)
+          : undefined;
+        const note = parentNoteId ? noteById.get(parentNoteId) : undefined;
+        const when =
+          note?.visitDate ||
+          (note?.createdAt
+            ? new Date(note.createdAt).toLocaleDateString()
+            : null);
+        docs.push({
+          ...mapFileRow(row),
+          source: "soap_addendum",
+          sourceLabel: when
+            ? `SOAP addendum · ${when}`
+            : "SOAP addendum",
+          soapNoteId: parentNoteId ?? null,
+        });
+      }
+
+      docs.sort((a, b) => {
+        const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bt - at;
+      });
+
+      return docs;
     }),
 
   renameFile: protectedProcedure

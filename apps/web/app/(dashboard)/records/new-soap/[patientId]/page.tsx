@@ -300,6 +300,9 @@ export default function NewSoapNotePage() {
             })
           )
         );
+        utils.records.listPatientDocuments.invalidate({
+          patientId: params.patientId,
+        });
       }
 
       const previousWeightKg = existingNoteQuery.data?.vitalsWeightKg
