@@ -5,7 +5,7 @@ const nextConfig = {
   // Docker production sets NEXT_OUTPUT_STANDALONE=1; local dev/test builds
   // use plain `next start` so PWA testing via Cloudflare tunnel works without
   // the standalone build's pnpm-monorepo chunk-tracing edge cases.
-  // qb-sandbox-test: touch web app so Vercel preview builds this project.
+  // qb-sandbox-test: bump to redeploy preview after env var updates.
   output: process.env.NEXT_OUTPUT_STANDALONE === "1" ? "standalone" : undefined,
   transpilePackages: ["@openpims/api", "@openpims/db"],
   // Intuit App Store: disable caching on app/API responses that may contain
