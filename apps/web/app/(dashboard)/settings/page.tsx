@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { Suspense, useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -118,6 +118,20 @@ const ROOM_TYPES = ["exam", "surgery", "treatment", "boarding"] as const;
 
 // ── Main Page ───────────────────────────────────────────────
 export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <SettingsPageContent />
+    </Suspense>
+  );
+}
+
+function SettingsPageContent() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>("practice");
