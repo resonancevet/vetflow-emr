@@ -54,7 +54,7 @@ export async function GET(
       headers: {
         "Content-Type": row.mimeType ?? "application/octet-stream",
         "Content-Disposition": `inline; filename="${safeName}"`,
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "no-cache, no-store",
       },
     });
   }
@@ -76,7 +76,7 @@ export async function GET(
         "Content-Type":
           row.mimeType ?? obj.ContentType ?? "application/octet-stream",
         "Content-Disposition": `inline; filename="${safeName}"`,
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "no-cache, no-store",
       },
     });
   } catch (err) {

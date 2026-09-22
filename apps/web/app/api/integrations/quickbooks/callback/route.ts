@@ -17,18 +17,25 @@ function appBase(): string {
   );
 }
 
+function redirect(pathWithQuery: string) {
+  const response = NextResponse.redirect(`${appBase()}${pathWithQuery}`);
+  response.headers.set("Cache-Control", "no-cache, no-store");
+  response.headers.set("Pragma", "no-cache");
+  return response;
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const error = url.searchParams.get("error");
   if (error) {
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=error&message=${encodeURIComponent(error)}`
+    return redirect(
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent(error)}`
     );
   }
 
   if (!quickbooksConfigured()) {
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=error&message=${encodeURIComponent("QuickBooks is not configured")}`
+    return redirect(
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent("QuickBooks is not configured")}`
     );
   }
 
@@ -36,15 +43,15 @@ export async function GET(req: NextRequest) {
   const realmId = url.searchParams.get("realmId");
   const state = url.searchParams.get("state");
   if (!code || !realmId || !state) {
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=error&message=${encodeURIComponent("Missing OAuth parameters")}`
+    return redirect(
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent("Missing OAuth parameters")}`
     );
   }
 
   const parsed = parseOAuthState(state);
   if (!parsed) {
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=error&message=${encodeURIComponent("Invalid or expired OAuth state")}`
+    return redirect(
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent("Invalid or expired OAuth state")}`
     );
   }
 
@@ -87,15 +94,13 @@ export async function GET(req: NextRequest) {
       await db.insert(quickbooksConnections).values(values);
     }
 
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=connected`
-    );
+    return redirect(`/settings?tab=practice&qb=connected`);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "QuickBooks connection failed";
     console.error("[QuickBooks] OAuth callback failed:", message);
-    return NextResponse.redirect(
-      `${appBase()}/settings?tab=practice&qb=error&message=${encodeURIComponent(message)}`
+    return redirect(
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent(message)}`
     );
   }
 }

@@ -664,7 +664,7 @@ function StaffTab() {
               }
             />
             <Input
-              placeholder="Password (min 6 chars)"
+              placeholder="Password (min 8 chars)"
               type="password"
               value={addForm.password}
               onChange={(e) =>
@@ -707,7 +707,7 @@ function StaffTab() {
               disabled={
                 !addForm.name ||
                 !addForm.email ||
-                addForm.password.length < 6 ||
+                addForm.password.length < 8 ||
                 createMutation.isPending
               }
               onClick={() =>

@@ -7,14 +7,22 @@ import {
   quickbooksConfigured,
 } from "@/lib/quickbooks-oauth";
 
+function withNoStore(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-cache, no-store");
+  response.headers.set("Pragma", "no-cache");
+  return response;
+}
+
 export async function GET() {
   if (!quickbooksConfigured()) {
-    return NextResponse.json(
-      {
-        error:
-          "QuickBooks is not configured. Set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET.",
-      },
-      { status: 503 }
+    return withNoStore(
+      NextResponse.json(
+        {
+          error:
+            "QuickBooks is not configured. Set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET.",
+        },
+        { status: 503 }
+      )
     );
   }
 
@@ -23,17 +31,21 @@ export async function GET() {
     | { practiceId?: string; role?: string }
     | undefined;
   if (!user?.practiceId) {
-    return NextResponse.redirect(
-      new URL("/login", process.env.NEXTAUTH_URL || "http://localhost:3000")
+    return withNoStore(
+      NextResponse.redirect(
+        new URL("/login", process.env.NEXTAUTH_URL || "http://localhost:3000")
+      )
     );
   }
   if (user.role !== "admin") {
-    return NextResponse.json(
-      { error: "Only practice admins can connect QuickBooks" },
-      { status: 403 }
+    return withNoStore(
+      NextResponse.json(
+        { error: "Only practice admins can connect QuickBooks" },
+        { status: 403 }
+      )
     );
   }
 
   const state = createOAuthState(user.practiceId);
-  return NextResponse.redirect(buildAuthorizeUrl(state));
+  return withNoStore(NextResponse.redirect(buildAuthorizeUrl(state)));
 }

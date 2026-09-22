@@ -262,7 +262,7 @@ export const settingsRouter = createRouter({
       z.object({
         name: z.string().min(1),
         email: z.string().email(),
-        password: z.string().min(6),
+        password: z.string().min(8),
         role: z.enum(["admin", "veterinarian", "technician", "front_desk"]),
         phone: z.string().optional(),
         licenseNumber: z.string().optional(),

@@ -3,6 +3,9 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
 function setSecurityHeaders(response: NextResponse): NextResponse {
+  // Intuit App Store: no-cache/no-store on SSL and sensitive pages (not "private").
+  response.headers.set("Cache-Control", "no-cache, no-store");
+  response.headers.set("Pragma", "no-cache");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-XSS-Protection", "1; mode=block");
