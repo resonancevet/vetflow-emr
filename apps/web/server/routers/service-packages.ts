@@ -19,6 +19,7 @@ import {
   splitInstallmentAmounts,
   todayDateStringLocal,
 } from "@/lib/service-packages";
+import { queueInvoiceSync } from "@/lib/quickbooks-sync";
 
 const packageItemInput = z.object({
   description: z.string().min(1).max(500),
@@ -80,6 +81,8 @@ async function createInvoiceForInstallment(
     itemType: "service",
     itemId: null,
   });
+
+  queueInvoiceSync(db, opts.practiceId, invoice!.id);
 
   return invoice!;
 }

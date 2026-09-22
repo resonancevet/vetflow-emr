@@ -27,7 +27,7 @@ Set these in your hosting provider's environment (never commit real values):
 | `NEXT_PUBLIC_DEMO_MODE` | Must be `false` |
 | `ALLOW_REGISTRATION` | `true` only during initial setup, then `false` |
 
-Optional integrations: `RESEND_API_KEY`, `TWILIO_*`, `STRIPE_*`, `CRON_SECRET`.
+Optional integrations: `RESEND_API_KEY`, `TWILIO_*`, `STRIPE_*`, `CRON_SECRET`, `QUICKBOOKS_CLIENT_ID` / `QUICKBOOKS_CLIENT_SECRET` (QuickBooks Online one-way invoice sync).
 
 ## Local dev vs production storage
 

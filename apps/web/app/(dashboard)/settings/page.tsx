@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import {
   Settings,
   Users,
@@ -33,6 +34,7 @@ import { toast } from "sonner";
 import { InventoryKitsTab } from "@/components/settings/inventory-kits-tab";
 import { ServicesCatalogTab } from "@/components/settings/services-catalog-tab";
 import { ServicePackagesTab } from "@/components/settings/service-packages-tab";
+import { QuickBooksSettings } from "@/components/settings/quickbooks-settings";
 import {
   ProductPicker,
   type CatalogProduct,
@@ -117,7 +119,15 @@ const ROOM_TYPES = ["exam", "surgery", "treatment", "boarding"] as const;
 // ── Main Page ───────────────────────────────────────────────
 export default function SettingsPage() {
   const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>("practice");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && tabs.some((t) => t.id === tab)) {
+      setActiveTab(tab as Tab);
+    }
+  }, [searchParams]);
 
   if (status === "loading") {
     return (
@@ -482,6 +492,8 @@ function PracticeInfoTab() {
         )}
         Save Changes
       </Button>
+
+      <QuickBooksSettings />
 
       <PortalTokenBackfill />
     </div>

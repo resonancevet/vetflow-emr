@@ -19,6 +19,7 @@ import {
 import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent } from "@/lib/tax";
 import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
 import { applyStockChange } from "../lib/stock";
+import { queueInvoiceSync, queuePaymentSync } from "@/lib/quickbooks-sync";
 
 function parseMoney(value: string): string {
   const n = parseFloat(value.replace(/[$,\s]/g, ""));
@@ -235,6 +236,9 @@ export const billingRouter = createRouter({
           )
         )
         .returning();
+      if (invoice && input.status === "sent") {
+        queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
+      }
       return invoice!;
     }),
 
@@ -770,6 +774,8 @@ export const billingRouter = createRouter({
         }
       }
 
+      queuePaymentSync(ctx.db, ctx.practiceId, payment!.id);
+
       return payment!;
     }),
 
@@ -831,6 +837,7 @@ export const billingRouter = createRouter({
         .returning();
 
       if (!invoice) throw new Error("Estimate not found");
+      queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       return invoice;
     }),
 });
