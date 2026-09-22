@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@openpims/db/client";
 import { quickbooksConnections } from "@openpims/db";
@@ -66,12 +66,7 @@ export async function GET(req: NextRequest) {
     const existing = await db
       .select({ id: quickbooksConnections.id })
       .from(quickbooksConnections)
-      .where(
-        and(
-          eq(quickbooksConnections.practiceId, parsed.practiceId),
-          isNull(quickbooksConnections.deletedAt)
-        )
-      )
+      .where(eq(quickbooksConnections.practiceId, parsed.practiceId))
       .limit(1);
 
     const values = {
@@ -82,10 +77,12 @@ export async function GET(req: NextRequest) {
       refreshTokenEnc: encryptSecret(tokens.refresh_token),
       accessTokenExpiresAt: expiresAt,
       lastError: null as string | null,
+      deletedAt: null as Date | null,
       updatedAt: new Date(),
     };
 
     if (existing[0]) {
+      // Revive soft-deleted rows on reconnect (practice_id is unique).
       await db
         .update(quickbooksConnections)
         .set(values)
@@ -96,11 +93,10 @@ export async function GET(req: NextRequest) {
 
     return redirect(`/settings?tab=practice&qb=connected`);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "QuickBooks connection failed";
-    console.error("[QuickBooks] OAuth callback failed:", message);
+    console.error("[QuickBooks] OAuth callback failed:", err);
+    // Never put raw DB/driver messages in the redirect (they can include tokens).
     return redirect(
-      `/settings?tab=practice&qb=error&message=${encodeURIComponent(message)}`
+      `/settings?tab=practice&qb=error&message=${encodeURIComponent("QuickBooks connection failed. Try again.")}`
     );
   }
 }
