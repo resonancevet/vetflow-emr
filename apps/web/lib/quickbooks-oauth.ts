@@ -123,15 +123,25 @@ async function tokenRequest(
     },
     body,
   });
+  const intuitTid =
+    res.headers.get("intuit_tid") || res.headers.get("Intuit-Tid") || null;
   const json = (await res.json()) as TokenResponse & {
     error?: string;
     error_description?: string;
   };
   if (!res.ok) {
-    throw new Error(
+    const baseMsg =
       json.error_description ||
-        json.error ||
-        `QuickBooks token exchange failed (${res.status})`
+      json.error ||
+      `QuickBooks token exchange failed (${res.status})`;
+    console.error("[QuickBooks] token error", {
+      status: res.status,
+      intuit_tid: intuitTid,
+      error: json.error,
+      message: baseMsg,
+    });
+    throw new Error(
+      intuitTid ? `${baseMsg} (intuit_tid: ${intuitTid})` : baseMsg
     );
   }
   return json;

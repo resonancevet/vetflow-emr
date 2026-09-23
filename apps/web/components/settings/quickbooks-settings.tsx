@@ -134,6 +134,46 @@ export function QuickBooksSettings() {
             )}
           </div>
 
+          {accounts.isLoading && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading QuickBooks accounts…
+            </p>
+          )}
+
+          {accounts.isError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 space-y-2">
+              <p className="text-sm text-destructive">
+                Could not load QuickBooks accounts:{" "}
+                {accounts.error.message || "Unknown error"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Check that Production keys and{" "}
+                <code className="text-xs">QUICKBOOKS_ENV=production</code> match
+                this company, then retry. If the error includes{" "}
+                <code className="text-xs">intuit_tid</code>, keep that for Intuit
+                support.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => accounts.refetch()}
+              >
+                Retry loading accounts
+              </Button>
+            </div>
+          )}
+
+          {accounts.isSuccess &&
+            !accounts.isFetching &&
+            incomeAccounts.length === 0 && (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Connected, but no income-type accounts were returned. Confirm
+                your QuickBooks chart of accounts has an active Income account,
+                then retry.
+              </p>
+            )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5">
               <span className="text-sm font-medium">Income account</span>
@@ -141,7 +181,7 @@ export function QuickBooksSettings() {
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={incomeAccountId}
                 onChange={(e) => setIncomeAccountId(e.target.value)}
-                disabled={accounts.isLoading}
+                disabled={accounts.isLoading || accounts.isError}
               >
                 <option value="">Select income account…</option>
                 {incomeAccounts.map((a) => (
@@ -159,7 +199,7 @@ export function QuickBooksSettings() {
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={depositAccountId}
                 onChange={(e) => setDepositAccountId(e.target.value)}
-                disabled={accounts.isLoading}
+                disabled={accounts.isLoading || accounts.isError}
               >
                 <option value="">Undeposited Funds / default</option>
                 {depositAccounts.map((a) => (
@@ -175,7 +215,10 @@ export function QuickBooksSettings() {
             <Button
               size="sm"
               disabled={
-                !incomeAccountId || saveMapping.isPending || accounts.isLoading
+                !incomeAccountId ||
+                  saveMapping.isPending ||
+                  accounts.isLoading ||
+                  accounts.isError
               }
               onClick={() =>
                 saveMapping.mutate({

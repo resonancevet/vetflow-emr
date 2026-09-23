@@ -281,7 +281,7 @@ export async function syncInvoiceToQuickBooks(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Invoice sync failed";
     await markSyncError(db, practiceId, message);
-    console.error("[QuickBooks] invoice sync failed:", message);
+    console.error("[QuickBooks] invoice sync failed:", message, err);
     return null;
   }
 }
@@ -364,7 +364,7 @@ export async function syncPaymentToQuickBooks(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Payment sync failed";
     await markSyncError(db, practiceId, message);
-    console.error("[QuickBooks] payment sync failed:", message);
+    console.error("[QuickBooks] payment sync failed:", message, err);
     return null;
   }
 }

@@ -13,11 +13,20 @@ export class QuickBooksApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public body?: unknown
+    public body?: unknown,
+    public intuitTid?: string | null
   ) {
     super(message);
     this.name = "QuickBooksApiError";
   }
+}
+
+function readIntuitTid(res: Response): string | null {
+  return (
+    res.headers.get("intuit_tid") ||
+    res.headers.get("Intuit-Tid") ||
+    null
+  );
 }
 
 async function qboFetch<T>(
@@ -38,6 +47,7 @@ async function qboFetch<T>(
       ...(init?.headers ?? {}),
     },
   });
+  const intuitTid = readIntuitTid(res);
   const text = await res.text();
   let json: unknown = null;
   try {
@@ -52,11 +62,18 @@ async function qboFetch<T>(
       "Fault" in json &&
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (json as any).Fault?.Error?.[0]?.Message;
-    throw new QuickBooksApiError(
-      fault || `QuickBooks API error (${res.status})`,
-      res.status,
-      json
-    );
+    const baseMsg = fault || `QuickBooks API error (${res.status})`;
+    const message = intuitTid
+      ? `${baseMsg} (intuit_tid: ${intuitTid})`
+      : baseMsg;
+    console.error("[QuickBooks] API error", {
+      status: res.status,
+      path,
+      realmId,
+      intuit_tid: intuitTid,
+      message: baseMsg,
+    });
+    throw new QuickBooksApiError(message, res.status, json, intuitTid);
   }
   return json as T;
 }
