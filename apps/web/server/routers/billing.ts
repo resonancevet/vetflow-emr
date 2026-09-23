@@ -22,6 +22,7 @@ import { applyStockChange } from "../lib/stock";
 import { queueInvoiceSync, queuePaymentSync } from "@/lib/quickbooks-sync";
 import {
   allocateInvoiceNumber,
+  ensureInvoiceNumber,
 } from "../lib/display-ids";
 
 function parseMoney(value: string): string {
@@ -229,13 +230,64 @@ export const billingRouter = createRouter({
       z.object({
         id: z.string().uuid(),
         /** Use recordPayment to mark an invoice paid (captures amount + method). */
-        status: z.enum(["draft", "sent", "overdue", "void"]),
+        status: z.enum(["draft", "finalized", "sent", "overdue", "void"]),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({
+          id: invoices.id,
+          status: invoices.status,
+          isEstimate: invoices.isEstimate,
+          isTemplate: invoices.isTemplate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.id),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing || existing.isEstimate) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+
+      if (input.status === "finalized" && existing.status !== "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only draft invoices can be finalized",
+        });
+      }
+      if (input.status === "void") {
+        const voidable = ["finalized", "sent", "overdue", "paid"];
+        if (!voidable.includes(existing.status)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Only finalized (or later) invoices can be voided. Delete drafts instead.",
+          });
+        }
+      }
+      if (input.status === "sent" && existing.status === "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Finalize the invoice before marking it sent",
+        });
+      }
+
+      if (input.status === "finalized") {
+        await ensureInvoiceNumber(ctx.db, ctx.practiceId, input.id);
+      }
+
       const [invoice] = await ctx.db
         .update(invoices)
-        .set({ status: input.status })
+        .set({ status: input.status, updatedAt: new Date() })
         .where(
           and(
             eq(invoices.id, input.id),
@@ -243,10 +295,63 @@ export const billingRouter = createRouter({
           )
         )
         .returning();
-      if (invoice && input.status === "sent") {
+
+      if (
+        invoice &&
+        (input.status === "sent" || input.status === "finalized")
+      ) {
         queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       }
       return invoice!;
+    }),
+
+  /** Soft-delete a draft invoice. Finalized invoices must be voided instead. */
+  deleteDraftInvoice: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({
+          id: invoices.id,
+          status: invoices.status,
+          isEstimate: invoices.isEstimate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.id),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existing || existing.isEstimate) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+      if (existing.status !== "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Only draft invoices can be deleted. Void finalized invoices instead.",
+        });
+      }
+
+      const [deleted] = await ctx.db
+        .update(invoices)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(invoices.id, input.id),
+            eq(invoices.practiceId, ctx.practiceId)
+          )
+        )
+        .returning({ id: invoices.id });
+
+      return { ok: true, id: deleted!.id };
     }),
 
   listServices: protectedProcedure.query(async ({ ctx }) => {

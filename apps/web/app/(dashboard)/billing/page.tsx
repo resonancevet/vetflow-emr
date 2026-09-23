@@ -6,7 +6,6 @@ import {
   FileText,
   ChevronDown,
   ChevronRight,
-  Send,
   CheckCircle,
   Loader2,
   Plus,
@@ -16,6 +15,8 @@ import {
   Mail,
   Pencil,
   Copy,
+  Trash2,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -28,14 +29,17 @@ import { TableSkeleton } from "@/components/common/loading";
 const STATUS_TABS = [
   { label: "All", value: undefined, isEstimate: false as const },
   { label: "Draft", value: "draft", isEstimate: false as const },
+  { label: "Finalized", value: "finalized", isEstimate: false as const },
   { label: "Sent", value: "sent", isEstimate: false as const },
   { label: "Paid", value: "paid", isEstimate: false as const },
   { label: "Overdue", value: "overdue", isEstimate: false as const },
+  { label: "Void", value: "void", isEstimate: false as const },
   { label: "Estimates", value: undefined, isEstimate: true as const },
 ] as const;
 
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
+  finalized: "bg-indigo-100 text-indigo-800",
   sent: "bg-blue-100 text-blue-700",
   paid: "bg-green-100 text-green-700",
   overdue: "bg-red-100 text-red-700",
@@ -116,6 +120,17 @@ export default function BillingPage() {
     },
   });
 
+  const deleteDraft = trpc.billing.deleteDraftInvoice.useMutation({
+    onSuccess: () => {
+      toast.success("Draft invoice deleted");
+      utils.billing.listInvoices.invalidate();
+      setExpandedId(null);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
   const convertEstimate = trpc.billing.convertEstimateToInvoice.useMutation({
     onSuccess: () => {
       toast.success("Estimate converted to invoice");
@@ -126,13 +141,33 @@ export default function BillingPage() {
     },
   });
 
-  const handleStatusChange = (
-    e: React.MouseEvent,
-    id: string,
-    status: "sent"
-  ) => {
+  const handleFinalize = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    updateStatus.mutate({ id, status });
+    updateStatus.mutate({ id, status: "finalized" });
+  };
+
+  const handleVoid = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        "Void this invoice? It will remain in the list as voided and cannot be emailed."
+      )
+    ) {
+      return;
+    }
+    updateStatus.mutate({ id, status: "void" });
+  };
+
+  const handleDeleteDraft = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        "Delete this draft invoice? This cannot be undone."
+      )
+    ) {
+      return;
+    }
+    deleteDraft.mutate({ id });
   };
 
   const handleRecordPayment = (e: React.MouseEvent, id: string) => {
@@ -240,7 +275,9 @@ export default function BillingPage() {
                         expandedId === invoice.id ? null : invoice.id
                       )
                     }
-                    onStatusChange={handleStatusChange}
+                    onFinalize={handleFinalize}
+                    onVoid={handleVoid}
+                    onDeleteDraft={handleDeleteDraft}
                     onRecordPayment={handleRecordPayment}
                     openPaymentForm={openPaymentForId === invoice.id}
                     onPaymentFormOpened={() => {
@@ -250,7 +287,9 @@ export default function BillingPage() {
                     }}
                     onConvertEstimate={handleConvertEstimate}
                     isMutating={
-                      updateStatus.isPending || convertEstimate.isPending
+                      updateStatus.isPending ||
+                      convertEstimate.isPending ||
+                      deleteDraft.isPending
                     }
                     practiceName={
                       billingSettings.data?.practiceName || "Your Practice"
@@ -310,7 +349,9 @@ function InvoiceRow({
   invoice,
   isExpanded,
   onToggle,
-  onStatusChange,
+  onFinalize,
+  onVoid,
+  onDeleteDraft,
   onRecordPayment,
   openPaymentForm,
   onPaymentFormOpened,
@@ -333,13 +374,16 @@ function InvoiceRow({
     isEstimate: boolean;
     isTemplate?: boolean;
     name?: string | null;
+    invoiceNumber?: number | null;
     clientFirstName: string | null;
     clientLastName: string | null;
     patientName: string | null;
   };
   isExpanded: boolean;
   onToggle: () => void;
-  onStatusChange: (e: React.MouseEvent, id: string, status: "sent") => void;
+  onFinalize: (e: React.MouseEvent, id: string) => void;
+  onVoid: (e: React.MouseEvent, id: string) => void;
+  onDeleteDraft: (e: React.MouseEvent, id: string) => void;
   onRecordPayment: (e: React.MouseEvent, id: string) => void;
   openPaymentForm: boolean;
   onPaymentFormOpened: () => void;
@@ -449,30 +493,32 @@ function InvoiceRow({
               </>
             )}
             {!invoice.isEstimate && invoice.status === "draft" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isMutating}
-                onClick={(e) => onStatusChange(e, invoice.id, "sent")}
-                title="Mark as Sent"
-              >
-                <Send className="h-3.5 w-3.5" />
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={(e) => onFinalize(e, invoice.id)}
+                  title="Finalize invoice"
+                >
+                  <CheckCircle className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={(e) => onDeleteDraft(e, invoice.id)}
+                  title="Delete draft"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              </>
             )}
             {!invoice.isEstimate &&
-              (invoice.status === "sent" || invoice.status === "overdue") && (
+              (invoice.status === "finalized" ||
+                invoice.status === "sent" ||
+                invoice.status === "overdue") && (
                 <>
-                  {invoice.status === "sent" ? null : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={isMutating}
-                      onClick={(e) => onStatusChange(e, invoice.id, "sent")}
-                      title="Mark as Sent"
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -481,8 +527,28 @@ function InvoiceRow({
                   >
                     <DollarSign className="h-3.5 w-3.5" />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={(e) => onVoid(e, invoice.id)}
+                    title="Void invoice"
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                  </Button>
                 </>
               )}
+            {!invoice.isEstimate && invoice.status === "paid" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isMutating}
+                onClick={(e) => onVoid(e, invoice.id)}
+                title="Void invoice"
+              >
+                <Ban className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </td>
       </tr>
@@ -726,81 +792,91 @@ function InvoiceRow({
                             venmoHandle: venmoHandle || undefined,
                           });
                           doc.save(
-                            `invoice-${d.invoiceNumber ?? clientName || "unknown"}.pdf`
+                            `invoice-${d.invoiceNumber ?? (clientName || "unknown")}.pdf`
                           );
                         }}
                       >
                         <Download className="mr-1 h-3.5 w-3.5" />
                         Download PDF
                       </Button>
-                      <EmailInvoiceButton
-                        invoiceId={invoice.id}
-                        preview={{
-                          clientName: [
-                            detail.data.clientFirstName,
-                            detail.data.clientLastName,
-                          ]
-                            .filter(Boolean)
-                            .join(" "),
-                          clientEmail: detail.data.clientEmail,
-                          patientName: detail.data.patientName,
-                          total: formatCurrency(detail.data.total),
-                          paid: formatCurrency(detail.data.paidAmount),
-                          balance: formatCurrency(
-                            Number(detail.data.total ?? 0) -
-                              Number(detail.data.paidAmount ?? 0)
-                          ),
-                          dueDate: detail.data.dueDate
-                            ? formatVisitDate(detail.data.dueDate)
-                            : null,
-                          status: detail.data.status,
-                          venmoHandle: venmoHandle || null,
-                          onPreviewPdf: async () => {
-                            const d = detail.data!;
-                            const clientName = [
-                              d.clientFirstName,
-                              d.clientLastName,
+                      {detail.data.status === "draft" ? (
+                        <p className="text-xs text-muted-foreground self-center">
+                          Finalize before emailing to client
+                        </p>
+                      ) : detail.data.status === "void" ? (
+                        <p className="text-xs text-muted-foreground self-center">
+                          Voided invoices cannot be emailed
+                        </p>
+                      ) : (
+                        <EmailInvoiceButton
+                          invoiceId={invoice.id}
+                          preview={{
+                            clientName: [
+                              detail.data.clientFirstName,
+                              detail.data.clientLastName,
                             ]
                               .filter(Boolean)
-                              .join(" ");
-                            const doc = await generateInvoicePdf({
-                              practiceName,
-                              practicePhone: practicePhone || undefined,
-                              practiceAddress: practiceAddress || undefined,
-                              clientName,
-                              clientEmail: d.clientEmail ?? undefined,
-                              clientAddress: d.clientAddress ?? undefined,
-                              clientDisplayId: d.clientDisplayId ?? undefined,
-                              patientName: d.patientName ?? undefined,
-                              invoiceNumber: d.invoiceNumber ?? undefined,
-                              invoiceDate: d.createdAt
-                                ? new Date(d.createdAt).toLocaleDateString()
-                                : new Date().toLocaleDateString(),
-                              dueDate: d.dueDate
-                                ? formatVisitDate(d.dueDate)
-                                : undefined,
-                              status: d.status,
-                              isPaid:
-                                d.status === "paid" ||
-                                Number(d.total ?? 0) -
-                                  Number(d.paidAmount ?? 0) <=
-                                  0.009,
-                              items: d.items.map((item) => ({
-                                description: item.description ?? "",
-                                quantity: Number(item.quantity ?? 1),
-                                unitPrice: formatCurrency(item.unitPrice),
-                                total: formatCurrency(item.total),
-                              })),
-                              subtotal: formatCurrency(d.subtotal),
-                              tax: formatCurrency(d.tax),
-                              total: formatCurrency(d.total),
-                              paidAmount: formatCurrency(d.paidAmount),
-                              venmoHandle: venmoHandle || undefined,
-                            });
-                            window.open(doc.output("bloburl"), "_blank");
-                          },
-                        }}
-                      />
+                              .join(" "),
+                            clientEmail: detail.data.clientEmail,
+                            patientName: detail.data.patientName,
+                            total: formatCurrency(detail.data.total),
+                            paid: formatCurrency(detail.data.paidAmount),
+                            balance: formatCurrency(
+                              Number(detail.data.total ?? 0) -
+                                Number(detail.data.paidAmount ?? 0)
+                            ),
+                            dueDate: detail.data.dueDate
+                              ? formatVisitDate(detail.data.dueDate)
+                              : null,
+                            status: detail.data.status,
+                            venmoHandle: venmoHandle || null,
+                            onPreviewPdf: async () => {
+                              const d = detail.data!;
+                              const clientName = [
+                                d.clientFirstName,
+                                d.clientLastName,
+                              ]
+                                .filter(Boolean)
+                                .join(" ");
+                              const doc = await generateInvoicePdf({
+                                practiceName,
+                                practicePhone: practicePhone || undefined,
+                                practiceAddress: practiceAddress || undefined,
+                                clientName,
+                                clientEmail: d.clientEmail ?? undefined,
+                                clientAddress: d.clientAddress ?? undefined,
+                                clientDisplayId: d.clientDisplayId ?? undefined,
+                                patientName: d.patientName ?? undefined,
+                                invoiceNumber: d.invoiceNumber ?? undefined,
+                                invoiceDate: d.createdAt
+                                  ? new Date(d.createdAt).toLocaleDateString()
+                                  : new Date().toLocaleDateString(),
+                                dueDate: d.dueDate
+                                  ? formatVisitDate(d.dueDate)
+                                  : undefined,
+                                status: d.status,
+                                isPaid:
+                                  d.status === "paid" ||
+                                  Number(d.total ?? 0) -
+                                    Number(d.paidAmount ?? 0) <=
+                                    0.009,
+                                items: d.items.map((item) => ({
+                                  description: item.description ?? "",
+                                  quantity: Number(item.quantity ?? 1),
+                                  unitPrice: formatCurrency(item.unitPrice),
+                                  total: formatCurrency(item.total),
+                                })),
+                                subtotal: formatCurrency(d.subtotal),
+                                tax: formatCurrency(d.tax),
+                                total: formatCurrency(d.total),
+                                paidAmount: formatCurrency(d.paidAmount),
+                                venmoHandle: venmoHandle || undefined,
+                              });
+                              window.open(doc.output("bloburl"), "_blank");
+                            },
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -1036,11 +1112,13 @@ function PaymentSection({
   const hasPayments = (paymentsQuery.data?.length ?? 0) > 0;
   /** Allow documenting method when status was marked paid without a payment row. */
   const canRecord =
-    remaining > 0 ||
-    (!hasPayments &&
-      !paymentsQuery.isLoading &&
-      invoiceStatus === "paid" &&
-      Number(invoicePaidAmount ?? 0) > 0);
+    invoiceStatus !== "draft" &&
+    invoiceStatus !== "void" &&
+    (remaining > 0 ||
+      (!hasPayments &&
+        !paymentsQuery.isLoading &&
+        invoiceStatus === "paid" &&
+        Number(invoicePaidAmount ?? 0) > 0));
 
   const handleOpenForm = () => {
     setPaymentAmount(

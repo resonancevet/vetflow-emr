@@ -22,6 +22,7 @@ import { users } from "./users";
 
 export const invoiceStatusEnum = pgEnum("invoice_status", [
   "draft",
+  "finalized",
   "sent",
   "paid",
   "overdue",

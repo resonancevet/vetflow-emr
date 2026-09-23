@@ -23,6 +23,7 @@ import {
   ensureInvoiceNumber,
   formatInvoiceNumber,
 } from "../lib/display-ids";
+import { queueInvoiceSync } from "@/lib/quickbooks-sync";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
 import {
   buildPortalUrl,
@@ -173,6 +174,18 @@ export const notificationsRouter = createRouter({
       if (!invoice) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
       }
+      if (invoice.status === "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Finalize the invoice before emailing it to the client",
+        });
+      }
+      if (invoice.status === "void") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot email a voided invoice",
+        });
+      }
       if (!invoice.clientEmail) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Client does not have an email address on file" });
       }
@@ -286,6 +299,19 @@ export const notificationsRouter = createRouter({
             result.error ??
             "Failed to send email. Check Resend domain/from address and server logs.",
         });
+      }
+
+      if (invoice.status === "finalized") {
+        await ctx.db
+          .update(invoices)
+          .set({ status: "sent", updatedAt: new Date() })
+          .where(
+            and(
+              eq(invoices.id, invoice.id),
+              eq(invoices.practiceId, ctx.practiceId)
+            )
+          );
+        queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       }
 
       await ctx.db.insert(communications).values({
