@@ -153,7 +153,10 @@ export function formatInvoiceAddressLines(parts: {
   const lines: string[] = [];
   const street = parts.address?.trim();
   if (street) {
-    for (const line of street.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    for (const line of street
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)) {
       lines.push(line);
     }
   }
@@ -164,6 +167,32 @@ export function formatInvoiceAddressLines(parts: {
     .filter(Boolean)
     .join(", ");
   if (cityStateZip) lines.push(cityStateZip);
+
+  // If we only have a single comma-separated address blob (common for practice
+  // address), split street vs city/state/zip onto separate lines.
+  if (lines.length === 1 && !parts.city && !parts.state && !parts.zip) {
+    const only = lines[0]!;
+    const match = only.match(
+      /^(.+?),?\s+([A-Za-z .'-]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/
+    );
+    if (match) {
+      const streetPart = match[1]!.replace(/,$/, "").trim();
+      const cityPart = match[2]!.trim();
+      const statePart = match[3]!.trim();
+      const zipPart = match[4]!.trim();
+      return [`${streetPart},`, `${cityPart}, ${statePart} ${zipPart}`];
+    }
+  }
+
+  // Ensure trailing comma on street line when followed by city line (Roma layout).
+  if (lines.length >= 2 && !lines[0]!.endsWith(",")) {
+    const first = lines[0]!;
+    // Only add comma for short street lines (not already multi-part)
+    if (!first.includes(",") || first.split(",").length <= 2) {
+      lines[0] = first.replace(/,$/, "") + ",";
+    }
+  }
+
   return lines;
 }
 
@@ -261,16 +290,18 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_DARK);
 
   // Three-column row matching Roma template: Name | Client ID | Pet
+  const spaceW = doc.getTextWidth(" ");
   const col1 = margin;
   const col2 = margin + contentW * 0.42;
-  const col3 = margin + contentW * 0.68;
+  const col3 = margin + contentW * 0.68 + 3 * spaceW;
   const nameLines = doc.splitTextToSize(data.clientName || "—", contentW * 0.4);
   const idText = data.clientDisplayId
     ? `Client ID: ${data.clientDisplayId}`
     : "";
   const petText = data.patientName ? `Pet: ${data.patientName}` : "";
   const idLines = idText ? doc.splitTextToSize(idText, contentW * 0.24) : [];
-  const petLines = petText ? doc.splitTextToSize(petText, contentW * 0.3) : [];
+  const petMaxW = Math.max(20, pageW - margin - col3);
+  const petLines = petText ? doc.splitTextToSize(petText, petMaxW) : [];
   const billRowLines = Math.max(
     nameLines.length,
     idLines.length || 1,
@@ -370,6 +401,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   y += 14;
 
   // --- Pay by Mail / Venmo ---------------------------------------------------
+  // Keep practice name, street, and city/state/zip on separate lines.
   const practiceAddrLines = formatInvoiceAddressLines({
     address: data.practiceAddress,
   });
@@ -381,8 +413,10 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const mailHeightEstimate = Math.max(16, mailBodyLines.length * 5 + 10);
   ensureY(mailHeightEstimate + 22);
 
+  const spaceWPay = doc.getTextWidth(" ");
   const colW = contentW / 2 - 6;
-  const venmoX = margin + colW + 12;
+  // Move Venmo heading + handle 5 spaces left vs prior half-page placement.
+  const venmoX = margin + colW + 12 - 5 * spaceWPay;
 
   doc.setFont(INVOICE_FONT, "bold");
   doc.setFontSize(10);
@@ -401,19 +435,17 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
     doc.text("—", margin, mailY);
     mailY += 5;
   } else {
+    // Draw each address line separately (do not reflow into one paragraph).
     for (const line of mailBodyLines) {
-      const wrapped = doc.splitTextToSize(String(line), colW);
-      doc.text(wrapped, margin, mailY);
-      mailY += wrapped.length * 5;
+      doc.text(String(line), margin, mailY);
+      mailY += 5;
     }
   }
 
   const venmoValue = data.venmoHandle?.trim() || "—";
-  const venmoLines = doc.splitTextToSize(venmoValue, colW);
-  doc.text(venmoLines, venmoX, bodyStartY);
+  doc.text(venmoValue, venmoX, bodyStartY);
 
-  y =
-    Math.max(mailY, bodyStartY + venmoLines.length * 5) + 14;
+  y = Math.max(mailY, bodyStartY + 5) + 14;
 
   // --- Thank you (after payment block, never overlapping it) -----------------
   ensureY(12);
