@@ -416,9 +416,9 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const colW = contentW / 2 - 6;
   doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(10);
-  // Half-page column starts at margin+colW+8; shift Venmo 10 character-spaces left.
+  // Half-page column starts at margin+colW+8; shift Venmo 15 character-spaces left.
   const spaceWPay = doc.getTextWidth(" ");
-  const venmoX = margin + colW + 8 - 10 * spaceWPay;
+  const venmoX = margin + colW + 8 - 15 * spaceWPay;
 
   doc.setFont(INVOICE_FONT, "bold");
   doc.setFontSize(10);
