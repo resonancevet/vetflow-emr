@@ -101,7 +101,7 @@ function ensureSpace(doc: jsPDF, y: number, needed: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Invoice PDF
+// 1. Invoice PDF (Roma Veterinary Care template)
 // ---------------------------------------------------------------------------
 
 export interface InvoiceData {
@@ -112,9 +112,13 @@ export interface InvoiceData {
   clientName: string;
   clientEmail?: string;
   clientAddress?: string;
+  clientDisplayId?: string;
   patientName?: string;
+  invoiceNumber?: string | number | null;
   invoiceDate: string;
   dueDate?: string;
+  /** When true (or status is paid / balance is 0), Payment Due shows PAID. */
+  isPaid?: boolean;
   status: string;
   items: Array<{
     description: string;
@@ -130,202 +134,221 @@ export interface InvoiceData {
   venmoHandle?: string;
 }
 
-export function generateInvoicePdf(data: InvoiceData): jsPDF {
-  const doc = new jsPDF();
-  let y = PAGE_MARGIN;
+function moneyToNumber(value: string): number {
+  const n = parseFloat(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
 
-  // --- Header: Practice info -------------------------------------------------
-  doc.setFont(FONT, "bold");
-  doc.setFontSize(20);
-  setColor(doc, COLOR_TEAL);
-  doc.text(data.practiceName, PAGE_MARGIN, y);
-  y += 7;
+/**
+ * Roma-branded invoice PDF. Async so Montserrat fonts can load on client/server.
+ */
+export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
+  const {
+    ROMA_TEAL,
+    ROMA_NAVY,
+    ROMA_DARK,
+    ROMA_GRAY,
+    ROMA_LINE,
+    INVOICE_FONT,
+    registerInvoiceFonts,
+    romaLogoDataUrl,
+  } = await import("./invoice-brand");
 
-  doc.setFont(FONT, "normal");
-  doc.setFontSize(9);
-  setColor(doc, COLOR_GRAY);
-  if (data.practiceAddress) {
-    doc.text(data.practiceAddress, PAGE_MARGIN, y);
-    y += 4;
-  }
-  if (data.practicePhone) {
-    doc.text(data.practicePhone, PAGE_MARGIN, y);
-    y += 4;
-  }
-  if (data.practiceEmail) {
-    doc.text(data.practiceEmail, PAGE_MARGIN, y);
-    y += 4;
-  }
+  const doc = new jsPDF({ unit: "mm", format: "letter" });
+  await registerInvoiceFonts(doc);
 
-  // --- INVOICE title (right-aligned) -----------------------------------------
-  doc.setFont(FONT, "bold");
-  doc.setFontSize(28);
-  setColor(doc, COLOR_DARK);
-  doc.text("INVOICE", PAGE_WIDTH - PAGE_MARGIN, PAGE_MARGIN, {
-    align: "right",
-  });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 18;
+  const contentW = pageW - margin * 2;
+  let y = 16;
 
-  // Status badge
-  doc.setFontSize(10);
-  const statusLabel = data.status.toUpperCase();
-  const statusWidth = doc.getTextWidth(statusLabel) + 8;
-  const statusX = PAGE_WIDTH - PAGE_MARGIN - statusWidth;
-  const statusY = PAGE_MARGIN + 6;
-  const [tr, tg, tb] = hexToRgb(COLOR_TEAL);
-  doc.setFillColor(tr, tg, tb);
-  doc.roundedRect(statusX, statusY, statusWidth, 7, 1, 1, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.text(statusLabel, statusX + statusWidth / 2, statusY + 5, {
-    align: "center",
-  });
-
-  // Date info right side
-  setColor(doc, COLOR_GRAY);
-  doc.setFont(FONT, "normal");
-  doc.setFontSize(9);
-  let dateY = statusY + 12;
-  doc.text(`Date: ${data.invoiceDate}`, PAGE_WIDTH - PAGE_MARGIN, dateY, {
-    align: "right",
-  });
-  if (data.dueDate) {
-    dateY += 4;
-    doc.text(`Due: ${data.dueDate}`, PAGE_WIDTH - PAGE_MARGIN, dateY, {
-      align: "right",
-    });
-  }
-
-  y = Math.max(y, dateY) + 8;
-  drawLine(doc, y);
-  y += 8;
-
-  // --- Bill To ---------------------------------------------------------------
-  doc.setFont(FONT, "bold");
-  doc.setFontSize(10);
-  setColor(doc, COLOR_DARK);
-  doc.text("BILL TO", PAGE_MARGIN, y);
-  y += 5;
-
-  doc.setFont(FONT, "normal");
-  doc.setFontSize(10);
-  setColor(doc, COLOR_GRAY);
-  doc.text(data.clientName, PAGE_MARGIN, y);
-  y += 5;
-  if (data.clientAddress) {
-    doc.text(data.clientAddress, PAGE_MARGIN, y);
-    y += 5;
-  }
-  if (data.clientEmail) {
-    doc.text(data.clientEmail, PAGE_MARGIN, y);
-    y += 5;
-  }
-  if (data.patientName) {
-    y += 2;
-    doc.setFont(FONT, "italic");
-    setColor(doc, COLOR_DARK);
-    doc.text(`Patient: ${data.patientName}`, PAGE_MARGIN, y);
-    y += 5;
-  }
-
-  y += 6;
-
-  // --- Line Items Table ------------------------------------------------------
-  const colX = {
-    desc: PAGE_MARGIN,
-    total: PAGE_WIDTH - PAGE_MARGIN,
+  const setHex = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex);
+    doc.setTextColor(r, g, b);
+  };
+  const drawHexLine = (atY: number, color = ROMA_LINE) => {
+    const [r, g, b] = hexToRgb(color);
+    doc.setDrawColor(r, g, b);
+    doc.setLineWidth(0.3);
+    doc.line(margin, atY, pageW - margin, atY);
   };
 
-  // Table header
-  const [lr, lg, lb] = hexToRgb(COLOR_LIGHT_GRAY);
-  doc.setFillColor(lr, lg, lb);
-  doc.rect(PAGE_MARGIN, y - 4, CONTENT_WIDTH, 8, "F");
-  doc.setFont(FONT, "bold");
-  doc.setFontSize(9);
-  setColor(doc, COLOR_DARK);
-  doc.text("Description", colX.desc + 2, y);
-  doc.text("Price", colX.total - 2, y, { align: "right" });
-  y += 8;
-
-  // Table rows
-  doc.setFont(FONT, "normal");
-  doc.setFontSize(9);
-  setColor(doc, COLOR_DARK);
-  for (const item of data.items) {
-    y = ensureSpace(doc, y, 8);
-    doc.text(item.description, colX.desc + 2, y);
-    doc.text(item.total, colX.total - 2, y, { align: "right" });
-    y += 6;
+  // --- Header: logo + practice name + meta ---------------------------------
+  const logoSize = 28;
+  try {
+    doc.addImage(romaLogoDataUrl(), "PNG", margin, y - 2, logoSize, logoSize);
+  } catch {
+    // Logo optional if image decode fails
   }
 
-  y += 4;
-  drawLine(doc, y);
+  const headerLeft = margin + logoSize + 6;
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(18);
+  setHex(ROMA_TEAL);
+  doc.text(data.practiceName, headerLeft, y + 8);
+
+  const metaX = pageW - margin;
+  let metaY = y + 4;
+  doc.setFont(INVOICE_FONT, "normal");
+  doc.setFontSize(10);
+  setHex(ROMA_DARK);
+
+  const invoiceLabel =
+    data.invoiceNumber != null && data.invoiceNumber !== ""
+      ? String(data.invoiceNumber).padStart(4, "0")
+      : "—";
+  doc.text(`Invoice:  ${invoiceLabel}`, metaX, metaY, { align: "right" });
+  metaY += 5;
+  doc.text(`Date:  ${data.invoiceDate}`, metaX, metaY, { align: "right" });
+  metaY += 5;
+
+  const totalAmt = moneyToNumber(data.total);
+  const paidAmt = moneyToNumber(data.paidAmount);
+  const balanceAmt = Math.max(0, totalAmt - paidAmt);
+  const showPaid =
+    data.isPaid === true ||
+    data.status === "paid" ||
+    balanceAmt <= 0.009;
+  const paymentDue = showPaid ? "PAID" : data.dueDate || "—";
+  doc.text(`Payment Due:  ${paymentDue}`, metaX, metaY, { align: "right" });
+
+  y = Math.max(y + logoSize + 4, metaY + 8);
+
+  // --- Bill To ---------------------------------------------------------------
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(11);
+  setHex(ROMA_DARK);
+  doc.text("Bill To:", margin, y);
+  y += 6;
+
+  doc.setFont(INVOICE_FONT, "normal");
+  doc.setFontSize(10);
+  setHex(ROMA_DARK);
+  const billParts = [
+    data.clientName,
+    data.clientDisplayId,
+    data.patientName,
+  ].filter(Boolean);
+  doc.text(billParts.join("    "), margin, y);
+  y += 5;
+  if (data.clientAddress) {
+    const addrLines = doc.splitTextToSize(data.clientAddress, contentW);
+    doc.text(addrLines, margin, y);
+    y += addrLines.length * 5;
+  }
+  y += 6;
+
+  // --- Line items table ------------------------------------------------------
+  const rowH = 8;
+  const [nr, ng, nb] = hexToRgb(ROMA_NAVY);
+  doc.setFillColor(nr, ng, nb);
+  doc.rect(margin, y, contentW, rowH, "F");
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Description", margin + 3, y + 5.5);
+  doc.text("Price", pageW - margin - 3, y + 5.5, { align: "right" });
+  y += rowH + 4;
+
+  doc.setFont(INVOICE_FONT, "normal");
+  doc.setFontSize(10);
+  setHex(ROMA_DARK);
+  for (const item of data.items) {
+    const desc =
+      item.quantity > 1
+        ? `${item.description} × ${item.quantity}`
+        : item.description;
+    const lines = doc.splitTextToSize(desc, contentW - 40);
+    const needed = Math.max(6, lines.length * 5);
+    if (y + needed > doc.internal.pageSize.getHeight() - 55) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.text(lines, margin + 3, y);
+    doc.text(item.total, pageW - margin - 3, y, { align: "right" });
+    y += needed;
+  }
+
+  y += 2;
+  drawHexLine(y);
   y += 8;
 
   // --- Totals ----------------------------------------------------------------
-  const totalsX = PAGE_WIDTH - PAGE_MARGIN - 60;
-  const totalsValX = PAGE_WIDTH - PAGE_MARGIN;
+  const totalsLabelX = pageW - margin - 55;
+  const totalsValX = pageW - margin;
 
-  doc.setFont(FONT, "normal");
+  doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(10);
-  setColor(doc, COLOR_GRAY);
-
-  doc.text("Subtotal:", totalsX, y);
+  setHex(ROMA_DARK);
+  doc.text("Subtotal:", totalsLabelX, y);
   doc.text(data.subtotal, totalsValX, y, { align: "right" });
   y += 6;
-
-  doc.text("Tax:", totalsX, y);
+  doc.text("Tax:", totalsLabelX, y);
   doc.text(data.tax, totalsValX, y, { align: "right" });
-  y += 6;
-
-  drawLine(doc, y);
-  y += 6;
-
-  doc.setFont(FONT, "bold");
-  doc.setFontSize(12);
-  setColor(doc, COLOR_DARK);
-  doc.text("Total:", totalsX, y);
-  doc.text(data.total, totalsValX, y, { align: "right" });
+  y += 4;
+  drawHexLine(y);
   y += 7;
 
-  doc.setFont(FONT, "normal");
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(11);
+  setHex(ROMA_DARK);
+  doc.text("Total:", totalsLabelX, y);
+  doc.text(data.total, totalsValX, y, { align: "right" });
+  y += 6;
+
+  doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(10);
-  setColor(doc, COLOR_GRAY);
-  doc.text("Paid:", totalsX, y);
+  doc.text("Paid:", totalsLabelX, y);
   doc.text(data.paidAmount, totalsValX, y, { align: "right" });
   y += 6;
 
-  // Balance due
-  const balanceParts = [data.total, data.paidAmount].map((v) =>
-    parseFloat(v.replace(/[^0-9.-]/g, ""))
-  );
-  const balance = (balanceParts[0]! - balanceParts[1]!).toFixed(2);
-  doc.setFont(FONT, "bold");
-  setColor(doc, COLOR_TEAL);
-  doc.text("Balance Due:", totalsX, y);
-  doc.text(`$${balance}`, totalsValX, y, { align: "right" });
-  y += 10;
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(11);
+  setHex(ROMA_TEAL);
+  doc.text("Balance Due:", totalsLabelX, y);
+  doc.text(`$${balanceAmt.toFixed(2)}`, totalsValX, y, { align: "right" });
+  y += 12;
 
-  if (data.venmoHandle) {
-    y = ensureSpace(doc, y, 16);
-    doc.setFont(FONT, "bold");
-    doc.setFontSize(10);
-    setColor(doc, COLOR_DARK);
-    doc.text("Payment instructions", PAGE_MARGIN, y);
-    y += 5;
-    doc.setFont(FONT, "normal");
-    doc.setFontSize(9);
-    setColor(doc, COLOR_GRAY);
-    doc.text(`Venmo: ${data.venmoHandle}`, PAGE_MARGIN, y);
+  // --- Pay by Mail / Venmo ---------------------------------------------------
+  if (y > doc.internal.pageSize.getHeight() - 45) {
+    doc.addPage();
+    y = margin;
   }
 
-  // --- Footer ----------------------------------------------------------------
-  const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setFont(FONT, "italic");
+  const colW = contentW / 2 - 4;
+  doc.setFont(INVOICE_FONT, "bold");
+  doc.setFontSize(10);
+  setHex(ROMA_DARK);
+  doc.text("Pay by Mail", margin, y);
+  doc.text("Pay via Venmo", margin + colW + 8, y);
+  y += 5;
+
+  doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(9);
-  setColor(doc, COLOR_GRAY);
+  setHex(ROMA_GRAY);
+  const mailLines = [
+    data.practiceName,
+    data.practiceAddress,
+  ].filter(Boolean) as string[];
+  let mailY = y;
+  for (const line of mailLines) {
+    const wrapped = doc.splitTextToSize(line, colW);
+    doc.text(wrapped, margin, mailY);
+    mailY += wrapped.length * 4.2;
+  }
+  doc.text(data.venmoHandle || "—", margin + colW + 8, y);
+
+  y = Math.max(mailY, y) + 14;
+
+  // --- Thank you -------------------------------------------------------------
+  const thanksPet = data.patientName?.trim() || "your pet";
+  doc.setFont(INVOICE_FONT, "italic");
+  doc.setFontSize(11);
+  setHex(ROMA_TEAL);
   doc.text(
-    "Thank you for trusting us with your pet's care",
-    PAGE_WIDTH / 2,
-    pageHeight - 15,
+    `Thank you for trusting me with ${thanksPet}'s Care!`,
+    pageW / 2,
+    Math.min(y, doc.internal.pageSize.getHeight() - 18),
     { align: "center" }
   );
 

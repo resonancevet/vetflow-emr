@@ -9,6 +9,7 @@ import {
   users,
   communications,
   invoices,
+  invoiceItems,
   vaccinationRecords,
   practices,
 } from "@openpims/db";
@@ -17,6 +18,11 @@ import {
   sendInvoiceEmail,
   sendVaccinationReminder,
 } from "@/lib/email";
+import { generateInvoicePdf } from "@/lib/pdf";
+import {
+  ensureInvoiceNumber,
+  formatInvoiceNumber,
+} from "../lib/display-ids";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
 import {
   buildPortalUrl,
@@ -137,12 +143,18 @@ export const notificationsRouter = createRouter({
           id: invoices.id,
           total: invoices.total,
           paidAmount: invoices.paidAmount,
+          subtotal: invoices.subtotal,
+          tax: invoices.tax,
           status: invoices.status,
           dueDate: invoices.dueDate,
+          createdAt: invoices.createdAt,
+          invoiceNumber: invoices.invoiceNumber,
           clientId: invoices.clientId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
+          clientAddress: clients.address,
+          clientDisplayId: clients.displayId,
           clientAccessToken: clients.accessToken,
           patientName: patients.name,
         })
@@ -179,26 +191,90 @@ export const notificationsRouter = createRouter({
         portalUrl = buildPortalUrl(token);
       }
 
+      const invoiceNumber =
+        invoice.invoiceNumber ??
+        (await ensureInvoiceNumber(ctx.db, ctx.practiceId, invoice.id));
+      const invoiceNumberLabel = invoiceNumber
+        ? formatInvoiceNumber(invoiceNumber)
+        : undefined;
+
+      const items = await ctx.db
+        .select({
+          description: invoiceItems.description,
+          quantity: invoiceItems.quantity,
+          unitPrice: invoiceItems.unitPrice,
+          total: invoiceItems.total,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, invoice.id),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
       const total = Number(invoice.total ?? 0);
       const paid = Number(invoice.paidAmount ?? 0);
       const balance = Math.max(0, total - paid);
+      const formatMoney = (n: number | string) =>
+        `$${Number(n).toFixed(2)}`;
+
+      const pdf = await generateInvoicePdf({
+        practiceName: emailCtx.practiceName,
+        practicePhone: emailCtx.practicePhone,
+        practiceAddress: emailCtx.practiceAddress,
+        clientName: `${invoice.clientFirstName ?? ""} ${invoice.clientLastName ?? ""}`.trim(),
+        clientEmail: invoice.clientEmail ?? undefined,
+        clientAddress: invoice.clientAddress ?? undefined,
+        clientDisplayId: invoice.clientDisplayId ?? undefined,
+        patientName: invoice.patientName ?? undefined,
+        invoiceNumber: invoiceNumberLabel,
+        invoiceDate: invoice.createdAt
+          ? new Date(invoice.createdAt).toLocaleDateString()
+          : new Date().toLocaleDateString(),
+        dueDate: invoice.dueDate
+          ? formatVisitDate(invoice.dueDate)
+          : undefined,
+        status: invoice.status,
+        isPaid: balance <= 0.009 || invoice.status === "paid",
+        items: items.map((item) => ({
+          description: item.description ?? "",
+          quantity: Number(item.quantity ?? 1),
+          unitPrice: formatMoney(item.unitPrice),
+          total: formatMoney(item.total),
+        })),
+        subtotal: formatMoney(invoice.subtotal ?? 0),
+        tax: formatMoney(invoice.tax ?? 0),
+        total: formatMoney(total),
+        paidAmount: formatMoney(paid),
+        venmoHandle: emailCtx.venmoHandle || undefined,
+      });
+      const pdfBuffer = Buffer.from(pdf.output("arraybuffer"));
 
       const result = await sendInvoiceEmail(
         {
           to: invoice.clientEmail,
           clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`,
           patientName: invoice.patientName ?? undefined,
-          invoiceTotal: `$${total.toFixed(2)}`,
-          paidAmount: `$${paid.toFixed(2)}`,
-          balanceDue: `$${balance.toFixed(2)}`,
-          dueDate: invoice.dueDate
-            ? formatVisitDate(invoice.dueDate)
-            : undefined,
+          invoiceTotal: formatMoney(total),
+          paidAmount: formatMoney(paid),
+          balanceDue: formatMoney(balance),
+          dueDate:
+            balance <= 0.009 || invoice.status === "paid"
+              ? "PAID"
+              : invoice.dueDate
+                ? formatVisitDate(invoice.dueDate)
+                : undefined,
           status: invoice.status,
           venmoHandle: emailCtx.venmoHandle || undefined,
           practiceName: emailCtx.practiceName,
           practicePhone: emailCtx.practicePhone,
           portalUrl,
+          invoiceNumber: invoiceNumberLabel,
+          pdfAttachment: {
+            filename: `invoice-${invoiceNumberLabel ?? invoice.id.slice(0, 8)}.pdf`,
+            content: pdfBuffer,
+          },
         },
         emailCtx.templates.invoiceEmail
       );

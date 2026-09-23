@@ -1,5 +1,11 @@
 import { eq, sql } from "drizzle-orm";
-import { practiceClientSequences, clients, patients } from "@openpims/db";
+import {
+  practiceClientSequences,
+  practiceInvoiceSequences,
+  clients,
+  patients,
+  invoices,
+} from "@openpims/db";
 import {
   formatClientDisplayId,
   formatPatientDisplayId,
@@ -60,4 +66,58 @@ export async function allocatePatientDisplayId(
 
   const nextPet = Number(agg?.maxPet ?? 0) + 1;
   return formatPatientDisplayId(clientSeq, nextPet);
+}
+
+/** Allocate the next sequential invoice number for a practice (1, 2, 3, …). */
+export async function allocateInvoiceNumber(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string,
+): Promise<number> {
+  const [row] = await db
+    .insert(practiceInvoiceSequences)
+    .values({ practiceId, nextSeq: 2 })
+    .onConflictDoUpdate({
+      target: practiceInvoiceSequences.practiceId,
+      set: { nextSeq: sql`${practiceInvoiceSequences.nextSeq} + 1` },
+    })
+    .returning({ nextSeq: practiceInvoiceSequences.nextSeq });
+
+  return (row?.nextSeq ?? 2) - 1;
+}
+
+/**
+ * Ensure an invoice has a sequential number. No-ops for estimates/templates.
+ * Returns the assigned (or existing) number, or null if not applicable.
+ */
+export async function ensureInvoiceNumber(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId: string,
+  invoiceId: string,
+): Promise<number | null> {
+  const [row] = await db
+    .select({
+      invoiceNumber: invoices.invoiceNumber,
+      isEstimate: invoices.isEstimate,
+      isTemplate: invoices.isTemplate,
+    })
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!row || row.isEstimate || row.isTemplate) return null;
+  if (row.invoiceNumber != null) return row.invoiceNumber;
+
+  const invoiceNumber = await allocateInvoiceNumber(db, practiceId);
+  await db
+    .update(invoices)
+    .set({ invoiceNumber, updatedAt: new Date() })
+    .where(eq(invoices.id, invoiceId));
+  return invoiceNumber;
+}
+
+/** Display form for invoice numbers (matches Roma template #### style). */
+export function formatInvoiceNumber(n: number): string {
+  return String(n).padStart(4, "0");
 }

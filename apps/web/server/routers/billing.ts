@@ -20,6 +20,9 @@ import { calcTax, getEffectiveTaxRatePercent, getEffectiveInventoryMarkupPercent
 import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
 import { applyStockChange } from "../lib/stock";
 import { queueInvoiceSync, queuePaymentSync } from "@/lib/quickbooks-sync";
+import {
+  allocateInvoiceNumber,
+} from "../lib/display-ids";
 
 function parseMoney(value: string): string {
   const n = parseFloat(value.replace(/[$,\s]/g, ""));
@@ -143,6 +146,7 @@ export const billingRouter = createRouter({
             createdAt: invoices.createdAt,
             isEstimate: invoices.isEstimate,
             isTemplate: invoices.isTemplate,
+            invoiceNumber: invoices.invoiceNumber,
             name: invoices.name,
             clientFirstName: clients.firstName,
             clientLastName: clients.lastName,
@@ -185,9 +189,12 @@ export const billingRouter = createRouter({
           isEstimate: invoices.isEstimate,
           isTemplate: invoices.isTemplate,
           name: invoices.name,
+          invoiceNumber: invoices.invoiceNumber,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientEmail: clients.email,
+          clientDisplayId: clients.displayId,
+          clientAddress: clients.address,
           patientName: patients.name,
         })
         .from(invoices)
@@ -436,6 +443,11 @@ export const billingRouter = createRouter({
       const tax = calcTax(subtotal, taxRatePercent);
       const total = Math.round((subtotal + tax) * 100) / 100;
 
+      const invoiceNumber =
+        !isEstimate
+          ? await allocateInvoiceNumber(ctx.db, ctx.practiceId)
+          : null;
+
       const [invoice] = await ctx.db
         .insert(invoices)
         .values({
@@ -452,6 +464,7 @@ export const billingRouter = createRouter({
           dueDate: input.dueDate ?? null,
           isEstimate,
           isTemplate: isEstimate && !clientId,
+          invoiceNumber,
         })
         .returning();
 
@@ -830,9 +843,17 @@ export const billingRouter = createRouter({
         });
       }
 
+      const invoiceNumber = await allocateInvoiceNumber(
+        ctx.db,
+        ctx.practiceId
+      );
       const [invoice] = await ctx.db
         .update(invoices)
-        .set({ isEstimate: false, isTemplate: false })
+        .set({
+          isEstimate: false,
+          isTemplate: false,
+          invoiceNumber,
+        })
         .where(eq(invoices.id, input.id))
         .returning();
 

@@ -83,6 +83,8 @@ export const invoices = pgTable(
       .notNull()
       .default("0"),
     dueDate: date("due_date"),
+    /** Sequential practice invoice number (null for estimates/templates until converted). */
+    invoiceNumber: integer("invoice_number"),
     isEstimate: boolean("is_estimate").notNull().default(false),
     /** Client-less estimate that can be reused. */
     isTemplate: boolean("is_template").notNull().default(false),
@@ -90,6 +92,10 @@ export const invoices = pgTable(
   (table) => ({
     practiceIdx: index("invoices_practice_idx").on(table.practiceId, table.deletedAt),
     clientIdx: index("invoices_client_idx").on(table.clientId),
+    invoiceNumberIdx: index("invoices_practice_number_idx").on(
+      table.practiceId,
+      table.invoiceNumber
+    ),
   })
 );
 

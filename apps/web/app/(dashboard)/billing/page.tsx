@@ -371,6 +371,11 @@ function InvoiceRow({
           )}
         </td>
         <td className="px-4 py-3 font-medium">
+          {invoice.invoiceNumber != null && !invoice.isEstimate ? (
+            <span className="mr-2 font-mono text-xs text-muted-foreground">
+              #{String(invoice.invoiceNumber).padStart(4, "0")}
+            </span>
+          ) : null}
           {invoice.clientFirstName
             ? `${invoice.clientFirstName} ${invoice.clientLastName}`
             : invoice.name || "Untitled template"}
@@ -526,7 +531,7 @@ function InvoiceRow({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           const d = detail.data!;
                           const clientName =
@@ -536,13 +541,16 @@ function InvoiceRow({
                             d.name ||
                             invoice.name ||
                             "Estimate";
-                          generateInvoicePdf({
+                          const doc = await generateInvoicePdf({
                             practiceName,
                             practicePhone: practicePhone || undefined,
                             practiceAddress: practiceAddress || undefined,
                             clientName,
                             clientEmail: d.clientEmail ?? undefined,
+                            clientAddress: d.clientAddress ?? undefined,
+                            clientDisplayId: d.clientDisplayId ?? undefined,
                             patientName: d.patientName ?? undefined,
+                            invoiceNumber: d.invoiceNumber ?? undefined,
                             invoiceDate: d.createdAt
                               ? new Date(d.createdAt).toLocaleDateString()
                               : new Date().toLocaleDateString(),
@@ -561,7 +569,8 @@ function InvoiceRow({
                             total: formatCurrency(d.total),
                             paidAmount: formatCurrency(d.paidAmount),
                             venmoHandle: venmoHandle || undefined,
-                          }).save(`estimate-${clientName || "unknown"}.pdf`);
+                          });
+                          doc.save(`estimate-${clientName || "unknown"}.pdf`);
                         }}
                       >
                         <Download className="mr-1 h-3.5 w-3.5" />
@@ -677,19 +686,22 @@ function InvoiceRow({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           const d = detail.data!;
                           const clientName = [d.clientFirstName, d.clientLastName]
                             .filter(Boolean)
                             .join(" ");
-                          generateInvoicePdf({
+                          const doc = await generateInvoicePdf({
                             practiceName,
                             practicePhone: practicePhone || undefined,
                             practiceAddress: practiceAddress || undefined,
                             clientName,
                             clientEmail: d.clientEmail ?? undefined,
+                            clientAddress: d.clientAddress ?? undefined,
+                            clientDisplayId: d.clientDisplayId ?? undefined,
                             patientName: d.patientName ?? undefined,
+                            invoiceNumber: d.invoiceNumber ?? undefined,
                             invoiceDate: d.createdAt
                               ? new Date(d.createdAt).toLocaleDateString()
                               : new Date().toLocaleDateString(),
@@ -697,6 +709,10 @@ function InvoiceRow({
                               ? formatVisitDate(d.dueDate)
                               : undefined,
                             status: d.status,
+                            isPaid:
+                              d.status === "paid" ||
+                              Number(d.total ?? 0) - Number(d.paidAmount ?? 0) <=
+                                0.009,
                             items: d.items.map((item) => ({
                               description: item.description ?? "",
                               quantity: Number(item.quantity ?? 1),
@@ -708,7 +724,10 @@ function InvoiceRow({
                             total: formatCurrency(d.total),
                             paidAmount: formatCurrency(d.paidAmount),
                             venmoHandle: venmoHandle || undefined,
-                          }).save(`invoice-${clientName || "unknown"}.pdf`);
+                          });
+                          doc.save(
+                            `invoice-${d.invoiceNumber ?? clientName || "unknown"}.pdf`
+                          );
                         }}
                       >
                         <Download className="mr-1 h-3.5 w-3.5" />
@@ -736,7 +755,7 @@ function InvoiceRow({
                             : null,
                           status: detail.data.status,
                           venmoHandle: venmoHandle || null,
-                          onPreviewPdf: () => {
+                          onPreviewPdf: async () => {
                             const d = detail.data!;
                             const clientName = [
                               d.clientFirstName,
@@ -744,13 +763,16 @@ function InvoiceRow({
                             ]
                               .filter(Boolean)
                               .join(" ");
-                            const doc = generateInvoicePdf({
+                            const doc = await generateInvoicePdf({
                               practiceName,
                               practicePhone: practicePhone || undefined,
                               practiceAddress: practiceAddress || undefined,
                               clientName,
                               clientEmail: d.clientEmail ?? undefined,
+                              clientAddress: d.clientAddress ?? undefined,
+                              clientDisplayId: d.clientDisplayId ?? undefined,
                               patientName: d.patientName ?? undefined,
+                              invoiceNumber: d.invoiceNumber ?? undefined,
                               invoiceDate: d.createdAt
                                 ? new Date(d.createdAt).toLocaleDateString()
                                 : new Date().toLocaleDateString(),
@@ -758,6 +780,11 @@ function InvoiceRow({
                                 ? formatVisitDate(d.dueDate)
                                 : undefined,
                               status: d.status,
+                              isPaid:
+                                d.status === "paid" ||
+                                Number(d.total ?? 0) -
+                                  Number(d.paidAmount ?? 0) <=
+                                  0.009,
                               items: d.items.map((item) => ({
                                 description: item.description ?? "",
                                 quantity: Number(item.quantity ?? 1),
@@ -817,7 +844,7 @@ function EmailInvoiceButton({
     dueDate: string | null;
     status: string;
     venmoHandle: string | null;
-    onPreviewPdf: () => void;
+    onPreviewPdf: () => void | Promise<void>;
   };
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -920,7 +947,7 @@ function EmailInvoiceButton({
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  preview.onPreviewPdf();
+                  void preview.onPreviewPdf();
                 }}
               >
                 <Download className="mr-1 h-3.5 w-3.5" />

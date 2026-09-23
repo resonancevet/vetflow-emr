@@ -89,6 +89,11 @@ export async function sendEmail(options: {
   subject: string;
   html: string;
   from?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer | string;
+    contentType?: string;
+  }>;
 }): Promise<{ success: boolean; id?: string; error?: string }> {
   const client = getResend();
   const from = options.from || getDefaultFrom();
@@ -110,12 +115,18 @@ export async function sendEmail(options: {
       to: options.to,
       from,
       subject: options.subject,
+      attachmentCount: options.attachments?.length ?? 0,
     });
     const { data, error } = await client.emails.send({
       from,
       to: options.to,
       subject: options.subject,
       html: options.html,
+      attachments: options.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+      })),
     });
 
     if (error) {
@@ -375,6 +386,8 @@ export async function sendInvoiceEmail(
     portalUrl?: string;
     practiceName: string;
     practicePhone?: string;
+    invoiceNumber?: string;
+    pdfAttachment?: { filename: string; content: Buffer };
   },
   template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.invoiceEmail
 ): Promise<{ success: boolean; error?: string; id?: string }> {
@@ -385,6 +398,9 @@ export async function sendInvoiceEmail(
       large: true,
     },
   ];
+  if (data.invoiceNumber) {
+    invoiceRows.push({ label: "Invoice #", value: data.invoiceNumber });
+  }
   if (data.invoiceTotal) {
     invoiceRows.push({ label: "Invoice Total", value: data.invoiceTotal });
   }
@@ -415,6 +431,7 @@ export async function sendInvoiceEmail(
     venmoHandle: data.venmoHandle ?? "",
     practiceName: data.practiceName,
     practicePhone: data.practicePhone ?? "",
+    invoiceNumber: data.invoiceNumber ?? "",
   };
   const htmlVars = {
     invoiceCard: infoCardHtml(invoiceRows, "green"),
@@ -436,6 +453,15 @@ export async function sendInvoiceEmail(
     to: data.to,
     subject: subjectFromTemplate(template.subject, textVars),
     html,
+    attachments: data.pdfAttachment
+      ? [
+          {
+            filename: data.pdfAttachment.filename,
+            content: data.pdfAttachment.content,
+            contentType: "application/pdf",
+          },
+        ]
+      : undefined,
   });
 
   return { success: result.success, error: result.error, id: result.id };

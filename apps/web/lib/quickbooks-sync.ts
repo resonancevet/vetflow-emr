@@ -207,6 +207,7 @@ export async function syncInvoiceToQuickBooks(
         name: invoices.name,
         isEstimate: invoices.isEstimate,
         status: invoices.status,
+        invoiceNumber: invoices.invoiceNumber,
       })
       .from(invoices)
       .where(
@@ -240,7 +241,7 @@ export async function syncInvoiceToQuickBooks(
 
     const lines =
       items.length > 0
-        ? items.map((item) => ({
+        ? items.map((item: { description: string; total: string }) => ({
             description: item.description,
             amount: Number(item.total),
           }))
@@ -270,7 +271,10 @@ export async function syncInvoiceToQuickBooks(
         customerId,
         itemId,
         dueDate,
-        docNumber: invoice.id.replace(/-/g, "").slice(0, 21),
+        docNumber:
+          invoice.invoiceNumber != null
+            ? String(invoice.invoiceNumber).padStart(4, "0")
+            : invoice.id.replace(/-/g, "").slice(0, 21),
         lines,
       }
     );
