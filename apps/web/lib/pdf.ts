@@ -111,7 +111,11 @@ export interface InvoiceData {
   practiceEmail?: string;
   clientName: string;
   clientEmail?: string;
+  /** Street line (and/or preformatted full address). */
   clientAddress?: string;
+  clientCity?: string;
+  clientState?: string;
+  clientZip?: string;
   clientDisplayId?: string;
   patientName?: string;
   invoiceNumber?: string | number | null;
@@ -139,6 +143,30 @@ function moneyToNumber(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Build mailing-address lines from street + city/state/zip. */
+export function formatInvoiceAddressLines(parts: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}): string[] {
+  const lines: string[] = [];
+  const street = parts.address?.trim();
+  if (street) {
+    for (const line of street.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+      lines.push(line);
+    }
+  }
+  const cityStateZip = [
+    parts.city?.trim(),
+    [parts.state?.trim(), parts.zip?.trim()].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  if (cityStateZip) lines.push(cityStateZip);
+  return lines;
+}
+
 /**
  * Roma-branded invoice PDF. Async so Montserrat fonts can load on client/server.
  */
@@ -158,6 +186,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   await registerInvoiceFonts(doc);
 
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 18;
   const contentW = pageW - margin * 2;
   let y = 16;
@@ -171,6 +200,12 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
     doc.setDrawColor(r, g, b);
     doc.setLineWidth(0.3);
     doc.line(margin, atY, pageW - margin, atY);
+  };
+  const ensureY = (needed: number) => {
+    if (y + needed > pageH - 20) {
+      doc.addPage();
+      y = margin;
+    }
   };
 
   // --- Header: logo + practice name + meta ---------------------------------
@@ -214,7 +249,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
 
   y = Math.max(y + logoSize + 4, metaY + 8);
 
-  // --- Bill To ---------------------------------------------------------------
+  // --- Bill To (name / client ID / pet on separate readable lines) ----------
   doc.setFont(INVOICE_FONT, "bold");
   doc.setFontSize(11);
   setHex(ROMA_DARK);
@@ -224,17 +259,44 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(10);
   setHex(ROMA_DARK);
-  const billParts = [
-    data.clientName,
-    data.clientDisplayId,
-    data.patientName,
-  ].filter(Boolean);
-  doc.text(billParts.join("    "), margin, y);
-  y += 5;
-  if (data.clientAddress) {
-    const addrLines = doc.splitTextToSize(data.clientAddress, contentW);
-    doc.text(addrLines, margin, y);
-    y += addrLines.length * 5;
+
+  // Three-column row matching Roma template: Name | Client ID | Pet
+  const col1 = margin;
+  const col2 = margin + contentW * 0.42;
+  const col3 = margin + contentW * 0.68;
+  const nameLines = doc.splitTextToSize(data.clientName || "—", contentW * 0.4);
+  const idText = data.clientDisplayId
+    ? `Client ID: ${data.clientDisplayId}`
+    : "";
+  const petText = data.patientName ? `Pet: ${data.patientName}` : "";
+  const idLines = idText ? doc.splitTextToSize(idText, contentW * 0.24) : [];
+  const petLines = petText ? doc.splitTextToSize(petText, contentW * 0.3) : [];
+  const billRowLines = Math.max(
+    nameLines.length,
+    idLines.length || 1,
+    petLines.length || 1
+  );
+  for (let i = 0; i < billRowLines; i++) {
+    if (nameLines[i]) doc.text(nameLines[i], col1, y);
+    if (idLines[i]) doc.text(idLines[i], col2, y);
+    if (petLines[i]) doc.text(petLines[i], col3, y);
+    y += 5;
+  }
+
+  const addressLines = formatInvoiceAddressLines({
+    address: data.clientAddress,
+    city: data.clientCity,
+    state: data.clientState,
+    zip: data.clientZip,
+  });
+  for (const line of addressLines) {
+    const wrapped = doc.splitTextToSize(line, contentW);
+    doc.text(wrapped, margin, y);
+    y += wrapped.length * 5;
+  }
+  if (data.clientEmail) {
+    doc.text(data.clientEmail, margin, y);
+    y += 5;
   }
   y += 6;
 
@@ -260,10 +322,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
         : item.description;
     const lines = doc.splitTextToSize(desc, contentW - 40);
     const needed = Math.max(6, lines.length * 5);
-    if (y + needed > doc.internal.pageSize.getHeight() - 55) {
-      doc.addPage();
-      y = margin;
-    }
+    ensureY(needed + 4);
     doc.text(lines, margin + 3, y);
     doc.text(item.total, pageW - margin - 3, y, { align: "right" });
     y += needed;
@@ -274,6 +333,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   y += 8;
 
   // --- Totals ----------------------------------------------------------------
+  ensureY(40);
   const totalsLabelX = pageW - margin - 55;
   const totalsValX = pageW - margin;
 
@@ -307,40 +367,53 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_TEAL);
   doc.text("Balance Due:", totalsLabelX, y);
   doc.text(`$${balanceAmt.toFixed(2)}`, totalsValX, y, { align: "right" });
-  y += 12;
+  y += 14;
 
-  // --- Pay by Mail / Venmo ---------------------------------------------------
-  if (y > doc.internal.pageSize.getHeight() - 45) {
-    doc.addPage();
-    y = margin;
-  }
+  // --- Pay by Mail / Venmo (always reserve room; never clip) -----------------
+  const practiceAddrLines = formatInvoiceAddressLines({
+    address: data.practiceAddress,
+  });
+  // practiceAddress may already be a multi-line blob including city/state
+  const mailBodyLines = [data.practiceName, ...practiceAddrLines].filter(
+    Boolean
+  ) as string[];
+  if (data.practicePhone) mailBodyLines.push(data.practicePhone);
+
+  const mailHeightEstimate = Math.max(12, mailBodyLines.length * 4.5 + 8);
+  ensureY(mailHeightEstimate + 20);
 
   const colW = contentW / 2 - 4;
+  const venmoX = margin + colW + 8;
+
   doc.setFont(INVOICE_FONT, "bold");
   doc.setFontSize(10);
   setHex(ROMA_DARK);
   doc.text("Pay by Mail", margin, y);
-  doc.text("Pay via Venmo", margin + colW + 8, y);
+  doc.text("Pay via Venmo", venmoX, y);
   y += 5;
 
+  const headersY = y;
   doc.setFont(INVOICE_FONT, "normal");
   doc.setFontSize(9);
   setHex(ROMA_GRAY);
-  const mailLines = [
-    data.practiceName,
-    data.practiceAddress,
-  ].filter(Boolean) as string[];
-  let mailY = y;
-  for (const line of mailLines) {
-    const wrapped = doc.splitTextToSize(line, colW);
+
+  let mailY = headersY;
+  for (const line of mailBodyLines) {
+    const wrapped = doc.splitTextToSize(String(line), colW);
     doc.text(wrapped, margin, mailY);
-    mailY += wrapped.length * 4.2;
+    mailY += wrapped.length * 4.5;
   }
-  doc.text(data.venmoHandle || "—", margin + colW + 8, y);
 
-  y = Math.max(mailY, y) + 14;
+  const venmoLines = doc.splitTextToSize(
+    data.venmoHandle?.trim() || "—",
+    colW
+  );
+  doc.text(venmoLines, venmoX, headersY);
 
-  // --- Thank you -------------------------------------------------------------
+  y = Math.max(mailY, headersY + venmoLines.length * 4.5) + 14;
+
+  // --- Thank you (after payment block, never overlapping it) -----------------
+  ensureY(12);
   const thanksPet = data.patientName?.trim() || "your pet";
   doc.setFont(INVOICE_FONT, "italic");
   doc.setFontSize(11);
@@ -348,7 +421,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   doc.text(
     `Thank you for trusting me with ${thanksPet}'s Care!`,
     pageW / 2,
-    Math.min(y, doc.internal.pageSize.getHeight() - 18),
+    y,
     { align: "center" }
   );
 

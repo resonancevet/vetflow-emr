@@ -196,6 +196,9 @@ export const billingRouter = createRouter({
           clientEmail: clients.email,
           clientDisplayId: clients.displayId,
           clientAddress: clients.address,
+          clientCity: clients.city,
+          clientState: clients.state,
+          clientZip: clients.zip,
           patientName: patients.name,
         })
         .from(invoices)
