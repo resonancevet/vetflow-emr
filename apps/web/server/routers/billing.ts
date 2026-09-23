@@ -21,7 +21,6 @@ import { chargePriceEachWithMarkup } from "@/lib/inventory-price";
 import { applyStockChange } from "../lib/stock";
 import { queueInvoiceSync, queuePaymentSync } from "@/lib/quickbooks-sync";
 import {
-  allocateInvoiceNumber,
   ensureInvoiceNumber,
 } from "../lib/display-ids";
 
@@ -552,10 +551,8 @@ export const billingRouter = createRouter({
       const tax = calcTax(subtotal, taxRatePercent);
       const total = Math.round((subtotal + tax) * 100) / 100;
 
-      const invoiceNumber =
-        !isEstimate
-          ? await allocateInvoiceNumber(ctx.db, ctx.practiceId)
-          : null;
+      // Invoice numbers are assigned on finalize, not at draft creation.
+      const invoiceNumber = null;
 
       const [invoice] = await ctx.db
         .insert(invoices)
@@ -952,22 +949,19 @@ export const billingRouter = createRouter({
         });
       }
 
-      const invoiceNumber = await allocateInvoiceNumber(
-        ctx.db,
-        ctx.practiceId
-      );
       const [invoice] = await ctx.db
         .update(invoices)
         .set({
           isEstimate: false,
           isTemplate: false,
-          invoiceNumber,
+          status: "draft",
+          invoiceNumber: null,
+          updatedAt: new Date(),
         })
         .where(eq(invoices.id, input.id))
         .returning();
 
       if (!invoice) throw new Error("Estimate not found");
-      queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       return invoice;
     }),
 });

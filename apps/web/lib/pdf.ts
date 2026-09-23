@@ -369,48 +369,51 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   doc.text(`$${balanceAmt.toFixed(2)}`, totalsValX, y, { align: "right" });
   y += 14;
 
-  // --- Pay by Mail / Venmo (always reserve room; never clip) -----------------
+  // --- Pay by Mail / Venmo ---------------------------------------------------
   const practiceAddrLines = formatInvoiceAddressLines({
     address: data.practiceAddress,
   });
-  // practiceAddress may already be a multi-line blob including city/state
-  const mailBodyLines = [data.practiceName, ...practiceAddrLines].filter(
-    Boolean
-  ) as string[];
-  if (data.practicePhone) mailBodyLines.push(data.practicePhone);
+  const mailBodyLines = [
+    data.practiceName?.trim(),
+    ...practiceAddrLines,
+  ].filter(Boolean) as string[];
 
-  const mailHeightEstimate = Math.max(12, mailBodyLines.length * 4.5 + 8);
-  ensureY(mailHeightEstimate + 20);
+  const mailHeightEstimate = Math.max(16, mailBodyLines.length * 5 + 10);
+  ensureY(mailHeightEstimate + 22);
 
-  const colW = contentW / 2 - 4;
-  const venmoX = margin + colW + 8;
+  const colW = contentW / 2 - 6;
+  const venmoX = margin + colW + 12;
 
   doc.setFont(INVOICE_FONT, "bold");
   doc.setFontSize(10);
   setHex(ROMA_DARK);
   doc.text("Pay by Mail", margin, y);
   doc.text("Pay via Venmo", venmoX, y);
-  y += 5;
+  y += 6;
 
-  const headersY = y;
+  const bodyStartY = y;
   doc.setFont(INVOICE_FONT, "normal");
-  doc.setFontSize(9);
-  setHex(ROMA_GRAY);
+  doc.setFontSize(10);
+  setHex(ROMA_DARK);
 
-  let mailY = headersY;
-  for (const line of mailBodyLines) {
-    const wrapped = doc.splitTextToSize(String(line), colW);
-    doc.text(wrapped, margin, mailY);
-    mailY += wrapped.length * 4.5;
+  let mailY = bodyStartY;
+  if (mailBodyLines.length === 0) {
+    doc.text("—", margin, mailY);
+    mailY += 5;
+  } else {
+    for (const line of mailBodyLines) {
+      const wrapped = doc.splitTextToSize(String(line), colW);
+      doc.text(wrapped, margin, mailY);
+      mailY += wrapped.length * 5;
+    }
   }
 
-  const venmoLines = doc.splitTextToSize(
-    data.venmoHandle?.trim() || "—",
-    colW
-  );
-  doc.text(venmoLines, venmoX, headersY);
+  const venmoValue = data.venmoHandle?.trim() || "—";
+  const venmoLines = doc.splitTextToSize(venmoValue, colW);
+  doc.text(venmoLines, venmoX, bodyStartY);
 
-  y = Math.max(mailY, headersY + venmoLines.length * 4.5) + 14;
+  y =
+    Math.max(mailY, bodyStartY + venmoLines.length * 5) + 14;
 
   // --- Thank you (after payment block, never overlapping it) -----------------
   ensureY(12);

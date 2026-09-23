@@ -20,7 +20,6 @@ import {
   todayDateStringLocal,
 } from "@/lib/service-packages";
 import { queueInvoiceSync } from "@/lib/quickbooks-sync";
-import { allocateInvoiceNumber } from "../lib/display-ids";
 
 const packageItemInput = z.object({
   description: z.string().min(1).max(500),
@@ -55,8 +54,6 @@ async function createInvoiceForInstallment(
       : `${opts.packageName} — Installment ${opts.sequenceNumber} of ${opts.installmentCount}`
   ).slice(0, 255);
 
-  const invoiceNumber = await allocateInvoiceNumber(db, opts.practiceId);
-
   const [invoice] = await db
     .insert(invoices)
     .values({
@@ -64,7 +61,7 @@ async function createInvoiceForInstallment(
       clientId: opts.clientId,
       patientId: opts.patientId,
       name: description,
-      status: "sent",
+      status: "draft",
       subtotal: subtotal.toFixed(2),
       tax: tax.toFixed(2),
       total: total.toFixed(2),
@@ -72,7 +69,7 @@ async function createInvoiceForInstallment(
       dueDate: opts.dueDate,
       isEstimate: false,
       isTemplate: false,
-      invoiceNumber,
+      invoiceNumber: null,
     })
     .returning();
 
@@ -85,8 +82,6 @@ async function createInvoiceForInstallment(
     itemType: "service",
     itemId: null,
   });
-
-  queueInvoiceSync(db, opts.practiceId, invoice!.id);
 
   return invoice!;
 }
