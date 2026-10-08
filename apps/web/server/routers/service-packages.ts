@@ -20,6 +20,7 @@ import {
   todayDateStringLocal,
 } from "@/lib/service-packages";
 import { queueInvoiceSync } from "@/lib/quickbooks-sync";
+import { computePromptPaymentDiscount } from "@/lib/prompt-payment-discount";
 
 const packageItemInput = z.object({
   description: z.string().min(1).max(500),
@@ -38,13 +39,19 @@ async function createInvoiceForInstallment(
     billingMode: "pay_in_full" | "monthly";
     sequenceNumber: number;
     installmentCount: number;
+    /** Net amount owed (after any prompt-payment discount). */
     amount: string;
+    /** List/package price shown on the service line when a discount is applied. */
+    listAmount?: string;
+    discount?: { amount: number; description: string } | null;
     dueDate: string;
     taxable: boolean;
     taxRatePercent: number;
   }
 ) {
-  const subtotal = parseFloat(opts.amount);
+  const listAmount = parseFloat(opts.listAmount ?? opts.amount);
+  const discountAmount = opts.discount?.amount ?? 0;
+  const subtotal = Math.round((listAmount - discountAmount) * 100) / 100;
   const tax = opts.taxable ? calcTax(subtotal, opts.taxRatePercent) : 0;
   const total = Math.round((subtotal + tax) * 100) / 100;
 
@@ -73,15 +80,40 @@ async function createInvoiceForInstallment(
     })
     .returning();
 
-  await db.insert(invoiceItems).values({
-    invoiceId: invoice!.id,
-    description,
-    quantity: 1,
-    unitPrice: opts.amount,
-    total: opts.amount,
-    itemType: "service",
-    itemId: null,
-  });
+  const lineValues: Array<{
+    invoiceId: string;
+    description: string;
+    quantity: number;
+    unitPrice: string;
+    total: string;
+    itemType: "service" | "discount";
+    itemId: null;
+  }> = [
+    {
+      invoiceId: invoice!.id,
+      description,
+      quantity: 1,
+      unitPrice: listAmount.toFixed(2),
+      total: listAmount.toFixed(2),
+      itemType: "service",
+      itemId: null,
+    },
+  ];
+
+  if (opts.discount && discountAmount > 0) {
+    const neg = (-discountAmount).toFixed(2);
+    lineValues.push({
+      invoiceId: invoice!.id,
+      description: opts.discount.description,
+      quantity: 1,
+      unitPrice: neg,
+      total: neg,
+      itemType: "discount",
+      itemId: null,
+    });
+  }
+
+  await db.insert(invoiceItems).values(lineValues);
 
   return invoice!;
 }
@@ -436,6 +468,12 @@ export const servicePackagesRouter = createRouter({
         billingMode: z.enum(["pay_in_full", "monthly"]),
         startDate: z.string().optional(),
         notes: z.string().max(2000).optional(),
+        promptPaymentDiscount: z
+          .object({
+            mode: z.enum(["percent", "fixed"]),
+            value: z.number().positive(),
+          })
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -468,6 +506,41 @@ export const servicePackagesRouter = createRouter({
           code: "BAD_REQUEST",
           message: "This package does not allow monthly payments",
         });
+      }
+      if (
+        input.promptPaymentDiscount &&
+        input.billingMode !== "pay_in_full"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Prompt payment discount is only available for pay in full",
+        });
+      }
+
+      const listPrice = parseFloat(pkg.priceTotal);
+      let discount:
+        | { amount: number; description: string }
+        | null = null;
+      let netPrice = listPrice;
+      if (input.promptPaymentDiscount) {
+        try {
+          const computed = computePromptPaymentDiscount(
+            listPrice,
+            input.promptPaymentDiscount
+          );
+          discount = {
+            amount: computed.amount,
+            description: computed.description,
+          };
+          netPrice =
+            Math.round((listPrice - computed.amount) * 100) / 100;
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              err instanceof Error ? err.message : "Invalid discount",
+          });
+        }
       }
 
       const [client] = await ctx.db
@@ -520,10 +593,8 @@ export const servicePackagesRouter = createRouter({
         startDate,
         input.billingMode === "pay_in_full" ? 0 : count - 1
       );
-      const amounts = splitInstallmentAmounts(
-        parseFloat(pkg.priceTotal),
-        count
-      );
+      const contractTotal = netPrice.toFixed(2);
+      const amounts = splitInstallmentAmounts(netPrice, count);
 
       return ctx.db.transaction(async (tx) => {
         const [sale] = await tx
@@ -537,7 +608,7 @@ export const servicePackagesRouter = createRouter({
             status: "active",
             startDate,
             endDate,
-            contractTotal: pkg.priceTotal,
+            contractTotal,
             packageName: pkg.name,
             enrolledBy: ctx.user.id,
             notes: input.notes?.trim() || null,
@@ -568,6 +639,12 @@ export const servicePackagesRouter = createRouter({
           sequenceNumber: 1,
           installmentCount: count,
           amount: first.amount,
+          listAmount:
+            input.billingMode === "pay_in_full" && discount
+              ? listPrice.toFixed(2)
+              : undefined,
+          discount:
+            input.billingMode === "pay_in_full" ? discount : null,
           dueDate: first.dueDate,
           taxable: pkg.taxable,
           taxRatePercent,

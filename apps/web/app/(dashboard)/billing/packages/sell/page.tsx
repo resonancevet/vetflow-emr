@@ -32,6 +32,10 @@ export default function SellPackagePage() {
     lastName: string;
   } | null>(null);
   const [patientId, setPatientId] = useState("");
+  const [discountMode, setDiscountMode] = useState<"percent" | "fixed">(
+    "percent"
+  );
+  const [discountValue, setDiscountValue] = useState("");
 
   const clientResults = trpc.clients.search.useQuery(
     { query: clientSearch },
@@ -60,6 +64,28 @@ export default function SellPackagePage() {
       ? splitInstallmentAmounts(parseFloat(selectedPackage.priceTotal), 12)[0]
       : null;
 
+  const payInFullPreview = useMemo(() => {
+    if (!selectedPackage || billingMode !== "pay_in_full") return null;
+    const listPrice = parseFloat(selectedPackage.priceTotal);
+    const raw = discountValue.trim();
+    if (!raw) {
+      return { listPrice, discount: 0, due: listPrice };
+    }
+    const value = parseFloat(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+      return { listPrice, discount: 0, due: listPrice, invalid: true };
+    }
+    const discount =
+      discountMode === "percent"
+        ? Math.round(listPrice * (Math.min(value, 100) / 100) * 100) / 100
+        : Math.round(Math.min(value, listPrice) * 100) / 100;
+    return {
+      listPrice,
+      discount,
+      due: Math.round((listPrice - discount) * 100) / 100,
+    };
+  }, [selectedPackage, billingMode, discountMode, discountValue]);
+
   const venmoHandle = billingSettings.data?.venmoHandle;
 
   function submit() {
@@ -78,6 +104,19 @@ export default function SellPackagePage() {
       toast.error("This package does not allow monthly payments");
       return;
     }
+
+    let promptPaymentDiscount:
+      | { mode: "percent" | "fixed"; value: number }
+      | undefined;
+    if (billingMode === "pay_in_full" && discountValue.trim()) {
+      const value = parseFloat(discountValue);
+      if (!Number.isFinite(value) || value <= 0) {
+        toast.error("Enter a valid discount amount");
+        return;
+      }
+      promptPaymentDiscount = { mode: discountMode, value };
+    }
+
     sell.mutate({
       packageId: selectedPackage.id,
       clientId: selectedClient.id,
@@ -85,6 +124,7 @@ export default function SellPackagePage() {
       billingMode,
       startDate,
       notes: notes.trim() || undefined,
+      promptPaymentDiscount,
     });
   }
 
@@ -166,9 +206,11 @@ export default function SellPackagePage() {
                 onClick={() => setBillingMode("pay_in_full")}
               >
                 Pay in full
-                {selectedPackage
-                  ? ` — $${parseFloat(selectedPackage.priceTotal).toFixed(2)}`
-                  : ""}
+                {payInFullPreview
+                  ? ` — $${payInFullPreview.due.toFixed(2)}`
+                  : selectedPackage
+                    ? ` — $${parseFloat(selectedPackage.priceTotal).toFixed(2)}`
+                    : ""}
               </button>
               <button
                 type="button"
@@ -185,6 +227,43 @@ export default function SellPackagePage() {
               </button>
             </div>
           </div>
+
+          {billingMode === "pay_in_full" && selectedPackage && (
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <span className="text-sm font-medium">
+                Prompt payment discount (optional)
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="flex h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={discountMode}
+                  onChange={(e) =>
+                    setDiscountMode(e.target.value as "percent" | "fixed")
+                  }
+                >
+                  <option value="percent">Percent</option>
+                  <option value="fixed">Dollars</option>
+                </select>
+                <Input
+                  className="w-28"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder={discountMode === "percent" ? "e.g. 5" : "e.g. 25"}
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                />
+              </div>
+              {payInFullPreview && !payInFullPreview.invalid && (
+                <p className="text-xs text-muted-foreground">
+                  List ${payInFullPreview.listPrice.toFixed(2)}
+                  {payInFullPreview.discount > 0
+                    ? ` − discount $${payInFullPreview.discount.toFixed(2)} = $${payInFullPreview.due.toFixed(2)} due`
+                    : " — no discount"}
+                </p>
+              )}
+            </div>
+          )}
 
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">Start date</span>
