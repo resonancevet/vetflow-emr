@@ -196,6 +196,19 @@ export function formatInvoiceAddressLines(parts: {
   return lines;
 }
 
+/** Prefer -$12.00 over $-12.00 for discount lines. */
+function formatPdfMoney(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("$-")) {
+    return `-$${trimmed.slice(2)}`;
+  }
+  const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
+  if (Number.isFinite(numeric) && numeric < 0) {
+    return `-$${Math.abs(numeric).toFixed(2)}`;
+  }
+  return trimmed;
+}
+
 /**
  * Roma-branded invoice PDF. Async so Montserrat fonts can load on client/server.
  */
@@ -355,7 +368,9 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
     const needed = Math.max(6, lines.length * 5);
     ensureY(needed + 4);
     doc.text(lines, margin + 3, y);
-    doc.text(item.total, pageW - margin - 3, y, { align: "right" });
+    doc.text(formatPdfMoney(item.total), pageW - margin - 3, y, {
+      align: "right",
+    });
     y += needed;
   }
 

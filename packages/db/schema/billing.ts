@@ -32,6 +32,7 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 export const invoiceItemTypeEnum = pgEnum("invoice_item_type", [
   "service",
   "product",
+  "discount",
 ]);
 
 export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [

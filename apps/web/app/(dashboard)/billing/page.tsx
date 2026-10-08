@@ -61,6 +61,9 @@ const PAYMENT_METHODS = [
 
 function formatCurrency(value: string | number | null | undefined): string {
   const num = Number(value ?? 0);
+  if (num < 0) {
+    return `-$${Math.abs(num).toFixed(2)}`;
+  }
   return `$${num.toFixed(2)}`;
 }
 
@@ -787,6 +790,16 @@ function InvoiceRow({
                   </p>
                 )}
 
+                <PromptPaymentDiscountPanel
+                  invoiceId={invoice.id}
+                  status={detail.data.status}
+                  paidAmount={detail.data.paidAmount}
+                  items={detail.data.items}
+                  onChanged={() => {
+                    void detail.refetch();
+                  }}
+                />
+
                 {/* Balance Summary */}
                 {!invoice.isEstimate && (
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background p-3 text-sm">
@@ -967,6 +980,140 @@ function InvoiceRow({
         </tr>
       )}
     </>
+  );
+}
+
+function PromptPaymentDiscountPanel({
+  invoiceId,
+  status,
+  paidAmount,
+  items,
+  onChanged,
+}: {
+  invoiceId: string;
+  status: string;
+  paidAmount: string | null;
+  items: Array<{ id: string; itemType: string; description: string }>;
+  onChanged: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"percent" | "fixed">("percent");
+  const [value, setValue] = useState("");
+
+  const applyDiscount = trpc.billing.applyPromptPaymentDiscount.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Applied ${result.description}`);
+      setOpen(false);
+      setValue("");
+      void utils.billing.listInvoices.invalidate();
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const removeDiscount = trpc.billing.removePromptPaymentDiscount.useMutation({
+    onSuccess: () => {
+      toast.success("Prompt payment discount removed");
+      void utils.billing.listInvoices.invalidate();
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const hasDiscount = items.some((item) => item.itemType === "discount");
+  const paid = Number(paidAmount ?? 0);
+  const canEdit =
+    status !== "void" && status !== "paid" && paid <= 0;
+
+  if (!canEdit && !hasDiscount) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-background p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">Prompt payment discount</span>
+        <div className="flex items-center gap-2">
+          {hasDiscount && canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={removeDiscount.isPending || applyDiscount.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeDiscount.mutate({ invoiceId });
+              }}
+            >
+              {removeDiscount.isPending ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Remove discount
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((v) => !v);
+              }}
+            >
+              {hasDiscount ? "Change discount" : "Apply discount"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {open && canEdit && (
+        <div
+          className="mt-3 flex flex-wrap items-end gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Type</span>
+            <select
+              className="flex h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "percent" | "fixed")}
+            >
+              <option value="percent">Percent</option>
+              <option value="fixed">Dollars</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">
+              {mode === "percent" ? "Percent" : "Amount"}
+            </span>
+            <Input
+              className="h-9 w-28"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder={mode === "percent" ? "e.g. 5" : "e.g. 25"}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          </label>
+          <Button
+            size="sm"
+            disabled={applyDiscount.isPending || !value.trim()}
+            onClick={() => {
+              const parsed = parseFloat(value);
+              if (!Number.isFinite(parsed) || parsed <= 0) {
+                toast.error("Enter a valid discount value");
+                return;
+              }
+              applyDiscount.mutate({ invoiceId, mode, value: parsed });
+            }}
+          >
+            {applyDiscount.isPending ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            Apply
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
