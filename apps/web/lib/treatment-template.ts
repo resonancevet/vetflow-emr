@@ -186,6 +186,38 @@ export function expandTemplateItem(
   });
 }
 
+/**
+ * Collapse expanded lines that share the same catalog item into one row
+ * with summed quantity. Lines without itemId (free-text / fallback) stay separate.
+ */
+export function mergeDuplicateTemplateLines(
+  lines: InvoiceLineFromTemplate[]
+): InvoiceLineFromTemplate[] {
+  const merged: InvoiceLineFromTemplate[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const line of lines) {
+    if (!line.itemId) {
+      merged.push(line);
+      continue;
+    }
+    const key = `${line.itemType}:${line.itemId}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, merged.length);
+      merged.push({ ...line });
+      continue;
+    }
+    const existing = merged[existingIndex]!;
+    merged[existingIndex] = {
+      ...existing,
+      quantity: existing.quantity + line.quantity,
+    };
+  }
+
+  return merged;
+}
+
 export function expandTemplateItems(
   items: Array<{
     itemType: string;
@@ -196,7 +228,9 @@ export function expandTemplateItems(
   }>,
   kits: KitForTemplate[]
 ): InvoiceLineFromTemplate[] {
-  return items.flatMap((item) => expandTemplateItem(item, kits));
+  return mergeDuplicateTemplateLines(
+    items.flatMap((item) => expandTemplateItem(item, kits))
+  );
 }
 
 /** Apply inventory markup to expanded template invoice lines. */
