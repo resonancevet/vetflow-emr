@@ -54,7 +54,32 @@ export function toastStock(result?: {
   }
 }
 
-export function PatientClinicalAdd({ patientId }: { patientId: string }) {
+function toastBillEstimate(opts: {
+  patientId: string;
+  clientId?: string | null;
+  router: ReturnType<typeof useRouter>;
+}) {
+  if (!opts.clientId) return;
+  toast.message("Ready to bill?", {
+    description: "Create an estimate from unbilled usage for this patient.",
+    action: {
+      label: "Add to estimate",
+      onClick: () => {
+        opts.router.push(
+          `/billing/new?estimate=1&clientId=${opts.clientId}&patientId=${opts.patientId}`
+        );
+      },
+    },
+  });
+}
+
+export function PatientClinicalAdd({
+  patientId,
+  clientId,
+}: {
+  patientId: string;
+  clientId?: string | null;
+}) {
   const router = useRouter();
   const [openForm, setOpenForm] = useState<FormKind>(null);
   const utils = trpc.useUtils();
@@ -79,6 +104,7 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
     onSuccess: (result) => {
       toast.success("Vaccination recorded");
       toastStock(result);
+      toastBillEstimate({ patientId, clientId, router });
       setOpenForm(null);
       invalidate();
     },
@@ -99,6 +125,7 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
     onSuccess: (result) => {
       toast.success("Supply used");
       toastStock(result);
+      toastBillEstimate({ patientId, clientId, router });
       setOpenForm(null);
       invalidate();
     },
@@ -205,6 +232,7 @@ export function PatientClinicalAdd({ patientId }: { patientId: string }) {
                   : "Vaccination recorded",
               );
               toastStock(lastResult as Parameters<typeof toastStock>[0]);
+              toastBillEstimate({ patientId, clientId, router });
               setOpenForm(null);
               invalidate();
             } catch (e) {

@@ -49,7 +49,7 @@ export default function SellPackagePage() {
 
   const sell = trpc.servicePackages.sellPackage.useMutation({
     onSuccess: (result) => {
-      toast.success("Package sold — first invoice created");
+      toast.success("Client enrolled — first draft invoice created");
       router.push(`/billing?highlight=${result.firstInvoiceId}`);
     },
     onError: (err) => toast.error(err.message),
@@ -94,14 +94,14 @@ export default function SellPackagePage() {
         <Button variant="ghost" size="sm" asChild>
           <Link href="/billing/packages">
             <ArrowLeft className="mr-1 h-4 w-4" />
-            Packages
+            Payment plans
           </Link>
         </Button>
         <div>
-          <h1 className="text-xl font-semibold">Sell service package</h1>
+          <h1 className="text-xl font-semibold">Enroll in payment plan</h1>
           <p className="text-sm text-muted-foreground">
-            Creates the sale and the first invoice. Remaining monthly invoices
-            are generated automatically on their due dates.
+            Creates the enrollment and the first draft invoice. Remaining
+            monthly invoices are generated automatically on their due dates.
           </p>
         </div>
       </div>
@@ -113,7 +113,7 @@ export default function SellPackagePage() {
       ) : (
         <div className="space-y-4 rounded-lg border border-border p-4">
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium">Package</span>
+            <span className="text-sm font-medium">Payment plan</span>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={packageId}
@@ -282,7 +282,7 @@ export default function SellPackagePage() {
               sell.isPending || !selectedPackage || !selectedClient
             }
           >
-            {sell.isPending ? "Selling..." : "Sell package"}
+            {sell.isPending ? "Selling..." : "Enroll in payment plan"}
           </Button>
         </div>
       )}

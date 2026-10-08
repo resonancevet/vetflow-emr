@@ -141,7 +141,7 @@ export function InventoryKitsTab() {
 
   const createKit = trpc.inventoryKits.create.useMutation({
     onSuccess: () => {
-      toast.success("Inventory kit saved");
+      toast.success("Kit saved");
       utils.inventoryKits.list.invalidate();
       resetForm();
     },
@@ -150,7 +150,7 @@ export function InventoryKitsTab() {
 
   const updateKit = trpc.inventoryKits.update.useMutation({
     onSuccess: () => {
-      toast.success("Inventory kit updated");
+      toast.success("Kit updated");
       utils.inventoryKits.list.invalidate();
       resetForm();
     },
@@ -159,7 +159,7 @@ export function InventoryKitsTab() {
 
   const deleteKit = trpc.inventoryKits.delete.useMutation({
     onSuccess: () => {
-      toast.success("Inventory kit removed");
+      toast.success("Kit removed");
       utils.inventoryKits.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -411,7 +411,7 @@ export function InventoryKitsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Inventory kits</h3>
+          <h3 className="text-sm font-semibold">Kits</h3>
           <p className="text-xs text-muted-foreground">
             Bundles of inventory products and/or service fees (e.g. outside lab).
             Tag as Vaccine or Lab so they only appear under + Vaccine or + Lab

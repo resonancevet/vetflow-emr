@@ -32,16 +32,16 @@ export default function PackagesPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-xl font-semibold">Service packages</h1>
+            <h1 className="text-xl font-semibold">Payment plans</h1>
             <p className="text-sm text-muted-foreground">
-              Sold packages and payment plans
+              Client enrollments in payment plans
             </p>
           </div>
         </div>
         <Button size="sm" asChild>
           <Link href="/billing/packages/sell">
             <Plus className="mr-1 h-4 w-4" />
-            Sell package
+            Enroll client
           </Link>
         </Button>
       </div>
@@ -55,7 +55,7 @@ export default function PackagesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
-                <th className="px-4 py-3 text-left font-medium">Package</th>
+                <th className="px-4 py-3 text-left font-medium">Plan</th>
                 <th className="px-4 py-3 text-left font-medium">Client</th>
                 <th className="px-4 py-3 text-left font-medium">Billing</th>
                 <th className="px-4 py-3 text-right font-medium">Total</th>

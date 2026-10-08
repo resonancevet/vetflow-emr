@@ -131,6 +131,9 @@ export const billingRouter = createRouter({
       }
       if (input.isTemplate !== undefined) {
         conditions.push(eq(invoices.isTemplate, input.isTemplate));
+      } else {
+        // Visit plans live in Catalog — never list legacy estimate templates here
+        conditions.push(eq(invoices.isTemplate, false));
       }
 
       const [items, countResult] = await Promise.all([
@@ -516,16 +519,12 @@ export const billingRouter = createRouter({
       const isEstimate = input.isEstimate ?? false;
       const clientId = input.clientId ?? null;
       const name = input.name?.trim() || null;
-      if (!isEstimate && !clientId) {
+      if (!clientId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Client is required for invoices",
-        });
-      }
-      if (isEstimate && !clientId && !name) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Name is required to save a template without a client",
+          message: isEstimate
+            ? "Client is required for estimates. Save reusable line items as a Visit plan in Catalog."
+            : "Client is required for invoices",
         });
       }
 
@@ -569,7 +568,7 @@ export const billingRouter = createRouter({
           paidAmount: "0.00",
           dueDate: input.dueDate ?? null,
           isEstimate,
-          isTemplate: isEstimate && !clientId,
+          isTemplate: false,
           invoiceNumber,
         })
         .returning();
@@ -681,10 +680,11 @@ export const billingRouter = createRouter({
 
       const clientId = input.clientId ?? null;
       const name = input.name?.trim() || null;
-      if (!clientId && !name) {
+      if (!clientId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Name is required to save a template without a client",
+          message:
+            "Client is required for estimates. Save reusable line items as a Visit plan in Catalog.",
         });
       }
 
@@ -742,7 +742,7 @@ export const billingRouter = createRouter({
           subtotal: subtotal.toFixed(2),
           tax: tax.toFixed(2),
           total: total.toFixed(2),
-          isTemplate: !clientId,
+          isTemplate: false,
           updatedAt: new Date(),
         })
         .where(eq(invoices.id, input.id))
@@ -945,7 +945,7 @@ export const billingRouter = createRouter({
       if (!existing.clientId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Assign a client before converting this template to an invoice",
+          message: "Assign a client before converting this estimate to an invoice",
         });
       }
 

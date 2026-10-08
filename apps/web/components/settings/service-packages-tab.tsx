@@ -50,7 +50,7 @@ export function ServicePackagesTab() {
 
   const createPackage = trpc.servicePackages.createPackage.useMutation({
     onSuccess: () => {
-      toast.success("Package saved");
+      toast.success("Payment plan saved");
       utils.servicePackages.listPackages.invalidate();
       resetForm();
     },
@@ -59,7 +59,7 @@ export function ServicePackagesTab() {
 
   const updatePackage = trpc.servicePackages.updatePackage.useMutation({
     onSuccess: () => {
-      toast.success("Package updated");
+      toast.success("Payment plan updated");
       utils.servicePackages.listPackages.invalidate();
       resetForm();
     },
@@ -68,7 +68,7 @@ export function ServicePackagesTab() {
 
   const deletePackage = trpc.servicePackages.deletePackage.useMutation({
     onSuccess: () => {
-      toast.success("Package removed");
+      toast.success("Payment plan removed");
       utils.servicePackages.listPackages.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -150,10 +150,10 @@ export function ServicePackagesTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold">Service packages</h3>
+          <h3 className="text-sm font-semibold">Payment plans</h3>
           <p className="text-xs text-muted-foreground">
-            Bundled care packages with pay-in-full or a 12-month payment plan.
-            Memberships can be added later without changing this.
+            Priced care plans with pay-in-full or a 12-month installment schedule.
+            Enroll clients from Billing → Payment plans.
           </p>
         </div>
         {!showForm && (
@@ -166,7 +166,7 @@ export function ServicePackagesTab() {
             }}
           >
             <Plus className="mr-1 h-4 w-4" />
-            Add package
+            Add payment plan
           </Button>
         )}
       </div>
@@ -175,11 +175,11 @@ export function ServicePackagesTab() {
         <div className="space-y-4 rounded-lg border border-border p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 sm:col-span-2">
-              <span className="text-sm font-medium">Package name</span>
+              <span className="text-sm font-medium">Plan name</span>
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Annual Wellness Package"
+                placeholder="Annual Wellness Plan"
               />
             </label>
             <label className="space-y-1.5 sm:col-span-2">
@@ -315,7 +315,7 @@ export function ServicePackagesTab() {
 
           <div className="flex gap-2">
             <Button size="sm" onClick={save} disabled={saving}>
-              {saving ? "Saving..." : editingId ? "Save changes" : "Save package"}
+              {saving ? "Saving..." : editingId ? "Save changes" : "Save plan"}
             </Button>
             <Button size="sm" variant="outline" onClick={resetForm}>
               Cancel
@@ -328,7 +328,7 @@ export function ServicePackagesTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 text-left font-medium">Package</th>
+              <th className="px-4 py-3 text-left font-medium">Plan</th>
               <th className="px-4 py-3 text-right font-medium">Price</th>
               <th className="px-4 py-3 text-left font-medium">Payment options</th>
               <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -370,7 +370,7 @@ export function ServicePackagesTab() {
                       size="sm"
                       variant="ghost"
                       onClick={() => {
-                        if (confirm(`Remove package “${pkg.name}”?`)) {
+                        if (confirm(`Remove payment plan “${pkg.name}”?`)) {
                           deletePackage.mutate({ id: pkg.id });
                         }
                       }}
@@ -387,7 +387,7 @@ export function ServicePackagesTab() {
                   colSpan={4}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
-                  No service packages yet. Add one to sell with pay-in-full or a
+                  No payment plans yet. Add one to enroll clients with pay-in-full or a
                   12-month plan.
                 </td>
               </tr>

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpen,
   Calendar,
   Clipboard,
   DollarSign,
@@ -36,6 +37,7 @@ export const v0NavItems: NavItem[] = [
   { href: "/clients", label: "Clients", icon: Users, mobilePrimary: true },
   { href: "/whiteboard", label: "Whiteboard", icon: Clipboard },
   { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/catalog", label: "Catalog", icon: BookOpen },
   { href: "/billing", label: "Billing", icon: DollarSign },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   {
@@ -55,6 +57,7 @@ export const routeLabels: Record<string, string> = {
   "/clients": "Clients",
   "/whiteboard": "Whiteboard",
   "/inventory": "Inventory",
+  "/catalog": "Catalog",
   "/billing": "Billing",
   "/reports": "Reports",
   "/controlled-substances": "Controlled Substance Log",

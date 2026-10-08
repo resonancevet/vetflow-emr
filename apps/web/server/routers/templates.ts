@@ -356,6 +356,176 @@ export const templatesRouter = createRouter({
       return template!;
     }),
 
+  /**
+   * One-shot: convert legacy Billing estimate templates (isTemplate invoices)
+   * into Catalog visit plans, then soft-delete those invoice rows.
+   */
+  migrateEstimateTemplates: protectedProcedure
+    .use(requireRole("admin"))
+    .mutation(async ({ ctx }) => {
+      const templates = await ctx.db
+        .select({
+          id: invoices.id,
+          name: invoices.name,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.practiceId, ctx.practiceId),
+            eq(invoices.isEstimate, true),
+            eq(invoices.isTemplate, true),
+            isNull(invoices.deletedAt)
+          )
+        );
+
+      let migrated = 0;
+      for (const row of templates) {
+        const items = await ctx.db
+          .select({
+            description: invoiceItems.description,
+            quantity: invoiceItems.quantity,
+            unitPrice: invoiceItems.unitPrice,
+            itemType: invoiceItems.itemType,
+            itemId: invoiceItems.itemId,
+          })
+          .from(invoiceItems)
+          .where(
+            and(
+              eq(invoiceItems.invoiceId, row.id),
+              isNull(invoiceItems.deletedAt)
+            )
+          );
+
+        const planName =
+          row.name?.trim() ||
+          `Migrated plan ${row.id.slice(0, 8)}`;
+
+        const [created] = await ctx.db
+          .insert(treatmentTemplates)
+          .values({
+            practiceId: ctx.practiceId,
+            name: planName,
+            description: "Migrated from Billing estimate template",
+            category: "other",
+          })
+          .returning();
+
+        if (items.length > 0) {
+          await ctx.db.insert(treatmentTemplateItems).values(
+            items.map((item, sortOrder) => ({
+              templateId: created!.id,
+              itemType:
+                item.itemType === "product" || item.itemType === "service"
+                  ? item.itemType
+                  : "service",
+              itemId: item.itemId ?? null,
+              description: item.description ?? "Item",
+              defaultQuantity: item.quantity ?? 1,
+              defaultUnitPrice: item.unitPrice ?? "0",
+              sortOrder,
+            }))
+          );
+        }
+
+        await ctx.db
+          .update(invoices)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(invoices.id, row.id));
+        migrated += 1;
+      }
+
+      return { migrated };
+    }),
+
+  /** Save current estimate/invoice line items as a Catalog visit plan. */
+  createFromInvoice: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        name: z.string().min(1).max(255).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [invoice] = await ctx.db
+        .select({
+          id: invoices.id,
+          name: invoices.name,
+          isEstimate: invoices.isEstimate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!invoice) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+
+      const items = await ctx.db
+        .select({
+          description: invoiceItems.description,
+          quantity: invoiceItems.quantity,
+          unitPrice: invoiceItems.unitPrice,
+          itemType: invoiceItems.itemType,
+          itemId: invoiceItems.itemId,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, invoice.id),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      if (items.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Add line items before saving a visit plan",
+        });
+      }
+
+      const planName =
+        input.name?.trim() ||
+        invoice.name?.trim() ||
+        "Visit plan";
+
+      const [created] = await ctx.db
+        .insert(treatmentTemplates)
+        .values({
+          practiceId: ctx.practiceId,
+          name: planName,
+          description: null,
+          category: "other",
+        })
+        .returning();
+
+      await ctx.db.insert(treatmentTemplateItems).values(
+        items.map((item, sortOrder) => ({
+          templateId: created!.id,
+          itemType:
+            item.itemType === "product" || item.itemType === "service"
+              ? item.itemType
+              : "service",
+          itemId: item.itemId ?? null,
+          description: item.description ?? "Item",
+          defaultQuantity: item.quantity ?? 1,
+          defaultUnitPrice: item.unitPrice ?? "0",
+          sortOrder,
+        }))
+      );
+
+      return created!;
+    }),
+
   delete: protectedProcedure
     .use(requireRole("admin"))
     .input(z.object({ id: z.string().uuid() }))

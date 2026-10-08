@@ -52,8 +52,12 @@ function NewInvoicePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id");
-  const fromTemplateId = searchParams.get("fromTemplate");
-  const sourceId = editId || fromTemplateId;
+  const fromVisitPlanId =
+    searchParams.get("fromVisitPlan") || searchParams.get("fromTemplate");
+  const estimateParam = searchParams.get("estimate") === "1";
+  const prefillClientId = searchParams.get("clientId");
+  const prefillPatientId = searchParams.get("patientId");
+  const sourceId = editId;
 
   // Client search
   const [clientSearch, setClientSearch] = useState("");
@@ -64,7 +68,9 @@ function NewInvoicePageContent() {
   } | null>(null);
 
   // Patient
-  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(
+    prefillPatientId ?? ""
+  );
 
   // Line items
   const [items, setItems] = useState<LineItem[]>([]);
@@ -77,7 +83,7 @@ function NewInvoicePageContent() {
   const [itemUnitPrice, setItemUnitPrice] = useState("");
 
   // Estimate toggle
-  const [isEstimate, setIsEstimate] = useState(!!fromTemplateId);
+  const [isEstimate, setIsEstimate] = useState(estimateParam || !!fromVisitPlanId);
   const [estimateName, setEstimateName] = useState("");
 
   // Due date
@@ -88,6 +94,21 @@ function NewInvoicePageContent() {
     { query: clientSearch },
     { enabled: clientSearch.length >= 1 }
   );
+  const prefillClientQuery = trpc.clients.getById.useQuery(
+    { id: prefillClientId ?? "" },
+    { enabled: !!prefillClientId && !selectedClient && !editId }
+  );
+
+  useEffect(() => {
+    if (!prefillClientQuery.data || selectedClient) return;
+    const c = prefillClientQuery.data;
+    setSelectedClient({
+      id: c.id,
+      firstName: c.firstName,
+      lastName: c.lastName,
+    });
+    if (prefillPatientId) setSelectedPatientId(prefillPatientId);
+  }, [prefillClientQuery.data, selectedClient, prefillPatientId]);
 
   const patientResults = trpc.billing.patientsByClient.useQuery(
     { clientId: selectedClient?.id ?? "" },
@@ -105,7 +126,7 @@ function NewInvoicePageContent() {
     { id: sourceId ?? "" },
     { enabled: !!sourceId }
   );
-  const [hydrated, setHydrated] = useState(!sourceId);
+  const [hydrated, setHydrated] = useState(!sourceId && !fromVisitPlanId);
   const taxEnabled = billingSettings.data?.taxEnabled ?? true;
   const taxRatePercent =
     billingSettings.data?.effectiveTaxRatePercent ??
@@ -117,13 +138,7 @@ function NewInvoicePageContent() {
   const utils = trpc.useUtils();
   const createInvoice = trpc.billing.createInvoice.useMutation({
     onSuccess: (result) => {
-      toast.success(
-        isEstimate
-          ? selectedClient
-            ? "Estimate saved"
-            : "Template saved"
-          : "Invoice created"
-      );
+      toast.success(isEstimate ? "Estimate saved" : "Invoice created");
       if (result.stockWarned) {
         toast.warning("One or more products went below zero stock");
       }
@@ -173,7 +188,7 @@ function NewInvoicePageContent() {
     setEstimateName(existing.name ?? "");
     setItems(
       existing.items.map((item) => ({
-        id: fromTemplateId && !editId ? crypto.randomUUID() : item.id,
+        id: item.id,
         description: item.description,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -182,7 +197,53 @@ function NewInvoicePageContent() {
       }))
     );
     setHydrated(true);
-  }, [editId, fromTemplateId, sourceId, existingQuery.data, hydrated, router]);
+  }, [editId, sourceId, existingQuery.data, hydrated, router]);
+
+  useEffect(() => {
+    if (!fromVisitPlanId || sourceId || hydrated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const template = await utils.templates.getById.fetch({
+          id: fromVisitPlanId,
+        });
+        if (cancelled) return;
+        if (!template.items.length) {
+          toast.error("That visit plan has no items");
+          setHydrated(true);
+          return;
+        }
+        const needsKits = template.items.some((item) => item.itemType === "kit");
+        const kits = needsKits ? await utils.inventoryKits.list.fetch() : [];
+        const lines = applyMarkupToTemplateLines(
+          expandTemplateItems(template.items, kits),
+          inventoryMarkupPercent
+        );
+        setItems(
+          lines.map((item) => ({
+            id: crypto.randomUUID(),
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            itemType: item.itemType,
+            itemId: item.itemId,
+          }))
+        );
+        setEstimateName(template.name);
+        setIsEstimate(true);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to load visit plan"
+        );
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromVisitPlanId, sourceId, hydrated]);
 
   // Calculations
   const { subtotal, tax, total } = useMemo(() => {
@@ -259,12 +320,12 @@ function NewInvoicePageContent() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }
 
-  async function applyTreatmentTemplate(templateId: string) {
+  async function applyVisitPlan(templateId: string) {
     if (!templateId) return;
     try {
       const template = await utils.templates.getById.fetch({ id: templateId });
       if (!template.items.length) {
-        toast.error("That template has no items");
+        toast.error("That visit plan has no items");
         return;
       }
       const needsKits = template.items.some((item) => item.itemType === "kit");
@@ -292,16 +353,19 @@ function NewInvoicePageContent() {
       toast.success(`Added ${template.name}`);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to apply template"
+        err instanceof Error ? err.message : "Failed to apply visit plan"
       );
     }
   }
 
   function handleSubmit() {
     if (items.length === 0) return;
-    if (!isEstimate && !selectedClient) return;
-    if (isEstimate && !selectedClient && !estimateName.trim()) {
-      toast.error("Add a template name, or choose a client");
+    if (!selectedClient) {
+      toast.error(
+        isEstimate
+          ? "Choose a client for this estimate. Reusable plans live in Catalog → Visit plans."
+          : "Choose a client for this invoice"
+      );
       return;
     }
     const payload = {
@@ -378,11 +442,9 @@ function NewInvoicePageContent() {
         <div>
           <h2 className="font-heading text-xl font-semibold">
             {editId
-              ? existingQuery.data?.isTemplate
-                ? "Edit Template"
-                : "Edit Estimate"
-              : fromTemplateId
-                ? "New Estimate from Template"
+              ? "Edit Estimate"
+              : fromVisitPlanId
+                ? "New Estimate from Visit plan"
                 : isEstimate
                   ? "New Estimate"
                   : "New Invoice"}
@@ -390,11 +452,9 @@ function NewInvoicePageContent() {
           <p className="text-sm text-muted-foreground">
             {editId
               ? "Update this estimate and save it to finish later."
-              : fromTemplateId
-                ? "Choose a client to create an estimate, or leave blank to save another template."
-                : isEstimate
-                  ? "Leave client blank to save a reusable template."
-                  : "Create a new invoice for a client."}
+              : isEstimate
+                ? "Create a client quote. Apply a visit plan from Catalog to prefill line items."
+                : "Create a new invoice for a client."}
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -414,8 +474,7 @@ function NewInvoicePageContent() {
         {isEstimate && (
           <div>
             <label className="block text-sm font-medium mb-1">
-              {selectedClient ? "Estimate name" : "Template name"}
-              {!selectedClient ? " *" : ""}
+              Estimate name (optional)
             </label>
             <Input
               value={estimateName}
@@ -427,7 +486,7 @@ function NewInvoicePageContent() {
 
         <div>
           <label className="block text-sm font-medium mb-1">
-            Client{isEstimate ? " (optional)" : " *"}
+            Client *
           </label>
           {selectedClient ? (
             <div className="flex items-center gap-2">
@@ -559,10 +618,10 @@ function NewInvoicePageContent() {
                 onChange={(e) => {
                   const id = e.target.value;
                   e.target.value = "";
-                  void applyTreatmentTemplate(id);
+                  void applyVisitPlan(id);
                 }}
               >
-                <option value="">Apply treatment template...</option>
+                <option value="">Apply visit plan...</option>
                 {treatmentTemplatesQuery.data
                   ?.filter((template) => template.isActive !== false)
                   .map((template) => (
@@ -788,23 +847,14 @@ function NewInvoicePageContent() {
         <div className="flex items-center gap-3 pt-2">
           <Button
             onClick={handleSubmit}
-            disabled={
-              items.length === 0 ||
-              saving ||
-              (!isEstimate && !selectedClient) ||
-              (isEstimate && !selectedClient && !estimateName.trim())
-            }
+            disabled={items.length === 0 || saving || !selectedClient}
           >
             {saving
               ? "Saving..."
               : editId
-                ? selectedClient
-                  ? "Save Estimate"
-                  : "Save Template"
+                ? "Save Estimate"
                 : isEstimate
-                  ? selectedClient
-                    ? "Save Estimate"
-                    : "Save Template"
+                  ? "Save Estimate"
                   : "Create Invoice"}
           </Button>
           <Button variant="outline" onClick={() => router.push("/billing")}>

@@ -72,7 +72,7 @@ function getDisplayStatus(invoice: {
   isTemplate?: boolean;
 }): { label: string; style: string } {
   if (invoice.isTemplate) {
-    return { label: "template", style: STATUS_STYLES.template };
+    return { label: "legacy plan", style: STATUS_STYLES.template };
   }
   if (invoice.isEstimate) {
     return { label: "estimate", style: STATUS_STYLES.estimate };
@@ -187,12 +187,12 @@ export default function BillingPage() {
         <div>
           <h2 className="font-heading text-xl font-semibold">Billing</h2>
           <p className="text-sm text-muted-foreground">
-            Invoices and payments
+            Invoices, estimates, and payment plan enrollments
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link href="/billing/packages">Packages</Link>
+            <Link href="/billing/packages">Payment plans</Link>
           </Button>
           <Button asChild>
             <Link href="/billing/new">
@@ -336,9 +336,37 @@ export default function BillingPage() {
             {tab.isEstimate
               ? "No estimates yet"
               : statusFilter
-              ? "No invoices with this status"
-              : "No invoices yet"}
+                ? "No invoices with this status"
+                : "No invoices yet"}
           </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {tab.isEstimate ? (
+              <>
+                <Button size="sm" asChild>
+                  <Link href="/billing/new?estimate=1">New estimate</Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/catalog?tab=visitPlans">
+                    Start from visit plan
+                  </Link>
+                </Button>
+              </>
+            ) : !statusFilter ? (
+              <>
+                <Button size="sm" asChild>
+                  <Link href="/billing/new">New invoice</Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/billing/packages/sell">
+                    Enroll in payment plan
+                  </Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/catalog?tab=visitPlans">Browse visit plans</Link>
+                </Button>
+              </>
+            ) : null}
+          </div>
         </div>
       )}
     </div>
@@ -470,10 +498,10 @@ function InvoiceRow({
                     variant="ghost"
                     size="sm"
                     asChild
-                    title="Use template"
+                    title="Open in Catalog"
                   >
                     <Link
-                      href={`/billing/new?fromTemplate=${invoice.id}`}
+                      href={`/catalog?tab=visitPlans`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -591,7 +619,7 @@ function InvoiceRow({
                       <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                       <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
                         {invoice.isTemplate
-                          ? "This is an estimate template"
+                          ? "Legacy estimate template — open Catalog to migrate into Visit plans"
                           : "This is an estimate"}
                       </span>
                     </div>
@@ -605,14 +633,20 @@ function InvoiceRow({
                           Edit
                         </Link>
                       </Button>
+                      {!invoice.isTemplate && (
+                        <SaveAsVisitPlanButton
+                          invoiceId={invoice.id}
+                          defaultName={invoice.name}
+                        />
+                      )}
                       {invoice.isTemplate && (
                         <Button variant="outline" size="sm" asChild>
                           <Link
-                            href={`/billing/new?fromTemplate=${invoice.id}`}
+                            href={`/catalog?tab=visitPlans`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Copy className="mr-1 h-3.5 w-3.5" />
-                            Use template
+                            Visit plans
                           </Link>
                         </Button>
                       )}
@@ -933,6 +967,45 @@ function InvoiceRow({
         </tr>
       )}
     </>
+  );
+}
+
+function SaveAsVisitPlanButton({
+  invoiceId,
+  defaultName,
+}: {
+  invoiceId: string;
+  defaultName?: string | null;
+}) {
+  const savePlan = trpc.templates.createFromInvoice.useMutation({
+    onSuccess: (plan) => {
+      toast.success(`Saved visit plan “${plan.name}”`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={savePlan.isPending}
+      onClick={(e) => {
+        e.stopPropagation();
+        const name = window.prompt(
+          "Name for this visit plan",
+          defaultName?.trim() || "Visit plan"
+        );
+        if (!name?.trim()) return;
+        savePlan.mutate({ invoiceId, name: name.trim() });
+      }}
+    >
+      {savePlan.isPending ? (
+        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Copy className="mr-1 h-3.5 w-3.5" />
+      )}
+      Save as visit plan
+    </Button>
   );
 }
 

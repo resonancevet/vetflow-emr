@@ -493,7 +493,10 @@ export default function PatientDetailPage() {
       </nav>
 
       <div className="mt-4">
-        <PatientClinicalAdd patientId={patient.id} />
+        <PatientClinicalAdd
+          patientId={patient.id}
+          clientId={patient.clientId}
+        />
       </div>
 
       <div className="mt-6 space-y-10">

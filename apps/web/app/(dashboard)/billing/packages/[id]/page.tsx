@@ -58,7 +58,7 @@ export default function PackageSaleDetailPage() {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/billing/packages">
               <ArrowLeft className="mr-1 h-4 w-4" />
-              Packages
+              Payment plans
             </Link>
           </Button>
           <div>
