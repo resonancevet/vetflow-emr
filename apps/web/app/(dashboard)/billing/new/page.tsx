@@ -187,14 +187,16 @@ function NewInvoicePageContent() {
     setIsEstimate(true);
     setEstimateName(existing.name ?? "");
     setItems(
-      existing.items.map((item) => ({
-        id: item.id,
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        itemType: item.itemType,
-        itemId: item.itemId ?? undefined,
-      }))
+      existing.items
+        .filter((item) => item.itemType !== "discount")
+        .map((item) => ({
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          itemType: item.itemType === "product" ? ("product" as const) : ("service" as const),
+          itemId: item.itemId ?? undefined,
+        }))
     );
     setHydrated(true);
   }, [editId, sourceId, existingQuery.data, hydrated, router]);

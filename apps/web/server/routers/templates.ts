@@ -470,21 +470,23 @@ export const templatesRouter = createRouter({
         });
       }
 
-      const items = await ctx.db
-        .select({
-          description: invoiceItems.description,
-          quantity: invoiceItems.quantity,
-          unitPrice: invoiceItems.unitPrice,
-          itemType: invoiceItems.itemType,
-          itemId: invoiceItems.itemId,
-        })
-        .from(invoiceItems)
-        .where(
-          and(
-            eq(invoiceItems.invoiceId, invoice.id),
-            isNull(invoiceItems.deletedAt)
+      const items = (
+        await ctx.db
+          .select({
+            description: invoiceItems.description,
+            quantity: invoiceItems.quantity,
+            unitPrice: invoiceItems.unitPrice,
+            itemType: invoiceItems.itemType,
+            itemId: invoiceItems.itemId,
+          })
+          .from(invoiceItems)
+          .where(
+            and(
+              eq(invoiceItems.invoiceId, invoice.id),
+              isNull(invoiceItems.deletedAt)
+            )
           )
-        );
+      ).filter((item) => item.itemType !== "discount");
 
       if (items.length === 0) {
         throw new TRPCError({
