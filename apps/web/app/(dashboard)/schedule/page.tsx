@@ -180,6 +180,7 @@ type Appointment = {
   endTime: Date | string;
   status: string;
   notes: string | null;
+  rabiesPlanned?: boolean;
   patientName: string | null;
   patientSpecies: string | null;
   patientId: string | null;
@@ -652,6 +653,9 @@ function BookingForm({
   const [startTime, setStartTime] = useState(initial.startTime);
   const [duration, setDuration] = useState(initial.duration);
   const [notes, setNotes] = useState(editingAppointment?.notes ?? "");
+  const [rabiesPlanned, setRabiesPlanned] = useState(
+    Boolean(editingAppointment?.rabiesPlanned)
+  );
 
   const timeSlots = useMemo(
     () => generateTimeSlots(startHour, endHour),
@@ -797,6 +801,7 @@ function BookingForm({
         doctorId: doctorId || null,
         roomId: roomId || null,
         notes: notes || null,
+        rabiesPlanned,
       });
       return;
     }
@@ -809,6 +814,7 @@ function BookingForm({
       doctorId: doctorId || undefined,
       roomId: roomId || undefined,
       notes: notes || undefined,
+      rabiesPlanned,
     });
   };
 
@@ -1015,6 +1021,19 @@ function BookingForm({
               placeholder="Optional notes..."
             />
           </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={rabiesPlanned}
+              onChange={(e) => setRabiesPlanned(e.target.checked)}
+            />
+            <span>Rabies planned for this visit</span>
+          </label>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Adds a pre/post-visit rabies checklist on the dashboard for packing
+            and close-out.
+          </p>
         </div>
 
         {/* Footer */}

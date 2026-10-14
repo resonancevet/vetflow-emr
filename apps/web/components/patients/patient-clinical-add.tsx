@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { toKgString, useWeightUnit, type WeightUnit } from "@/lib/weight-units";
 import { addDueInterval, formatDueInterval } from "@/lib/due-interval";
 import { planDisplayName } from "@/lib/plan-name";
+import { generateRabiesSwornStatementPdf } from "@/lib/rabies-pdf";
 import {
   ProductPicker,
   StockUseFields,
@@ -102,11 +103,13 @@ export function PatientClinicalAdd({
 
   const createVaccination = trpc.records.createVaccination.useMutation({
     onSuccess: (result) => {
-      toast.success("Vaccination recorded");
       toastStock(result);
-      toastBillEstimate({ patientId, clientId, router });
-      setOpenForm(null);
-      invalidate();
+      if (result.certificateUrl) {
+        toast.success("Vaccination recorded — rabies certificate filed");
+        window.open(result.certificateUrl, "_blank");
+      }
+      void utils.visitChecklists.listForDashboard.invalidate();
+      void utils.records.listPatientDocuments.invalidate({ patientId });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -217,21 +220,28 @@ export function PatientClinicalAdd({
       )}
       {openForm === "vaccination" && (
         <VaccinationForm
+          patientId={patientId}
           onSubmit={async (entries) => {
             try {
-              let lastResult: unknown;
+              let lastResult: {
+                certificateUrl?: string | null;
+                stockWarned?: boolean;
+                stockBalanceAfter?: number;
+                stockWarnings?: Array<{ name: string; balanceAfter: number }>;
+              } | null = null;
               for (const entry of entries) {
                 lastResult = await createVaccination.mutateAsync({
                   patientId,
                   ...entry,
                 });
               }
-              toast.success(
-                entries.length > 1
-                  ? `Recorded ${entries.length} vaccine components`
-                  : "Vaccination recorded",
-              );
-              toastStock(lastResult as Parameters<typeof toastStock>[0]);
+              if (!lastResult?.certificateUrl) {
+                toast.success(
+                  entries.length > 1
+                    ? `Recorded ${entries.length} vaccine components`
+                    : "Vaccination recorded"
+                );
+              }
               toastBillEstimate({ patientId, clientId, router });
               setOpenForm(null);
               invalidate();
@@ -457,6 +467,8 @@ export type VaccinationSubmitEntry = {
   vaccineName: string;
   lotNumber?: string;
   tagNumber?: string;
+  lotExpiration?: string;
+  administrationSite?: string;
   administeredAt?: string;
   nextDueDate?: string;
   notes?: string;
@@ -475,9 +487,15 @@ export type VaccinationSubmitEntry = {
 export function VaccinationForm({
   onSubmit,
   loading,
+  patientId,
+  clientName,
+  patientName,
 }: {
   onSubmit: (entries: VaccinationSubmitEntry[]) => void | Promise<void>;
   loading: boolean;
+  patientId?: string;
+  clientName?: string;
+  patientName?: string;
 }) {
   const { data: kits } = trpc.inventoryKits.list.useQuery();
   const activeKits = (kits ?? []).filter(
@@ -487,10 +505,17 @@ export function VaccinationForm({
   const [vaccineName, setVaccineName] = useState("");
   const [lotNumber, setLotNumber] = useState("");
   const [tagNumber, setTagNumber] = useState("");
+  const [lotExpiration, setLotExpiration] = useState("");
+  const [administrationSite, setAdministrationSite] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [administeredAt, setAdministeredAt] = useState(
     new Date().toISOString().slice(0, 10)
   );
+  const swornReadyQuery =
+    trpc.visitChecklists.swornStatementReadyForPatient.useQuery(
+      { patientId: patientId! },
+      { enabled: !!patientId }
+    );
   const [nextDueDate, setNextDueDate] = useState("");
   const [protocolDues, setProtocolDues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -690,9 +715,29 @@ export function VaccinationForm({
             quantity: row.quantity,
           }));
         const baseName = vaccineName.trim();
+        if (isRabies && !tagNumber.trim()) {
+          toast.error("Rabies tag number is required");
+          return;
+        }
+        if (
+          isRabies &&
+          swornReadyQuery.data?.hasChecklist &&
+          !swornReadyQuery.data.ready
+        ) {
+          const ok = window.confirm(
+            "Sworn statement is not marked ready on the pre-visit checklist. Continue administering rabies anyway?"
+          );
+          if (!ok) return;
+        }
+
         const shared = {
           lotNumber: lotNumber || undefined,
           manufacturer: manufacturer || undefined,
+          lotExpiration: isRabies && lotExpiration ? lotExpiration : undefined,
+          administrationSite:
+            isRabies && administrationSite.trim()
+              ? administrationSite.trim()
+              : undefined,
           administeredAt: administeredAt || undefined,
           notes: notes || undefined,
         };
@@ -890,16 +935,61 @@ export function VaccinationForm({
         <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
       </div>
       {isRabies && (
-        <div>
-          <label className="mb-1 block text-xs font-medium">
-            Rabies tag number
-          </label>
-          <Input
-            value={tagNumber}
-            onChange={(e) => setTagNumber(e.target.value)}
-            placeholder="Tag #"
-          />
-        </div>
+        <>
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Rabies tag number *
+            </label>
+            <Input
+              value={tagNumber}
+              onChange={(e) => setTagNumber(e.target.value)}
+              placeholder="Tag #"
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Lot expiration
+            </label>
+            <Input
+              type="date"
+              value={lotExpiration}
+              onChange={(e) => setLotExpiration(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Administration site
+            </label>
+            <Input
+              value={administrationSite}
+              onChange={(e) => setAdministrationSite(e.target.value)}
+              placeholder="e.g. RH"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const doc = generateRabiesSwornStatementPdf({
+                  ownerName: clientName,
+                  patientName,
+                });
+                doc.save(
+                  `rabies_sworn_statement_${(patientName || "patient").replace(/\s+/g, "_")}.pdf`
+                );
+              }}
+            >
+              Print sworn statement
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Have the owner sign in your presence the same day, then upload the
+              signed copy to Documents and check the post-visit checklist.
+            </p>
+          </div>
+        </>
       )}
       {isCombo ? (
         <div className="sm:col-span-2 space-y-2 rounded-md border border-border bg-muted/30 p-3">

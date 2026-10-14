@@ -41,6 +41,7 @@ export const appointmentsRouter = createRouter({
           endTime: appointments.endTime,
           status: appointments.status,
           notes: appointments.notes,
+          rabiesPlanned: appointments.rabiesPlanned,
           patientName: patients.name,
           patientSpecies: patients.species,
           patientId: appointments.patientId,
@@ -115,6 +116,7 @@ export const appointmentsRouter = createRouter({
         doctorId: z.string().uuid().optional(),
         roomId: z.string().uuid().optional(),
         notes: z.string().optional(),
+        rabiesPlanned: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -190,6 +192,7 @@ export const appointmentsRouter = createRouter({
         doctorId: z.string().uuid().nullable().optional(),
         roomId: z.string().uuid().nullable().optional(),
         notes: z.string().nullable().optional(),
+        rabiesPlanned: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {

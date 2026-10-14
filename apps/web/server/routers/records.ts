@@ -16,6 +16,9 @@ import {
   inventoryKits,
   inventoryKitItems,
   examVitals,
+  clients,
+  practices,
+  patientWeights,
 } from "@openpims/db";
 import { recordProductUsage } from "../lib/stock";
 import { addProblemsFromDiagnosis, diagnosisDate } from "../lib/problems";
@@ -28,6 +31,11 @@ import { writeAudit } from "../lib/audit";
 import { soapFormDraftSchema } from "@/lib/soap-form";
 import { addDueInterval, toDateInput } from "@/lib/due-interval";
 import { createRouter, protectedProcedure, requireRole } from "../trpc";
+import { vaccineProtocolKeys } from "@/lib/vaccination-due";
+import { generateRabiesCertificatePdf } from "@/lib/rabies-pdf";
+import { storePracticeFile } from "../lib/store-practice-file";
+import { autoCompleteRabiesCertificateItems } from "./visit-checklists";
+import { TRPCError } from "@trpc/server";
 
 function mapFileRow(row: {
   id: string;
@@ -48,6 +56,195 @@ function mapFileRow(row: {
     entityId: row.entityId ?? null,
     fileUrl: `/api/files/${row.id}`,
   };
+}
+
+function formatAgeFromDob(dob: string | Date | null | undefined): string {
+  if (!dob) return "—";
+  const birth =
+    typeof dob === "string"
+      ? new Date(
+          Number(dob.slice(0, 4)),
+          Number(dob.slice(5, 7)) - 1,
+          Number(dob.slice(8, 10))
+        )
+      : dob;
+  if (Number.isNaN(birth.getTime())) return "—";
+  const now = new Date();
+  let years = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) years -= 1;
+  if (years < 1) {
+    const months =
+      (now.getFullYear() - birth.getFullYear()) * 12 +
+      now.getMonth() -
+      birth.getMonth();
+    return `${Math.max(months, 0)} months`;
+  }
+  return `${years} years`;
+}
+
+async function generateAndFileRabiesCertificate(
+  ctx: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: any;
+    practiceId: string;
+    user: { id: string; name?: string | null };
+  },
+  opts: {
+    vaccinationId: string;
+    patientId: string;
+    vaccineName: string;
+    tagNumber: string;
+    lotNumber?: string | null;
+    manufacturer?: string | null;
+    lotExpiration?: string | null;
+    administrationSite?: string | null;
+    administeredAt: Date;
+    nextDueDate?: string | null;
+  }
+) {
+  const [patient] = await ctx.db
+    .select({
+      name: patients.name,
+      breed: patients.breed,
+      sex: patients.sex,
+      color: patients.color,
+      dob: patients.dob,
+      clientId: patients.clientId,
+    })
+    .from(patients)
+    .where(
+      and(
+        eq(patients.id, opts.patientId),
+        eq(patients.practiceId, ctx.practiceId),
+        isNull(patients.deletedAt)
+      )
+    )
+    .limit(1);
+
+  if (!patient) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Patient not found" });
+  }
+
+  const [client] = await ctx.db
+    .select({
+      firstName: clients.firstName,
+      lastName: clients.lastName,
+      address: clients.address,
+      city: clients.city,
+      state: clients.state,
+      zip: clients.zip,
+    })
+    .from(clients)
+    .where(eq(clients.id, patient.clientId))
+    .limit(1);
+
+  const [practice] = await ctx.db
+    .select({
+      name: practices.name,
+      address: practices.address,
+      phone: practices.phone,
+    })
+    .from(practices)
+    .where(eq(practices.id, ctx.practiceId))
+    .limit(1);
+
+  const [vet] = await ctx.db
+    .select({
+      name: users.name,
+      licenseNumber: users.licenseNumber,
+    })
+    .from(users)
+    .where(eq(users.id, ctx.user.id))
+    .limit(1);
+
+  const [weight] = await ctx.db
+    .select({ weightKg: patientWeights.weightKg })
+    .from(patientWeights)
+    .where(
+      and(
+        eq(patientWeights.patientId, opts.patientId),
+        isNull(patientWeights.deletedAt)
+      )
+    )
+    .orderBy(desc(patientWeights.recordedAt))
+    .limit(1);
+
+  let weightLabel: string | undefined;
+  if (weight?.weightKg != null) {
+    const kg = parseFloat(String(weight.weightKg));
+    if (Number.isFinite(kg)) {
+      weightLabel = `${(kg * 2.20462).toFixed(1)}lbs`;
+    }
+  }
+
+  const cityStateZip = [
+    [client?.city, client?.state].filter(Boolean).join(", "),
+    client?.zip,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const doc = generateRabiesCertificatePdf({
+    practiceName: practice?.name ?? "Veterinary Practice",
+    practiceAddress: practice?.address ?? undefined,
+    practicePhone: practice?.phone ?? undefined,
+    clientName: [client?.firstName, client?.lastName].filter(Boolean).join(" "),
+    clientAddress: client?.address ?? undefined,
+    clientCityStateZip: cityStateZip || undefined,
+    patientName: patient.name,
+    breed: patient.breed ?? undefined,
+    sex: patient.sex ?? undefined,
+    color: patient.color ?? undefined,
+    age: formatAgeFromDob(patient.dob),
+    weight: weightLabel,
+    tagNumber: opts.tagNumber,
+    vaccinationDate: new Date(opts.administeredAt).toLocaleDateString(),
+    nextDueDate: opts.nextDueDate
+      ? new Date(
+          Number(opts.nextDueDate.slice(0, 4)),
+          Number(opts.nextDueDate.slice(5, 7)) - 1,
+          Number(opts.nextDueDate.slice(8, 10))
+        ).toLocaleDateString()
+      : undefined,
+    veterinarianName: vet?.name ?? ctx.user.name ?? "Veterinarian",
+    licenseNumber: vet?.licenseNumber ?? undefined,
+    manufacturer: opts.manufacturer ?? undefined,
+    lotNumber: opts.lotNumber ?? undefined,
+    lotExpiration: opts.lotExpiration
+      ? new Date(
+          Number(opts.lotExpiration.slice(0, 4)),
+          Number(opts.lotExpiration.slice(5, 7)) - 1,
+          Number(opts.lotExpiration.slice(8, 10))
+        ).toLocaleDateString()
+      : undefined,
+    administrationSite: opts.administrationSite ?? undefined,
+  });
+
+  const buffer = Buffer.from(doc.output("arraybuffer"));
+  const safePatient = patient.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "patient";
+  const stored = await storePracticeFile({
+    db: ctx.db,
+    practiceId: ctx.practiceId,
+    uploadedBy: ctx.user.id,
+    buffer,
+    fileName: `rabies_certificate_${safePatient}.pdf`,
+    mimeType: "application/pdf",
+    category: "rabies-certificate",
+    entityType: "patient",
+    entityId: opts.patientId,
+  });
+
+  await ctx.db
+    .update(vaccinationRecords)
+    .set({
+      certificateUrl: stored.fileUrl,
+      certificateFileId: stored.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(vaccinationRecords.id, opts.vaccinationId));
+
+  return { fileId: stored.id, fileUrl: stored.fileUrl };
 }
 
 export const recordsRouter = createRouter({
@@ -539,6 +736,8 @@ export const recordsRouter = createRouter({
               or(
                 eq(files.category, "documents"),
                 eq(files.category, "lab-results"),
+                eq(files.category, "rabies-certificate"),
+                eq(files.category, "rabies-sworn-statement"),
                 isNull(files.category),
               ),
             ),
@@ -585,7 +784,13 @@ export const recordsRouter = createRouter({
           ...mapped,
           source: row.category === "lab-results" ? "lab" : "documents",
           sourceLabel:
-            row.category === "lab-results" ? "Lab result" : "Chart upload",
+            row.category === "lab-results"
+              ? "Lab result"
+              : row.category === "rabies-certificate"
+                ? "Rabies certificate"
+                : row.category === "rabies-sworn-statement"
+                  ? "Rabies sworn statement"
+                  : "Chart upload",
           soapNoteId: null,
         });
       }
@@ -694,8 +899,12 @@ export const recordsRouter = createRouter({
           lotNumber: vaccinationRecords.lotNumber,
           tagNumber: vaccinationRecords.tagNumber,
           manufacturer: vaccinationRecords.manufacturer,
+          lotExpiration: vaccinationRecords.lotExpiration,
+          administrationSite: vaccinationRecords.administrationSite,
           administeredAt: vaccinationRecords.administeredAt,
           nextDueDate: vaccinationRecords.nextDueDate,
+          certificateUrl: vaccinationRecords.certificateUrl,
+          certificateFileId: vaccinationRecords.certificateFileId,
           notes: vaccinationRecords.notes,
           administeredByName: users.name,
         })
@@ -720,6 +929,8 @@ export const recordsRouter = createRouter({
         lotNumber: z.string().optional(),
         tagNumber: z.string().optional(),
         manufacturer: z.string().optional(),
+        lotExpiration: z.string().optional(),
+        administrationSite: z.string().optional(),
         administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
         notes: z.string().optional(),
@@ -748,8 +959,18 @@ export const recordsRouter = createRouter({
         stockNote,
         extraItems,
         nextDueDate: inputNextDue,
+        lotExpiration,
+        administrationSite,
         ...rest
       } = input;
+
+      const isRabies = vaccineProtocolKeys(input.vaccineName).includes("rabies");
+      if (isRabies && !input.tagNumber?.trim()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Rabies tag number is required for the certificate",
+        });
+      }
 
       let nextDueDate = inputNextDue || null;
       let kit: {
@@ -795,6 +1016,8 @@ export const recordsRouter = createRouter({
         .values({
           ...rest,
           nextDueDate,
+          lotExpiration: lotExpiration || null,
+          administrationSite: administrationSite?.trim() || null,
           kitId: kitId ?? null,
           ...(administeredAt ? { administeredAt: new Date(administeredAt) } : {}),
           administeredBy: ctx.user.id,
@@ -877,8 +1100,37 @@ export const recordsRouter = createRouter({
         stockBalanceAfter = stock.balanceAfter;
       }
 
+      let certificateUrl: string | null = record!.certificateUrl ?? null;
+      let certificateFileId: string | null =
+        record!.certificateFileId ?? null;
+
+      if (isRabies) {
+        const cert = await generateAndFileRabiesCertificate(ctx, {
+          vaccinationId: record!.id,
+          patientId: input.patientId,
+          vaccineName: input.vaccineName,
+          tagNumber: input.tagNumber!.trim(),
+          lotNumber: input.lotNumber,
+          manufacturer: input.manufacturer,
+          lotExpiration: lotExpiration || null,
+          administrationSite: administrationSite?.trim() || null,
+          administeredAt: record!.administeredAt,
+          nextDueDate: nextDueDate,
+        });
+        certificateUrl = cert.fileUrl;
+        certificateFileId = cert.fileId;
+        await autoCompleteRabiesCertificateItems(ctx.db, {
+          practiceId: ctx.practiceId,
+          patientId: input.patientId,
+          userId: ctx.user.id,
+          administeredAt: record!.administeredAt,
+        });
+      }
+
       return {
         ...record!,
+        certificateUrl,
+        certificateFileId,
         stockWarned,
         stockBalanceAfter,
         stockWarnings,
@@ -894,6 +1146,8 @@ export const recordsRouter = createRouter({
         lotNumber: z.string().optional(),
         tagNumber: z.string().optional(),
         manufacturer: z.string().optional(),
+        lotExpiration: z.string().optional(),
+        administrationSite: z.string().optional(),
         administeredAt: z.string().optional(),
         nextDueDate: z.string().optional(),
         notes: z.string().optional(),
@@ -908,6 +1162,8 @@ export const recordsRouter = createRouter({
           lotNumber: fields.lotNumber || null,
           tagNumber: fields.tagNumber || null,
           manufacturer: fields.manufacturer || null,
+          lotExpiration: fields.lotExpiration || null,
+          administrationSite: fields.administrationSite?.trim() || null,
           nextDueDate: fields.nextDueDate || null,
           notes: fields.notes || null,
           ...(administeredAt ? { administeredAt: new Date(administeredAt) } : {}),

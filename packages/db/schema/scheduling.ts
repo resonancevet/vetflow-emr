@@ -8,6 +8,7 @@ import {
   integer,
   date,
   time,
+  boolean,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -89,6 +90,8 @@ export const appointments = pgTable(
     roomId: uuid("room_id").references(() => rooms.id),
     status: appointmentStatusEnum("status").notNull().default("scheduled"),
     notes: text("notes"),
+    /** Staff marks that rabies vaccination is planned for this visit. */
+    rabiesPlanned: boolean("rabies_planned").notNull().default(false),
     recurringSeriesId: uuid("recurring_series_id").references(
       () => recurringSeries.id
     ),

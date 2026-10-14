@@ -675,6 +675,7 @@ export default function NewSoapNotePage() {
           )}
           {planForm === "vaccine" && params.patientId && (
             <VaccinationForm
+              patientId={params.patientId}
               onSubmit={async (entries) => {
                 try {
                   let lastResult: unknown;

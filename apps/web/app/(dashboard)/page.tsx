@@ -21,6 +21,7 @@ import {
   DeclineAppointmentRequestModal,
 } from "@/components/dashboard/appointment-request-modals";
 import { useCallbackPanel } from "@/components/dashboard/callback-panel-context";
+import { VisitChecklistsCard } from "@/components/dashboard/visit-checklists-card";
 import { formatPhoneDisplay } from "@/lib/phone-format";
 
 function formatTime(date: Date | string) {
@@ -405,6 +406,8 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      <VisitChecklistsCard />
 
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-6 py-4">
