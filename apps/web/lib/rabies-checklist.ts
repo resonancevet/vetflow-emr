@@ -26,7 +26,7 @@ export const RABIES_CHECKLIST_ITEMS: RabiesChecklistItemDef[] = [
   {
     phase: "pre",
     key: "sworn_statement_ready",
-    label: "Sworn statement loaded on iPad for signature",
+    label: "Pre-Rabies Client Statement ready for signature",
     sortOrder: 2,
     autoCompletable: false,
   },
@@ -61,14 +61,14 @@ export const RABIES_CHECKLIST_ITEMS: RabiesChecklistItemDef[] = [
   {
     phase: "post",
     key: "certificate_sent_client",
-    label: "Certificate emailed/mailed to client with visit summary",
+    label: "Mail visit summary + rabies certificate to client",
     sortOrder: 13,
     autoCompletable: false,
   },
   {
     phase: "post",
     key: "certificate_sent_town",
-    label: "Copy sent to client’s town clerk",
+    label: "Mail rabies certificate to town clerk (pet’s residence)",
     sortOrder: 14,
     autoCompletable: false,
   },

@@ -21,6 +21,9 @@ import {
   patients,
   practices,
   soapNotes,
+  invoices,
+  visitChecklists,
+  visitChecklistItems,
 } from "@openpims/db";
 import {
   isCallbackAppointmentRequestSubject,
@@ -616,4 +619,389 @@ export const dashboardRouter = createRouter({
 
       return { success: true, emailSent };
     }),
+
+  /**
+   * Aggregated practice task list: invoices, SOAPs, mailings, follow-ups, calls.
+   */
+  listTasks: protectedProcedure.query(async ({ ctx }) => {
+    await autoFinalizeStaleSoapNotes(ctx.db);
+
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+    const fourteenDaysAgo = new Date(todayStart);
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const sevenDaysAgo = new Date(todayStart);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const threeDaysAhead = new Date(todayStart);
+    threeDaysAhead.setDate(threeDaysAhead.getDate() + 3);
+
+    type Task = {
+      id: string;
+      category:
+        | "invoice"
+        | "soap"
+        | "mailing"
+        | "follow_up"
+        | "phone"
+        | "other";
+      title: string;
+      subtitle: string;
+      href: string;
+      sortAt: Date;
+    };
+
+    const tasks: Task[] = [];
+
+    const invoiceRows = await ctx.db
+      .select({
+        id: invoices.id,
+        status: invoices.status,
+        invoiceNumber: invoices.invoiceNumber,
+        patientId: invoices.patientId,
+        clientId: invoices.clientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        updatedAt: invoices.updatedAt,
+        createdAt: invoices.createdAt,
+      })
+      .from(invoices)
+      .leftJoin(patients, eq(invoices.patientId, patients.id))
+      .leftJoin(clients, eq(invoices.clientId, clients.id))
+      .where(
+        and(
+          eq(invoices.practiceId, ctx.practiceId),
+          eq(invoices.isEstimate, false),
+          eq(invoices.isTemplate, false),
+          isNull(invoices.deletedAt),
+          inArray(invoices.status, ["draft", "finalized"]),
+          gte(invoices.updatedAt, fourteenDaysAgo)
+        )
+      )
+      .orderBy(desc(invoices.updatedAt))
+      .limit(40);
+
+    for (const inv of invoiceRows) {
+      const who = [
+        inv.patientName,
+        [inv.clientFirstName, inv.clientLastName].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const num = inv.invoiceNumber ? `#${inv.invoiceNumber}` : "Invoice";
+      if (inv.status === "draft") {
+        tasks.push({
+          id: `invoice-finalize-${inv.id}`,
+          category: "invoice",
+          title: `Finalize ${num}`,
+          subtitle: who || "Draft invoice",
+          href: `/billing/${inv.id}`,
+          sortAt: inv.updatedAt ?? inv.createdAt,
+        });
+      } else if (inv.status === "finalized") {
+        tasks.push({
+          id: `invoice-email-${inv.id}`,
+          category: "invoice",
+          title: `Email ${num}`,
+          subtitle: who || "Finalized — not yet sent",
+          href: `/billing/${inv.id}`,
+          sortAt: inv.updatedAt ?? inv.createdAt,
+        });
+      }
+    }
+
+    // Checked-out visits in the last 7 days with no invoice yet.
+    const checkedOut = await ctx.db
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        clientId: appointments.clientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        startTime: appointments.startTime,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(clients, eq(appointments.clientId, clients.id))
+      .where(
+        and(
+          eq(appointments.practiceId, ctx.practiceId),
+          eq(appointments.status, "checked_out"),
+          isNull(appointments.deletedAt),
+          gte(appointments.startTime, sevenDaysAgo),
+          lte(appointments.startTime, now),
+          eq(appointments.isBlock, false)
+        )
+      )
+      .orderBy(desc(appointments.startTime))
+      .limit(40);
+
+    if (checkedOut.length > 0) {
+      const apptIds = checkedOut.map((a) => a.id);
+      const linkedInvoices = await ctx.db
+        .select({
+          appointmentId: invoices.appointmentId,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt),
+            eq(invoices.isEstimate, false),
+            inArray(invoices.appointmentId, apptIds)
+          )
+        );
+      const hasInvoice = new Set(
+        linkedInvoices
+          .map((r) => r.appointmentId)
+          .filter((id): id is string => !!id)
+      );
+
+      for (const appt of checkedOut) {
+        if (hasInvoice.has(appt.id) || !appt.patientId) continue;
+        const who = [
+          appt.patientName,
+          [appt.clientFirstName, appt.clientLastName]
+            .filter(Boolean)
+            .join(" "),
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        tasks.push({
+          id: `invoice-create-${appt.id}`,
+          category: "invoice",
+          title: "Create invoice",
+          subtitle: who || "Checked-out visit",
+          href: `/billing/new?patientId=${appt.patientId}`,
+          sortAt: appt.startTime,
+        });
+      }
+    }
+
+    const soapRows = await ctx.db
+      .select({
+        id: soapNotes.id,
+        patientId: soapNotes.patientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        updatedAt: soapNotes.updatedAt,
+        createdAt: soapNotes.createdAt,
+      })
+      .from(soapNotes)
+      .leftJoin(patients, eq(soapNotes.patientId, patients.id))
+      .leftJoin(clients, eq(patients.clientId, clients.id))
+      .where(
+        and(
+          eq(soapNotes.practiceId, ctx.practiceId),
+          isNull(soapNotes.deletedAt),
+          isNull(soapNotes.finalizedAt)
+        )
+      )
+      .orderBy(desc(soapNotes.updatedAt))
+      .limit(40);
+
+    for (const soap of soapRows) {
+      const who = [
+        soap.patientName,
+        [soap.clientFirstName, soap.clientLastName].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      tasks.push({
+        id: `soap-${soap.id}`,
+        category: "soap",
+        title: "Complete SOAP",
+        subtitle: who || "Draft SOAP note",
+        href: `/patients/${soap.patientId}`,
+        sortAt: soap.updatedAt ?? soap.createdAt,
+      });
+    }
+
+    const postItems = await ctx.db
+      .select({
+        itemId: visitChecklistItems.id,
+        key: visitChecklistItems.key,
+        label: visitChecklistItems.label,
+        patientId: visitChecklists.patientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        startTime: appointments.startTime,
+      })
+      .from(visitChecklistItems)
+      .innerJoin(
+        visitChecklists,
+        eq(visitChecklistItems.checklistId, visitChecklists.id)
+      )
+      .innerJoin(
+        appointments,
+        eq(visitChecklists.appointmentId, appointments.id)
+      )
+      .leftJoin(patients, eq(visitChecklists.patientId, patients.id))
+      .leftJoin(clients, eq(appointments.clientId, clients.id))
+      .where(
+        and(
+          eq(visitChecklists.practiceId, ctx.practiceId),
+          eq(visitChecklists.kind, "rabies"),
+          eq(visitChecklistItems.phase, "post"),
+          isNull(visitChecklistItems.completedAt),
+          isNull(visitChecklistItems.deletedAt),
+          isNull(visitChecklists.deletedAt),
+          isNull(appointments.deletedAt),
+          gte(appointments.startTime, fourteenDaysAgo),
+          lte(appointments.startTime, threeDaysAhead),
+          inArray(visitChecklistItems.key, [
+            "sworn_statement_filed",
+            "certificate_sent_client",
+            "certificate_sent_town",
+          ]),
+          not(inArray(appointments.status, ["cancelled", "no_show"]))
+        )
+      )
+      .orderBy(desc(appointments.startTime))
+      .limit(40);
+
+    for (const item of postItems) {
+      const who = [
+        item.patientName,
+        [item.clientFirstName, item.clientLastName].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      tasks.push({
+        id: `mailing-${item.itemId}`,
+        category: "mailing",
+        title: item.label,
+        subtitle: who || "Rabies close-out",
+        href: item.patientId ? `/patients/${item.patientId}` : "/patients",
+        sortAt: item.startTime,
+      });
+    }
+
+    const callbackRows = await ctx.db
+      .select({
+        id: communications.id,
+        subject: communications.subject,
+        content: communications.content,
+        createdAt: communications.createdAt,
+        clientId: communications.clientId,
+        patientId: communications.patientId,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        patientName: patients.name,
+      })
+      .from(communications)
+      .leftJoin(clients, eq(communications.clientId, clients.id))
+      .leftJoin(patients, eq(communications.patientId, patients.id))
+      .where(
+        and(
+          eq(communications.practiceId, ctx.practiceId),
+          eq(communications.channel, "portal"),
+          eq(communications.status, "pending"),
+          isNull(communications.deletedAt),
+          ilike(communications.subject, "Callback: Appointment request%")
+        )
+      )
+      .orderBy(desc(communications.createdAt))
+      .limit(20);
+
+    for (const row of callbackRows) {
+      const clientName = [row.clientFirstName, row.clientLastName]
+        .filter(Boolean)
+        .join(" ");
+      const parsed = parseAppointmentRequestContent(row.content);
+      tasks.push({
+        id: `phone-${row.id}`,
+        category: "phone",
+        title: "Phone call to make",
+        subtitle: [row.patientName ?? parsed.patientName, clientName]
+          .filter(Boolean)
+          .join(" · "),
+        href: row.clientId ? `/clients/${row.clientId}` : "/clients",
+        sortAt: row.createdAt,
+      });
+    }
+
+    const recentCheckedOut = await ctx.db
+      .select({
+        appointmentId: appointments.id,
+        patientId: appointments.patientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        checkedOutAt: appointments.endTime,
+        startTime: appointments.startTime,
+      })
+      .from(appointments)
+      .innerJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(clients, eq(appointments.clientId, clients.id))
+      .where(
+        and(
+          eq(appointments.practiceId, ctx.practiceId),
+          isNull(appointments.deletedAt),
+          eq(appointments.status, "checked_out"),
+          gte(appointments.startTime, sevenDaysAgo),
+          lte(appointments.startTime, now)
+        )
+      )
+      .orderBy(desc(appointments.startTime))
+      .limit(50);
+
+    const followUpPatientIds = [
+      ...new Set(
+        recentCheckedOut.map((a) => a.patientId).filter((id): id is string => !!id)
+      ),
+    ];
+
+    if (followUpPatientIds.length > 0) {
+      const futureAppointments = await ctx.db
+        .select({
+          patientId: appointments.patientId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.practiceId, ctx.practiceId),
+            isNull(appointments.deletedAt),
+            gte(appointments.startTime, now),
+            inArray(appointments.patientId, followUpPatientIds),
+            not(inArray(appointments.status, ["cancelled", "no_show"]))
+          )
+        );
+      const patientsWithFuture = new Set(
+        futureAppointments
+          .map((r) => r.patientId)
+          .filter((id): id is string => !!id)
+      );
+      const seenPatients = new Set<string>();
+      for (const a of recentCheckedOut) {
+        if (!a.patientId || patientsWithFuture.has(a.patientId)) continue;
+        if (seenPatients.has(a.patientId)) continue;
+        seenPatients.add(a.patientId);
+        const who = [
+          a.patientName,
+          [a.clientFirstName, a.clientLastName].filter(Boolean).join(" "),
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        tasks.push({
+          id: `followup-${a.appointmentId}`,
+          category: "follow_up",
+          title: "Schedule follow-up",
+          subtitle: who,
+          href: `/schedule?patientId=${a.patientId}`,
+          sortAt: a.checkedOutAt ?? a.startTime,
+        });
+      }
+    }
+
+    tasks.sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime());
+    return tasks.slice(0, 60);
+  }),
 });

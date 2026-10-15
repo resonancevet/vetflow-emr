@@ -21,6 +21,10 @@ import {
 } from "@openpims/db";
 import { RABIES_CHECKLIST_ITEMS } from "@/lib/rabies-checklist";
 import {
+  VISIT_PREP_BASE_ITEMS,
+  VISIT_PREP_RABIES_ITEMS,
+} from "@/lib/visit-prep-checklist";
+import {
   latestVaccinationPerProtocol,
   parseDateOnly,
 } from "@/lib/vaccination-due";
@@ -91,6 +95,100 @@ async function insertDefaultItems(
       autoCompletable: item.autoCompletable,
     }))
   );
+}
+
+async function ensureChecklistItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  checklistId: string,
+  defs: Array<{
+    key: string;
+    label: string;
+    sortOrder: number;
+    phase?: "pre" | "post";
+    autoCompletable?: boolean;
+  }>
+) {
+  if (defs.length === 0) return;
+  const existing = await db
+    .select({ key: visitChecklistItems.key })
+    .from(visitChecklistItems)
+    .where(
+      and(
+        eq(visitChecklistItems.checklistId, checklistId),
+        isNull(visitChecklistItems.deletedAt)
+      )
+    );
+  const have = new Set(
+    existing.map((r: { key: string }) => r.key as string)
+  );
+  const missing = defs.filter((d) => !have.has(d.key));
+  if (missing.length === 0) return;
+  await db.insert(visitChecklistItems).values(
+    missing.map((item) => ({
+      checklistId,
+      phase: item.phase ?? "pre",
+      key: item.key,
+      label: item.label,
+      sortOrder: item.sortOrder,
+      autoCompletable: item.autoCompletable ?? false,
+    }))
+  );
+}
+
+/** Ensure a visit prep checklist exists; return its id. */
+export async function ensureVisitPrepChecklist(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  opts: {
+    practiceId: string;
+    appointmentId: string;
+    patientId: string;
+    includeRabiesStatement: boolean;
+  }
+) {
+  const [existing] = await db
+    .select({ id: visitChecklists.id })
+    .from(visitChecklists)
+    .where(
+      and(
+        eq(visitChecklists.practiceId, opts.practiceId),
+        eq(visitChecklists.appointmentId, opts.appointmentId),
+        eq(visitChecklists.kind, "visit"),
+        isNull(visitChecklists.deletedAt)
+      )
+    )
+    .limit(1);
+
+  let checklistId = existing?.id as string | undefined;
+  if (!checklistId) {
+    const [created] = await db
+      .insert(visitChecklists)
+      .values({
+        practiceId: opts.practiceId,
+        appointmentId: opts.appointmentId,
+        patientId: opts.patientId,
+        kind: "visit",
+        status: "open",
+      })
+      .returning({ id: visitChecklists.id });
+    checklistId = created!.id;
+  }
+
+  const defs = [
+    ...VISIT_PREP_BASE_ITEMS.map((item) => ({
+      ...item,
+      phase: "pre" as const,
+    })),
+    ...(opts.includeRabiesStatement
+      ? VISIT_PREP_RABIES_ITEMS.map((item) => ({
+          ...item,
+          phase: "pre" as const,
+        }))
+      : []),
+  ];
+  await ensureChecklistItems(db, checklistId!, defs);
+  return checklistId!;
 }
 
 /** Ensure a rabies checklist exists for an appointment; return its id. */
@@ -249,149 +347,168 @@ async function refreshChecklistStatus(
 }
 
 export const visitChecklistsRouter = createRouter({
-  listForDashboard: protectedProcedure
-    .input(
-      z
-        .object({
-          daysAhead: z.number().int().min(0).max(14).default(2),
-        })
-        .optional()
-    )
+  /** Prep / pack-list items nested under Upcoming Appointments. */
+  listPrepForAppointments: protectedProcedure
+    .input(z.object({ appointmentIds: z.array(z.string().uuid()).max(20) }))
     .query(async ({ ctx, input }) => {
-      const daysAhead = input?.daysAhead ?? 2;
-      const start = startOfLocalDay();
-      const end = addDays(start, daysAhead + 1);
+      if (input.appointmentIds.length === 0) return [];
 
       const appts = await ctx.db
         .select({
           id: appointments.id,
-          startTime: appointments.startTime,
-          status: appointments.status,
           rabiesPlanned: appointments.rabiesPlanned,
           patientId: appointments.patientId,
-          patientName: patients.name,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
+          isBlock: appointments.isBlock,
         })
         .from(appointments)
-        .leftJoin(patients, eq(appointments.patientId, patients.id))
-        .leftJoin(clients, eq(appointments.clientId, clients.id))
         .where(
           and(
             eq(appointments.practiceId, ctx.practiceId),
-            gte(appointments.startTime, start),
-            lte(appointments.startTime, end),
-            isNull(appointments.deletedAt),
-            notCancelled(appointments.status)
+            inArray(appointments.id, input.appointmentIds),
+            isNull(appointments.deletedAt)
           )
-        )
-        .orderBy(appointments.startTime);
+        );
 
+      const byId = new Map(appts.map((a) => [a.id, a]));
       const results: Array<{
-        checklistId: string;
         appointmentId: string;
-        patientId: string;
-        patientName: string;
-        clientName: string;
-        startTime: Date;
-        status: string;
-        preTotal: number;
-        preDone: number;
-        postTotal: number;
-        postDone: number;
+        checklistId: string;
         items: Array<{
           id: string;
-          phase: "pre" | "post";
           key: string;
           label: string;
           completedAt: Date | null;
-          autoCompletable: boolean;
         }>;
       }> = [];
 
-      for (const appt of appts) {
-        if (!appt.patientId) continue;
+      for (const appointmentId of input.appointmentIds) {
+        const appt = byId.get(appointmentId);
+        if (!appt?.patientId || appt.isBlock) continue;
 
-        let shouldHave = Boolean(appt.rabiesPlanned);
-        if (!shouldHave) {
+        let includeRabiesStatement = Boolean(appt.rabiesPlanned);
+        if (!includeRabiesStatement) {
           const vax = await loadPatientVaccinations(
             ctx.db,
             ctx.practiceId,
             appt.patientId
           );
-          shouldHave = patientNeedsRabies(vax);
+          includeRabiesStatement = patientNeedsRabies(vax);
         }
 
-        // Also keep if checklist already exists (e.g. after admin)
-        const [existing] = await ctx.db
-          .select({ id: visitChecklists.id })
-          .from(visitChecklists)
-          .where(
-            and(
-              eq(visitChecklists.appointmentId, appt.id),
-              eq(visitChecklists.kind, "rabies"),
-              isNull(visitChecklists.deletedAt)
-            )
-          )
-          .limit(1);
-
-        if (!shouldHave && !existing) continue;
-
-        const checklistId =
-          existing?.id ??
-          (await ensureRabiesChecklist(ctx.db, {
+        if (includeRabiesStatement) {
+          await ensureRabiesChecklist(ctx.db, {
             practiceId: ctx.practiceId,
             appointmentId: appt.id,
             patientId: appt.patientId,
-          }));
+          });
+        }
+
+        const checklistId = await ensureVisitPrepChecklist(ctx.db, {
+          practiceId: ctx.practiceId,
+          appointmentId: appt.id,
+          patientId: appt.patientId,
+          includeRabiesStatement,
+        });
 
         const items = await ctx.db
           .select({
             id: visitChecklistItems.id,
-            phase: visitChecklistItems.phase,
             key: visitChecklistItems.key,
             label: visitChecklistItems.label,
             completedAt: visitChecklistItems.completedAt,
-            autoCompletable: visitChecklistItems.autoCompletable,
             sortOrder: visitChecklistItems.sortOrder,
           })
           .from(visitChecklistItems)
           .where(
             and(
               eq(visitChecklistItems.checklistId, checklistId),
+              eq(visitChecklistItems.phase, "pre"),
               isNull(visitChecklistItems.deletedAt)
             )
           )
           .orderBy(visitChecklistItems.sortOrder);
 
-        const pre = items.filter((i) => i.phase === "pre");
-        const post = items.filter((i) => i.phase === "post");
         results.push({
-          checklistId,
           appointmentId: appt.id,
-          patientId: appt.patientId,
-          patientName: appt.patientName ?? "Patient",
-          clientName: [appt.clientFirstName, appt.clientLastName]
-            .filter(Boolean)
-            .join(" "),
-          startTime: appt.startTime,
-          status: appt.status,
-          preTotal: pre.length,
-          preDone: pre.filter((i) => i.completedAt).length,
-          postTotal: post.length,
-          postDone: post.filter((i) => i.completedAt).length,
+          checklistId,
           items: items.map((i) => ({
             id: i.id,
-            phase: i.phase as "pre" | "post",
             key: i.key,
             label: i.label,
             completedAt: i.completedAt,
-            autoCompletable: i.autoCompletable,
           })),
         });
       }
 
       return results;
+    }),
+
+  /** Open post-visit close-out items (feeds the Task List). */
+  listOpenPostItems: protectedProcedure
+    .input(
+      z
+        .object({
+          daysBack: z.number().int().min(0).max(60).default(14),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const daysBack = input?.daysBack ?? 14;
+      const start = addDays(startOfLocalDay(), -daysBack);
+      const end = addDays(startOfLocalDay(), 3);
+
+      const rows = await ctx.db
+        .select({
+          itemId: visitChecklistItems.id,
+          key: visitChecklistItems.key,
+          label: visitChecklistItems.label,
+          appointmentId: visitChecklists.appointmentId,
+          patientId: visitChecklists.patientId,
+          patientName: patients.name,
+          clientFirstName: clients.firstName,
+          clientLastName: clients.lastName,
+          startTime: appointments.startTime,
+          kind: visitChecklists.kind,
+        })
+        .from(visitChecklistItems)
+        .innerJoin(
+          visitChecklists,
+          eq(visitChecklistItems.checklistId, visitChecklists.id)
+        )
+        .innerJoin(
+          appointments,
+          eq(visitChecklists.appointmentId, appointments.id)
+        )
+        .leftJoin(patients, eq(visitChecklists.patientId, patients.id))
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .where(
+          and(
+            eq(visitChecklists.practiceId, ctx.practiceId),
+            eq(visitChecklistItems.phase, "post"),
+            isNull(visitChecklistItems.completedAt),
+            isNull(visitChecklistItems.deletedAt),
+            isNull(visitChecklists.deletedAt),
+            isNull(appointments.deletedAt),
+            gte(appointments.startTime, start),
+            lte(appointments.startTime, end),
+            notCancelled(appointments.status)
+          )
+        )
+        .orderBy(desc(appointments.startTime));
+
+      return rows.map((r) => ({
+        itemId: r.itemId,
+        key: r.key,
+        label: r.label,
+        appointmentId: r.appointmentId,
+        patientId: r.patientId,
+        patientName: r.patientName ?? "Patient",
+        clientName: [r.clientFirstName, r.clientLastName]
+          .filter(Boolean)
+          .join(" "),
+        startTime: r.startTime,
+        kind: r.kind as string,
+      }));
     }),
 
   getForAppointment: protectedProcedure
@@ -436,6 +553,8 @@ export const visitChecklistsRouter = createRouter({
         .select({
           id: visitChecklistItems.id,
           checklistId: visitChecklistItems.checklistId,
+          key: visitChecklistItems.key,
+          appointmentId: visitChecklists.appointmentId,
           practiceId: visitChecklists.practiceId,
         })
         .from(visitChecklistItems)
@@ -468,11 +587,52 @@ export const visitChecklistsRouter = createRouter({
         })
         .where(eq(visitChecklistItems.id, item.id));
 
+      // Keep visit prep + rabies sworn-statement gates in sync.
+      if (
+        item.key === "pre_rabies_client_statement" ||
+        item.key === "sworn_statement_ready"
+      ) {
+        const mirrorKey =
+          item.key === "pre_rabies_client_statement"
+            ? "sworn_statement_ready"
+            : "pre_rabies_client_statement";
+        const mirrorKind =
+          item.key === "pre_rabies_client_statement" ? "rabies" : "visit";
+        const [mirrorChecklist] = await ctx.db
+          .select({ id: visitChecklists.id })
+          .from(visitChecklists)
+          .where(
+            and(
+              eq(visitChecklists.appointmentId, item.appointmentId),
+              eq(visitChecklists.kind, mirrorKind),
+              isNull(visitChecklists.deletedAt)
+            )
+          )
+          .limit(1);
+        if (mirrorChecklist) {
+          await ctx.db
+            .update(visitChecklistItems)
+            .set({
+              completedAt: input.completed ? new Date() : null,
+              completedBy: input.completed ? ctx.user.id : null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(visitChecklistItems.checklistId, mirrorChecklist.id),
+                eq(visitChecklistItems.key, mirrorKey),
+                isNull(visitChecklistItems.deletedAt)
+              )
+            );
+          await refreshChecklistStatus(ctx.db, mirrorChecklist.id);
+        }
+      }
+
       await refreshChecklistStatus(ctx.db, item.checklistId);
       return { ok: true as const };
     }),
 
-  /** Soft gate helper: is sworn_statement_ready checked for today's appt? */
+  /** Soft gate helper: is pre-rabies client statement checked for today's appt? */
   swornStatementReadyForPatient: protectedProcedure
     .input(z.object({ patientId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
@@ -496,36 +656,32 @@ export const visitChecklistsRouter = createRouter({
 
       if (!appt) return { ready: true, hasChecklist: false };
 
-      const [checklist] = await ctx.db
-        .select({ id: visitChecklists.id })
-        .from(visitChecklists)
-        .where(
-          and(
-            eq(visitChecklists.appointmentId, appt.id),
-            eq(visitChecklists.kind, "rabies"),
-            isNull(visitChecklists.deletedAt)
-          )
-        )
-        .limit(1);
-
-      if (!checklist) return { ready: true, hasChecklist: false };
-
       const [item] = await ctx.db
         .select({
           completedAt: visitChecklistItems.completedAt,
         })
         .from(visitChecklistItems)
+        .innerJoin(
+          visitChecklists,
+          eq(visitChecklistItems.checklistId, visitChecklists.id)
+        )
         .where(
           and(
-            eq(visitChecklistItems.checklistId, checklist.id),
-            eq(visitChecklistItems.key, "sworn_statement_ready"),
-            isNull(visitChecklistItems.deletedAt)
+            eq(visitChecklists.appointmentId, appt.id),
+            isNull(visitChecklists.deletedAt),
+            isNull(visitChecklistItems.deletedAt),
+            inArray(visitChecklistItems.key, [
+              "pre_rabies_client_statement",
+              "sworn_statement_ready",
+            ])
           )
         )
         .limit(1);
 
+      if (!item) return { ready: true, hasChecklist: false };
+
       return {
-        ready: Boolean(item?.completedAt),
+        ready: Boolean(item.completedAt),
         hasChecklist: true,
       };
     }),

@@ -108,7 +108,8 @@ export function PatientClinicalAdd({
         toast.success("Vaccination recorded — rabies certificate filed");
         window.open(result.certificateUrl, "_blank");
       }
-      void utils.visitChecklists.listForDashboard.invalidate();
+      void utils.visitChecklists.listOpenPostItems.invalidate();
+      void utils.dashboard.listTasks.invalidate();
       void utils.records.listPatientDocuments.invalidate({ patientId });
     },
     onError: (e) => toast.error(e.message),

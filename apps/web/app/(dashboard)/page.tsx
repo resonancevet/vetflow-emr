@@ -21,7 +21,8 @@ import {
   DeclineAppointmentRequestModal,
 } from "@/components/dashboard/appointment-request-modals";
 import { useCallbackPanel } from "@/components/dashboard/callback-panel-context";
-import { VisitChecklistsCard } from "@/components/dashboard/visit-checklists-card";
+import { TaskListCard } from "@/components/dashboard/task-list-card";
+import { AppointmentPrepChecklist } from "@/components/dashboard/appointment-prep-checklist";
 import { formatPhoneDisplay } from "@/lib/phone-format";
 
 function formatTime(date: Date | string) {
@@ -216,6 +217,37 @@ export default function DashboardPage() {
     })
     .slice(0, 5);
 
+  const prepAppointmentIds = upcomingAppointments
+    .filter((a) => !a.isBlock && a.patientId)
+    .map((a) => a.id);
+
+  const prepLists = trpc.visitChecklists.listPrepForAppointments.useQuery(
+    { appointmentIds: prepAppointmentIds },
+    { enabled: prepAppointmentIds.length > 0 }
+  );
+
+  const prepByAppointment = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        checklistId: string;
+        items: Array<{
+          id: string;
+          key: string;
+          label: string;
+          completedAt: Date | string | null;
+        }>;
+      }
+    >();
+    for (const row of prepLists.data ?? []) {
+      map.set(row.appointmentId, {
+        checklistId: row.checklistId,
+        items: row.items,
+      });
+    }
+    return map;
+  }, [prepLists.data]);
+
   const pendingRequests = requests.data ?? [];
 
   return (
@@ -407,13 +439,15 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <VisitChecklistsCard />
-
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-heading text-lg font-semibold">
             Upcoming Appointments
           </h2>
+          <p className="text-xs text-muted-foreground">
+            Prep tasks and pack list under each visit — supplies and equipment
+            will expand here over time
+          </p>
         </div>
         <div className="space-y-2 p-4">
           {upcoming.isLoading ? (
@@ -425,94 +459,111 @@ export default function DashboardPage() {
               No upcoming appointments scheduled.
             </p>
           ) : (
-            upcomingAppointments.map((appt) => (
-              <div
-                key={appt.id}
-                className="flex items-center gap-4 rounded-md border border-border px-4 py-3"
-              >
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
-                  <Clock className="h-3.5 w-3.5" />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(
-                        `/schedule?date=${toScheduleDateParam(appt.startTime)}&appointment=${appt.id}`
-                      )
-                    }
-                    className="hover:underline focus-visible:underline focus-visible:outline-none"
-                  >
-                    {formatAppointmentWhen(appt.startTime, focusDay)}
-                  </button>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {appt.isBlock ? (
-                      <span>
-                        {appt.title?.trim() || "Schedule block"}
-                        <span className="ml-1 font-normal text-muted-foreground">
-                          (block)
-                        </span>
-                      </span>
-                    ) : appt.patientId ? (
+            upcomingAppointments.map((appt) => {
+              const prep = prepByAppointment.get(appt.id);
+              const clientName = [appt.clientFirstName, appt.clientLastName]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <div
+                  key={appt.id}
+                  className="rounded-md border border-border px-4 py-3"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
                       <button
                         type="button"
-                        onClick={() => router.push(`/patients/${appt.patientId}`)}
+                        onClick={() =>
+                          router.push(
+                            `/schedule?date=${toScheduleDateParam(appt.startTime)}&appointment=${appt.id}`
+                          )
+                        }
                         className="hover:underline focus-visible:underline focus-visible:outline-none"
                       >
-                        {appt.patientName ?? "Unknown Patient"}
+                        {formatAppointmentWhen(appt.startTime, focusDay)}
                       </button>
-                    ) : (
-                      (appt.patientName ?? "Unknown Patient")
-                    )}
-                    {!appt.isBlock &&
-                      (appt.clientFirstName || appt.clientLastName) && (
-                      <span className="ml-1 font-normal text-muted-foreground">
-                        (
-                        {appt.clientId ? (
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {appt.isBlock ? (
+                          <span>
+                            {appt.title?.trim() || "Schedule block"}
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              (block)
+                            </span>
+                          </span>
+                        ) : appt.patientId ? (
                           <button
                             type="button"
                             onClick={() =>
-                              router.push(`/clients/${appt.clientId}`)
+                              router.push(`/patients/${appt.patientId}`)
                             }
                             className="hover:underline focus-visible:underline focus-visible:outline-none"
                           >
-                            {appt.clientFirstName} {appt.clientLastName}
+                            {appt.patientName ?? "Unknown Patient"}
                           </button>
                         ) : (
-                          <>
-                            {appt.clientFirstName} {appt.clientLastName}
-                          </>
+                          (appt.patientName ?? "Unknown Patient")
                         )}
-                        )
-                      </span>
-                    )}
-                  </p>
-                  {appt.typeName && (
-                    <p className="text-xs text-muted-foreground">
-                      {appt.typeName}
-                      {appt.doctorName ? ` with ${appt.doctorName}` : ""}
-                    </p>
+                        {!appt.isBlock && clientName && (
+                          <span className="ml-1 font-normal text-muted-foreground">
+                            (
+                            {appt.clientId ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  router.push(`/clients/${appt.clientId}`)
+                                }
+                                className="hover:underline focus-visible:underline focus-visible:outline-none"
+                              >
+                                {clientName}
+                              </button>
+                            ) : (
+                              clientName
+                            )}
+                            )
+                          </span>
+                        )}
+                      </p>
+                      {appt.typeName && (
+                        <p className="text-xs text-muted-foreground">
+                          {appt.typeName}
+                          {appt.doctorName ? ` with ${appt.doctorName}` : ""}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                        appt.status === "confirmed"
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          : appt.status === "checked_in"
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                            : appt.status === "in_exam"
+                              ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                              : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {appt.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  {!appt.isBlock && prep && (
+                    <AppointmentPrepChecklist
+                      appointmentId={appt.id}
+                      patientName={appt.patientName ?? "Patient"}
+                      clientName={clientName}
+                      items={prep.items}
+                    />
                   )}
                 </div>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                    appt.status === "confirmed"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : appt.status === "checked_in"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                        : appt.status === "in_exam"
-                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                          : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {appt.status.replace("_", " ")}
-                </span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
+
+      <TaskListCard />
 
       <ApproveAppointmentRequestModal
         request={approveTarget}

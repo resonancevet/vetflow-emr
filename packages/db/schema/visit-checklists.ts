@@ -18,6 +18,7 @@ import { users } from "./users";
 
 export const visitChecklistKindEnum = pgEnum("visit_checklist_kind", [
   "rabies",
+  "visit",
 ]);
 
 export const visitChecklistPhaseEnum = pgEnum("visit_checklist_phase", [
@@ -30,7 +31,7 @@ export const visitChecklistStatusEnum = pgEnum("visit_checklist_status", [
   "complete",
 ]);
 
-/** Pre/post visit checklist tied to an appointment (rabies for v1). */
+/** Pre/post visit checklist tied to an appointment (visit prep + rabies). */
 export const visitChecklists = pgTable(
   "visit_checklists",
   {

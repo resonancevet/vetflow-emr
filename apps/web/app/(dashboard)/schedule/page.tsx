@@ -1098,8 +1098,8 @@ function BookingForm({
                 <span>Rabies planned for this visit</span>
               </label>
               <p className="-mt-2 text-xs text-muted-foreground">
-                Adds a pre/post-visit rabies checklist on the dashboard for packing
-                and close-out.
+                Adds Pre-Rabies Client Statement to this visit&apos;s dashboard prep
+                list, plus close-out tasks on the Task List.
               </p>
             </>
           )}
