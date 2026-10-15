@@ -204,6 +204,13 @@
       "when": 1790100000000,
       "tag": "0028_invoice_item_discount",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790300000000,
+      "tag": "0029_appointment_schedule_blocks",
+      "breakpoints": true
     }
   ]
 }

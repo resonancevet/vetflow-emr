@@ -8,6 +8,7 @@ import {
   integer,
   date,
   time,
+  boolean,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -89,6 +90,10 @@ export const appointments = pgTable(
     roomId: uuid("room_id").references(() => rooms.id),
     status: appointmentStatusEnum("status").notNull().default("scheduled"),
     notes: text("notes"),
+    /** True for non-patient calendar holds (travel, admin, lunch, etc.). */
+    isBlock: boolean("is_block").notNull().default(false),
+    /** Display title for schedule blocks (and optional label later). */
+    title: varchar("title", { length: 255 }),
     recurringSeriesId: uuid("recurring_series_id").references(
       () => recurringSeries.id
     ),
