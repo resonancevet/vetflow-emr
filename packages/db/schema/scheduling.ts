@@ -92,6 +92,10 @@ export const appointments = pgTable(
     notes: text("notes"),
     /** Staff marks that rabies vaccination is planned for this visit. */
     rabiesPlanned: boolean("rabies_planned").notNull().default(false),
+    /** True for non-patient calendar holds (travel, admin, lunch, etc.). */
+    isBlock: boolean("is_block").notNull().default(false),
+    /** Display title for schedule blocks (and optional label later). */
+    title: varchar("title", { length: 255 }),
     recurringSeriesId: uuid("recurring_series_id").references(
       () => recurringSeries.id
     ),

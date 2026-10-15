@@ -181,6 +181,8 @@ type Appointment = {
   status: string;
   notes: string | null;
   rabiesPlanned?: boolean;
+  isBlock?: boolean;
+  title?: string | null;
   patientName: string | null;
   patientSpecies: string | null;
   patientId: string | null;
@@ -194,6 +196,13 @@ type Appointment = {
   typeDuration: number | null;
   roomName: string | null;
 };
+
+function appointmentLabel(appointment: Appointment): string {
+  if (appointment.isBlock) {
+    return appointment.title?.trim() || "Schedule block";
+  }
+  return appointment.patientName || "Unknown Patient";
+}
 
 // --- Components ---
 
@@ -330,8 +339,9 @@ function AppointmentBlock({
       <div className="flex items-center gap-1.5 font-medium text-foreground truncate">
         <StatusDot status={appointment.status} />
         <span className="truncate">
-          {appointment.patientName || "Unknown Patient"}
-          {(appointment.clientFirstName || appointment.clientLastName) && (
+          {appointmentLabel(appointment)}
+          {!appointment.isBlock &&
+            (appointment.clientFirstName || appointment.clientLastName) && (
             <span className="ml-1 italic font-normal text-muted-foreground">
               {[appointment.clientFirstName, appointment.clientLastName]
                 .filter(Boolean)
@@ -342,8 +352,10 @@ function AppointmentBlock({
       </div>
       {showDetails && (
         <div className="text-muted-foreground truncate">
-          {appointment.typeName || "Appointment"} &middot;{" "}
-          {formatTime(start)} - {formatTime(end)}
+          {appointment.isBlock
+            ? "Schedule block"
+            : appointment.typeName || "Appointment"}{" "}
+          &middot; {formatTime(start)} - {formatTime(end)}
         </div>
       )}
     </button>
@@ -432,7 +444,11 @@ function AppointmentDetailPopover({
         {/* Body */}
         <div className="px-4 py-3 space-y-3">
           <div>
-            {appointment.patientId ? (
+            {appointment.isBlock ? (
+              <h3 className="font-semibold text-base">
+                {appointmentLabel(appointment)}
+              </h3>
+            ) : appointment.patientId ? (
               <button
                 type="button"
                 onClick={() => {
@@ -441,23 +457,27 @@ function AppointmentDetailPopover({
                 }}
                 className="text-left font-semibold text-base text-primary hover:underline"
               >
-                {appointment.patientName || "Unknown Patient"}
+                {appointmentLabel(appointment)}
               </button>
             ) : (
               <h3 className="font-semibold text-base">
-                {appointment.patientName || "Unknown Patient"}
+                {appointmentLabel(appointment)}
               </h3>
             )}
-            {appointment.patientSpecies && (
+            {appointment.isBlock ? (
+              <p className="text-xs text-muted-foreground">Schedule block</p>
+            ) : appointment.patientSpecies ? (
               <p className="text-xs text-muted-foreground">{appointment.patientSpecies}</p>
-            )}
+            ) : null}
           </div>
 
           <div className="space-y-2 text-sm">
+            {!appointment.isBlock && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <User className="h-3.5 w-3.5" />
               <span>Client: {clientName}</span>
             </div>
+            )}
             <div className="flex items-center gap-2 text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
               <span>
@@ -656,6 +676,12 @@ function BookingForm({
   const [rabiesPlanned, setRabiesPlanned] = useState(
     Boolean(editingAppointment?.rabiesPlanned)
   );
+  const [isBlock, setIsBlock] = useState(
+    Boolean(editingAppointment?.isBlock)
+  );
+  const [blockTitle, setBlockTitle] = useState(
+    editingAppointment?.isBlock ? editingAppointment.title ?? "" : ""
+  );
 
   const timeSlots = useMemo(
     () => generateTimeSlots(startHour, endHour),
@@ -737,7 +763,7 @@ function BookingForm({
 
   const createAppointment = trpc.appointments.create.useMutation({
     onSuccess: () => {
-      toast.success("Appointment created");
+      toast.success(isBlock ? "Schedule block created" : "Appointment created");
       utils.appointments.list.invalidate();
       onClose();
     },
@@ -748,7 +774,7 @@ function BookingForm({
 
   const updateAppointment = trpc.appointments.update.useMutation({
     onSuccess: () => {
-      toast.success("Appointment updated");
+      toast.success(isBlock ? "Schedule block updated" : "Appointment updated");
       utils.appointments.list.invalidate();
       onClose();
     },
@@ -792,6 +818,11 @@ function BookingForm({
     const startDt = new Date(`${date}T${startTime}:00`);
     const endDt = new Date(startDt.getTime() + duration * 60 * 1000);
 
+    if (isBlock && !blockTitle.trim()) {
+      toast.error("Enter a block title");
+      return;
+    }
+
     if (isEditing && editingAppointment) {
       updateAppointment.mutate({
         id: editingAppointment.id,
@@ -801,7 +832,10 @@ function BookingForm({
         doctorId: doctorId || null,
         roomId: roomId || null,
         notes: notes || null,
-        rabiesPlanned,
+        rabiesPlanned: isBlock ? false : rabiesPlanned,
+        isBlock,
+        title: isBlock ? blockTitle.trim() : null,
+        patientId: isBlock ? null : selectedPatient?.id ?? null,
       });
       return;
     }
@@ -809,12 +843,14 @@ function BookingForm({
     createAppointment.mutate({
       startTime: startDt.toISOString(),
       endTime: endDt.toISOString(),
-      patientId: selectedPatient?.id,
+      patientId: isBlock ? undefined : selectedPatient?.id,
       typeId: typeId || undefined,
       doctorId: doctorId || undefined,
       roomId: roomId || undefined,
       notes: notes || undefined,
-      rabiesPlanned,
+      rabiesPlanned: isBlock ? false : rabiesPlanned,
+      isBlock,
+      title: isBlock ? blockTitle.trim() : undefined,
     });
   };
 
@@ -846,10 +882,39 @@ function BookingForm({
 
         {/* Body */}
         <div className="px-4 py-3 space-y-4">
-          {/* Patient search */}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={isBlock}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setIsBlock(next);
+                if (next) {
+                  setSelectedPatient(null);
+                  setPatientSearch("");
+                  setShowPatientDropdown(false);
+                  setRabiesPlanned(false);
+                } else {
+                  setBlockTitle("");
+                }
+              }}
+            />
+            <span>Schedule block</span>
+          </label>
+
+          {/* Patient search or block title */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Patient</label>
-            {selectedPatient ? (
+            <label className="text-xs font-medium text-muted-foreground">
+              {isBlock ? "Block title" : "Patient"}
+            </label>
+            {isBlock ? (
+              <Input
+                className="mt-1 h-9 text-sm"
+                value={blockTitle}
+                onChange={(e) => setBlockTitle(e.target.value)}
+                placeholder="e.g. Travel time, Admin, Lunch"
+              />
+            ) : selectedPatient ? (
               <div className="mt-1 flex items-center gap-2 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
                 <span className="flex-1">
                   {selectedPatient.name}
@@ -908,7 +973,7 @@ function BookingForm({
                 )}
               </div>
             )}
-            {clientName && (
+            {!isBlock && clientName && (
               <p className="mt-1 text-xs text-muted-foreground">Client: {clientName}</p>
             )}
           </div>
@@ -1022,18 +1087,22 @@ function BookingForm({
             />
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={rabiesPlanned}
-              onChange={(e) => setRabiesPlanned(e.target.checked)}
-            />
-            <span>Rabies planned for this visit</span>
-          </label>
-          <p className="-mt-2 text-xs text-muted-foreground">
-            Adds a pre/post-visit rabies checklist on the dashboard for packing
-            and close-out.
-          </p>
+          {!isBlock && (
+            <>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={rabiesPlanned}
+                  onChange={(e) => setRabiesPlanned(e.target.checked)}
+                />
+                <span>Rabies planned for this visit</span>
+              </label>
+              <p className="-mt-2 text-xs text-muted-foreground">
+                Adds a pre/post-visit rabies checklist on the dashboard for packing
+                and close-out.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Footer */}

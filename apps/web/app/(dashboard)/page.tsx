@@ -446,7 +446,14 @@ export default function DashboardPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
-                    {appt.patientId ? (
+                    {appt.isBlock ? (
+                      <span>
+                        {appt.title?.trim() || "Schedule block"}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          (block)
+                        </span>
+                      </span>
+                    ) : appt.patientId ? (
                       <button
                         type="button"
                         onClick={() => router.push(`/patients/${appt.patientId}`)}
@@ -457,7 +464,8 @@ export default function DashboardPage() {
                     ) : (
                       (appt.patientName ?? "Unknown Patient")
                     )}
-                    {(appt.clientFirstName || appt.clientLastName) && (
+                    {!appt.isBlock &&
+                      (appt.clientFirstName || appt.clientLastName) && (
                       <span className="ml-1 font-normal text-muted-foreground">
                         (
                         {appt.clientId ? (

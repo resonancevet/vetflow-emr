@@ -42,6 +42,8 @@ export const appointmentsRouter = createRouter({
           status: appointments.status,
           notes: appointments.notes,
           rabiesPlanned: appointments.rabiesPlanned,
+          isBlock: appointments.isBlock,
+          title: appointments.title,
           patientName: patients.name,
           patientSpecies: patients.species,
           patientId: appointments.patientId,
@@ -75,6 +77,9 @@ export const appointmentsRouter = createRouter({
           endTime: appointments.endTime,
           status: appointments.status,
           notes: appointments.notes,
+          rabiesPlanned: appointments.rabiesPlanned,
+          isBlock: appointments.isBlock,
+          title: appointments.title,
           patientName: patients.name,
           patientId: appointments.patientId,
           clientFirstName: clients.firstName,
@@ -117,9 +122,21 @@ export const appointmentsRouter = createRouter({
         roomId: z.string().uuid().optional(),
         notes: z.string().optional(),
         rabiesPlanned: z.boolean().optional(),
+        isBlock: z.boolean().optional(),
+        title: z.string().max(255).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const isBlock = Boolean(input.isBlock);
+      const title = input.title?.trim() || null;
+
+      if (isBlock && !title) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Block title is required for a schedule block",
+        });
+      }
+
       // Check for conflicts with existing appointments for the same doctor
       if (input.doctorId) {
         const startTime = new Date(input.startTime);
@@ -153,14 +170,15 @@ export const appointmentsRouter = createRouter({
 
       // Backfill clientId from the patient when the caller didn't supply one,
       // so the schedule view can always show the owner alongside the patient.
-      let clientId = input.clientId;
-      if (!clientId && input.patientId) {
+      let clientId = isBlock ? undefined : input.clientId;
+      let patientId = isBlock ? undefined : input.patientId;
+      if (!isBlock && !clientId && patientId) {
         const [pat] = await ctx.db
           .select({ clientId: patients.clientId })
           .from(patients)
           .where(
             and(
-              eq(patients.id, input.patientId),
+              eq(patients.id, patientId),
               eq(patients.practiceId, ctx.practiceId)
             )
           )
@@ -171,10 +189,17 @@ export const appointmentsRouter = createRouter({
       const [appt] = await ctx.db
         .insert(appointments)
         .values({
-          ...input,
-          clientId,
           startTime: new Date(input.startTime),
           endTime: new Date(input.endTime),
+          typeId: input.typeId,
+          doctorId: input.doctorId,
+          roomId: input.roomId,
+          notes: input.notes,
+          patientId: patientId ?? null,
+          clientId: clientId ?? null,
+          isBlock,
+          title: isBlock ? title : null,
+          rabiesPlanned: isBlock ? false : Boolean(input.rabiesPlanned),
           practiceId: ctx.practiceId,
         })
         .returning();
@@ -193,10 +218,23 @@ export const appointmentsRouter = createRouter({
         roomId: z.string().uuid().nullable().optional(),
         notes: z.string().nullable().optional(),
         rabiesPlanned: z.boolean().optional(),
+        patientId: z.string().uuid().nullable().optional(),
+        isBlock: z.boolean().optional(),
+        title: z.string().max(255).nullable().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
+
+      if (rest.isBlock && rest.title !== undefined) {
+        const title = rest.title?.trim() || "";
+        if (!title) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Block title is required for a schedule block",
+          });
+        }
+      }
 
       // If time/doctor changed, re-check conflicts
       const newStart = rest.startTime ? new Date(rest.startTime) : undefined;
@@ -235,6 +273,59 @@ export const appointmentsRouter = createRouter({
       if (rest.doctorId !== undefined) updateValues.doctorId = rest.doctorId;
       if (rest.roomId !== undefined) updateValues.roomId = rest.roomId;
       if (rest.notes !== undefined) updateValues.notes = rest.notes;
+      if (rest.rabiesPlanned !== undefined) {
+        updateValues.rabiesPlanned = rest.rabiesPlanned;
+      }
+      if (rest.isBlock !== undefined) updateValues.isBlock = rest.isBlock;
+      if (rest.title !== undefined) {
+        updateValues.title = rest.title?.trim() || null;
+      }
+
+      if (rest.isBlock === true) {
+        updateValues.patientId = null;
+        updateValues.clientId = null;
+        updateValues.rabiesPlanned = false;
+        if (rest.title !== undefined) {
+          updateValues.title = rest.title?.trim() || null;
+        }
+      } else if (rest.isBlock === false) {
+        updateValues.title = null;
+        if (rest.patientId !== undefined) {
+          updateValues.patientId = rest.patientId;
+          if (rest.patientId) {
+            const [pat] = await ctx.db
+              .select({ clientId: patients.clientId })
+              .from(patients)
+              .where(
+                and(
+                  eq(patients.id, rest.patientId),
+                  eq(patients.practiceId, ctx.practiceId)
+                )
+              )
+              .limit(1);
+            updateValues.clientId = pat?.clientId ?? null;
+          } else {
+            updateValues.clientId = null;
+          }
+        }
+      } else if (rest.patientId !== undefined) {
+        updateValues.patientId = rest.patientId;
+        if (rest.patientId) {
+          const [pat] = await ctx.db
+            .select({ clientId: patients.clientId })
+            .from(patients)
+            .where(
+              and(
+                eq(patients.id, rest.patientId),
+                eq(patients.practiceId, ctx.practiceId)
+              )
+            )
+            .limit(1);
+          updateValues.clientId = pat?.clientId ?? null;
+        } else {
+          updateValues.clientId = null;
+        }
+      }
 
       const [appt] = await ctx.db
         .update(appointments)
