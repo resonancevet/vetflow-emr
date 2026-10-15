@@ -123,12 +123,18 @@ export const vaccinationRecords = pgTable("vaccination_records", {
   /** Rabies tag / certificate tag number. */
   tagNumber: varchar("tag_number", { length: 64 }),
   manufacturer: varchar("manufacturer", { length: 128 }),
+  /** Vaccine product lot expiration (shown on rabies certificate). */
+  lotExpiration: date("lot_expiration"),
+  /** Administration site, e.g. RH / LH / SQ. */
+  administrationSite: varchar("administration_site", { length: 64 }),
   administeredBy: uuid("administered_by").references(() => users.id),
   administeredAt: timestamp("administered_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
   nextDueDate: date("next_due_date"),
   certificateUrl: varchar("certificate_url", { length: 512 }),
+  /** Filed rabies certificate PDF in files. */
+  certificateFileId: uuid("certificate_file_id"),
   notes: text("notes"),
   kitId: uuid("kit_id").references(() => inventoryKits.id),
 });

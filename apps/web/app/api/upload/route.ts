@@ -18,6 +18,8 @@ const ALLOWED_CATEGORIES = [
   "surgical-report",
   "anesthesia-monitor",
   "discharge-pdf",
+  "rabies-certificate",
+  "rabies-sworn-statement",
 ] as const;
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {

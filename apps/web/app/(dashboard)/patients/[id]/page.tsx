@@ -1059,6 +1059,17 @@ function VaccinationsTab({
                         </>
                       ) : (
                         <>
+                          {vax.certificateUrl ? (
+                            <Button variant="ghost" size="sm" asChild>
+                              <a
+                                href={vax.certificateUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Certificate
+                              </a>
+                            </Button>
+                          ) : null}
                           <Button
                             variant="ghost"
                             size="sm"

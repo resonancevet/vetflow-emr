@@ -16,6 +16,8 @@ const TABLES = [
   "webhooks",
   "api_keys",
   "treatment_template_items",
+  "visit_checklist_items",
+  "visit_checklists",
   "treatment_templates",
   "inventory_kit_items",
   "inventory_kits",
