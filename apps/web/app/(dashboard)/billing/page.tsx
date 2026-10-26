@@ -165,7 +165,7 @@ export default function BillingPage() {
     e.stopPropagation();
     if (
       !window.confirm(
-        "Delete this invoice? It will be removed from the list and cannot be undone."
+        "Delete this draft invoice? It will be removed from the list and cannot be undone."
       )
     ) {
       return;
@@ -570,36 +570,14 @@ function InvoiceRow({
                 </>
               )}
             {!invoice.isEstimate && invoice.status === "paid" && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={isMutating}
-                  onClick={(e) => onVoid(e, invoice.id)}
-                  title="Void invoice"
-                >
-                  <Ban className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={isMutating}
-                  onClick={(e) => onDeleteDraft(e, invoice.id)}
-                  title="Delete invoice"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              </>
-            )}
-            {!invoice.isEstimate && invoice.status === "void" && (
               <Button
                 variant="ghost"
                 size="sm"
                 disabled={isMutating}
-                onClick={(e) => onDeleteDraft(e, invoice.id)}
-                title="Delete invoice"
+                onClick={(e) => onVoid(e, invoice.id)}
+                title="Void invoice"
               >
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                <Ban className="h-3.5 w-3.5" />
               </Button>
             )}
           </div>

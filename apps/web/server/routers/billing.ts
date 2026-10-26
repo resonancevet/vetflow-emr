@@ -461,7 +461,7 @@ export const billingRouter = createRouter({
       return invoice!;
     }),
 
-  /** Soft-delete draft, paid, or void invoices. Finalized/sent/overdue must be voided first. */
+  /** Soft-delete draft invoices only. Finalized/sent/paid/void invoices are kept for records. */
   deleteDraftInvoice: protectedProcedure
     .use(requireRole("admin", "front_desk"))
     .input(z.object({ id: z.string().uuid() }))
@@ -488,12 +488,11 @@ export const billingRouter = createRouter({
           message: "Invoice not found",
         });
       }
-      const deletable = ["draft", "paid", "void"];
-      if (!deletable.includes(existing.status)) {
+      if (existing.status !== "draft") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
-            "Void the invoice first, then delete it. Only draft, paid, or void invoices can be deleted.",
+            "Only draft invoices can be deleted. Void finalized or emailed invoices instead.",
         });
       }
 
