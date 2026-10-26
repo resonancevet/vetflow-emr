@@ -24,13 +24,29 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Server-side font paths. Prefer `assets/fonts` (bundled via outputFileTracingIncludes
+ * on Vercel). `public/fonts` works locally and for client fetch, but is not on the
+ * serverless filesystem by default.
+ */
 async function loadFontBase64(fileName: string): Promise<string> {
   if (typeof window === "undefined") {
     const { readFile } = await import("fs/promises");
     const { join } = await import("path");
+    const { fileURLToPath } = await import("url");
+
+    const moduleDir = fileURLToPath(new URL(".", import.meta.url));
+    const cwd = process.cwd();
     const candidates = [
-      join(process.cwd(), "apps/web/public/fonts", fileName),
-      join(process.cwd(), "public/fonts", fileName),
+      // Next/Vercel: traced from apps/web/assets/fonts → available under cwd
+      join(cwd, "assets/fonts", fileName),
+      join(cwd, "public/fonts", fileName),
+      // Monorepo local (cwd = repo root)
+      join(cwd, "apps/web/assets/fonts", fileName),
+      join(cwd, "apps/web/public/fonts", fileName),
+      // Relative to this module (dev / some bundlers)
+      join(moduleDir, "../assets/fonts", fileName),
+      join(moduleDir, "../public/fonts", fileName),
     ];
     let lastErr: unknown;
     for (const path of candidates) {

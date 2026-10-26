@@ -7,6 +7,14 @@ const nextConfig = {
   // the standalone build's pnpm-monorepo chunk-tracing edge cases.
   output: process.env.NEXT_OUTPUT_STANDALONE === "1" ? "standalone" : undefined,
   transpilePackages: ["@openpims/api", "@openpims/db"],
+  // Invoice PDF email reads Montserrat via fs on the server. Include fonts in
+  // the Vercel/serverless trace — `public/` is not available under /var/task.
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/trpc/[trpc]": ["./assets/fonts/**/*"],
+      "/*": ["./assets/fonts/**/*"],
+    },
+  },
   // Intuit App Store: disable caching on app/API responses that may contain
   // sensitive data. Static hashed assets under _next/static stay cacheable.
   async headers() {
