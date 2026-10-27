@@ -36,6 +36,16 @@ export default function SellPackagePage() {
     "percent"
   );
   const [discountValue, setDiscountValue] = useState("");
+  const [markFirstPaid, setMarkFirstPaid] = useState(false);
+  const [firstPaymentMethod, setFirstPaymentMethod] = useState<
+    | "cash"
+    | "credit_card"
+    | "debit_card"
+    | "check"
+    | "online"
+    | "venmo"
+    | "other"
+  >("other");
 
   const clientResults = trpc.clients.search.useQuery(
     { query: clientSearch },
@@ -53,7 +63,14 @@ export default function SellPackagePage() {
 
   const sell = trpc.servicePackages.sellPackage.useMutation({
     onSuccess: (result) => {
-      toast.success("Client enrolled — first draft invoice created");
+      const parts = [
+        `Enrolled — ${result.installmentCount} invoice${result.installmentCount === 1 ? "" : "s"} finalized`,
+      ];
+      if (result.markFirstPaid) parts.push("first marked paid");
+      if (result.emailed > 0) {
+        parts.push(`${result.emailed} emailed`);
+      }
+      toast.success(parts.join("; "));
       router.push(`/billing?highlight=${result.firstInvoiceId}`);
     },
     onError: (err) => toast.error(err.message),
@@ -125,6 +142,8 @@ export default function SellPackagePage() {
       startDate,
       notes: notes.trim() || undefined,
       promptPaymentDiscount,
+      markFirstPaid: markFirstPaid || undefined,
+      firstPaymentMethod: markFirstPaid ? firstPaymentMethod : undefined,
     });
   }
 
@@ -140,8 +159,8 @@ export default function SellPackagePage() {
         <div>
           <h1 className="text-xl font-semibold">Enroll in payment plan</h1>
           <p className="text-sm text-muted-foreground">
-            Creates the enrollment and the first draft invoice. Remaining
-            monthly invoices are generated automatically on their due dates.
+            Creates and finalizes all installment invoices. Each is emailed
+            automatically on its invoice date (14 days before payment due).
           </p>
         </div>
       </div>
@@ -266,13 +285,60 @@ export default function SellPackagePage() {
           )}
 
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium">Start date</span>
+            <span className="text-sm font-medium">Start date (first payment due)</span>
             <Input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Invoice dates are 14 days before each due date; invoices email
+              automatically on those dates.
+            </p>
           </label>
+
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={markFirstPaid}
+                onChange={(e) => setMarkFirstPaid(e.target.checked)}
+              />
+              <span>
+                {billingMode === "pay_in_full"
+                  ? "Mark invoice as paid"
+                  : "Mark first invoice as paid"}
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Records payment now. The paid invoice is still emailed to the
+                  client (on its invoice date, or today if that date has
+                  passed).
+                </span>
+              </span>
+            </label>
+            {markFirstPaid && (
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">Payment method</span>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={firstPaymentMethod}
+                  onChange={(e) =>
+                    setFirstPaymentMethod(
+                      e.target.value as typeof firstPaymentMethod
+                    )
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="credit_card">Credit card</option>
+                  <option value="debit_card">Debit card</option>
+                  <option value="check">Check</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="online">Online</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             <span className="text-sm font-medium">Client *</span>

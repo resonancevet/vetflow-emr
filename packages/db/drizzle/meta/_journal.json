@@ -225,6 +225,13 @@
       "when": 1790400000000,
       "tag": "0031_visit_prep_checklist_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0032_invoice_date_sent_at",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
   servicePackageInstallments,
   invoices,
   invoiceItems,
+  payments,
   practices,
   clients,
   patients,
@@ -16,11 +17,14 @@ import {
 import { calcTax, getEffectiveTaxRatePercent } from "@/lib/tax";
 import {
   addMonthsToDateString,
+  invoiceDateFromDueDate,
   splitInstallmentAmounts,
   todayDateStringLocal,
 } from "@/lib/service-packages";
 import { queueInvoiceSync } from "@/lib/quickbooks-sync";
 import { computePromptPaymentDiscount } from "@/lib/prompt-payment-discount";
+import { ensureInvoiceNumber } from "@/server/lib/display-ids";
+import { deliverInvoiceEmail } from "@/server/lib/deliver-invoice-email";
 
 const packageItemInput = z.object({
   description: z.string().min(1).max(500),
@@ -45,6 +49,8 @@ async function createInvoiceForInstallment(
     listAmount?: string;
     discount?: { amount: number; description: string } | null;
     dueDate: string;
+    /** Scheduled invoice/email date (defaults to dueDate − 14). */
+    invoiceDate?: string;
     taxable: boolean;
     taxRatePercent: number;
   }
@@ -54,6 +60,8 @@ async function createInvoiceForInstallment(
   const subtotal = Math.round((listAmount - discountAmount) * 100) / 100;
   const tax = opts.taxable ? calcTax(subtotal, opts.taxRatePercent) : 0;
   const total = Math.round((subtotal + tax) * 100) / 100;
+  const invoiceDate =
+    opts.invoiceDate ?? invoiceDateFromDueDate(opts.dueDate);
 
   const description = (
     opts.billingMode === "pay_in_full"
@@ -74,6 +82,7 @@ async function createInvoiceForInstallment(
       total: total.toFixed(2),
       paidAmount: "0.00",
       dueDate: opts.dueDate,
+      invoiceDate,
       isEstimate: false,
       isTemplate: false,
       invoiceNumber: null,
@@ -474,6 +483,19 @@ export const servicePackagesRouter = createRouter({
             value: z.number().positive(),
           })
           .optional(),
+        /** Mark installment #1 paid at enrollment; invoice is still emailed as PAID. */
+        markFirstPaid: z.boolean().optional(),
+        firstPaymentMethod: z
+          .enum([
+            "cash",
+            "credit_card",
+            "debit_card",
+            "check",
+            "online",
+            "venmo",
+            "other",
+          ])
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -628,43 +650,118 @@ export const servicePackagesRouter = createRouter({
           .values(installmentRows)
           .returning();
 
-        // Always invoice the first installment (pay-in-full or first month).
-        const first = inserted[0]!;
-        const invoice = await createInvoiceForInstallment(tx, {
-          practiceId: ctx.practiceId,
-          clientId: input.clientId,
-          patientId: input.patientId ?? null,
-          packageName: pkg.name,
-          billingMode: input.billingMode,
-          sequenceNumber: 1,
-          installmentCount: count,
-          amount: first.amount,
-          listAmount:
-            input.billingMode === "pay_in_full" && discount
-              ? listPrice.toFixed(2)
-              : undefined,
-          discount:
-            input.billingMode === "pay_in_full" ? discount : null,
-          dueDate: first.dueDate,
-          taxable: pkg.taxable,
-          taxRatePercent,
-        });
+        // Create + finalize every installment invoice upfront; cron emails on invoiceDate.
+        const invoiceIds: string[] = [];
+        let firstInvoiceId: string | null = null;
 
-        await tx
-          .update(servicePackageInstallments)
-          .set({
-            status: "invoiced",
-            invoiceId: invoice.id,
-            generatedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(servicePackageInstallments.id, first.id));
+        for (const inst of inserted) {
+          const isFirst = inst.sequenceNumber === 1;
+          const invoice = await createInvoiceForInstallment(tx, {
+            practiceId: ctx.practiceId,
+            clientId: input.clientId,
+            patientId: input.patientId ?? null,
+            packageName: pkg.name,
+            billingMode: input.billingMode,
+            sequenceNumber: inst.sequenceNumber,
+            installmentCount: count,
+            amount: inst.amount,
+            listAmount:
+              isFirst &&
+              input.billingMode === "pay_in_full" &&
+              discount
+                ? listPrice.toFixed(2)
+                : undefined,
+            discount:
+              isFirst && input.billingMode === "pay_in_full"
+                ? discount
+                : null,
+            dueDate: inst.dueDate,
+            invoiceDate: invoiceDateFromDueDate(inst.dueDate),
+            taxable: pkg.taxable,
+            taxRatePercent,
+          });
+
+          await ensureInvoiceNumber(tx, ctx.practiceId, invoice.id);
+          await tx
+            .update(invoices)
+            .set({ status: "finalized", updatedAt: new Date() })
+            .where(eq(invoices.id, invoice.id));
+
+          let installmentStatus: "invoiced" | "paid" = "invoiced";
+          if (isFirst && input.markFirstPaid) {
+            const [fresh] = await tx
+              .select({ total: invoices.total })
+              .from(invoices)
+              .where(eq(invoices.id, invoice.id))
+              .limit(1);
+            const payAmount = fresh?.total ?? invoice.total;
+            await tx.insert(payments).values({
+              invoiceId: invoice.id,
+              amount: payAmount,
+              method: input.firstPaymentMethod ?? "other",
+              receivedBy: ctx.user.id,
+              notes: "Collected at enrollment",
+            });
+            await tx
+              .update(invoices)
+              .set({
+                paidAmount: payAmount,
+                status: "paid",
+                updatedAt: new Date(),
+              })
+              .where(eq(invoices.id, invoice.id));
+            installmentStatus = "paid";
+          }
+
+          await tx
+            .update(servicePackageInstallments)
+            .set({
+              status: installmentStatus,
+              invoiceId: invoice.id,
+              generatedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(servicePackageInstallments.id, inst.id));
+
+          invoiceIds.push(invoice.id);
+          if (isFirst) firstInvoiceId = invoice.id;
+        }
 
         return {
           saleId: sale!.id,
-          firstInvoiceId: invoice.id,
+          firstInvoiceId: firstInvoiceId!,
+          invoiceIds,
           installmentCount: count,
+          markFirstPaid: Boolean(input.markFirstPaid),
         };
+      }).then(async (result) => {
+        for (const id of result.invoiceIds) {
+          queueInvoiceSync(ctx.db, ctx.practiceId, id);
+        }
+        // Email any installment whose invoice date is today or earlier.
+        const today = todayDateStringLocal();
+        const dueToSend = await ctx.db
+          .select({ id: invoices.id })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.practiceId, ctx.practiceId),
+              inArray(invoices.id, result.invoiceIds),
+              isNull(invoices.deletedAt),
+              isNull(invoices.sentAt),
+              lte(invoices.invoiceDate, today),
+              inArray(invoices.status, ["finalized", "paid"])
+            )
+          );
+        let emailed = 0;
+        for (const row of dueToSend) {
+          const sent = await deliverInvoiceEmail(ctx.db, {
+            practiceId: ctx.practiceId,
+            invoiceId: row.id,
+          });
+          if (sent.success) emailed += 1;
+        }
+        return { ...result, emailed };
       });
     }),
 
@@ -724,15 +821,28 @@ export const servicePackagesRouter = createRouter({
     }),
 });
 
+/**
+ * Backfill: create+finalize invoices for scheduled installments whose
+ * invoice date (due − 14) has arrived. Then auto-email finalized/paid
+ * installment invoices with invoiceDate <= today and no sentAt.
+ */
 export async function generateDueInstallmentsForPractice(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   practiceId?: string
 ) {
   const today = todayDateStringLocal();
+  // Invoice date = due − 14 → generate when dueDate <= today + 14
+  const generateThrough = (() => {
+    const [y, m, d] = today.split("-").map(Number);
+    const date = new Date(Date.UTC(y!, m! - 1, d!));
+    date.setUTCDate(date.getUTCDate() + 14);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  })();
+
   const conditions = [
     eq(servicePackageInstallments.status, "scheduled"),
-    lte(servicePackageInstallments.dueDate, today),
+    lte(servicePackageInstallments.dueDate, generateThrough),
     isNull(servicePackageInstallments.deletedAt),
     isNull(servicePackageSales.deletedAt),
     inArray(servicePackageSales.status, ["active", "past_due"]),
@@ -797,9 +907,16 @@ export async function generateDueInstallmentsForPractice(
         installmentCount,
         amount: row.amount,
         dueDate: row.dueDate,
+        invoiceDate: invoiceDateFromDueDate(row.dueDate),
         taxable: pkg?.taxable ?? true,
         taxRatePercent,
       });
+
+      await ensureInvoiceNumber(db, row.practiceId, invoice.id);
+      await db
+        .update(invoices)
+        .set({ status: "finalized", updatedAt: new Date() })
+        .where(eq(invoices.id, invoice.id));
 
       await db
         .update(servicePackageInstallments)
@@ -815,11 +932,14 @@ export async function generateDueInstallmentsForPractice(
             eq(servicePackageInstallments.status, "scheduled")
           )
         );
+      queueInvoiceSync(db, row.practiceId, invoice.id);
       created += 1;
     } catch {
       // Skip failed row; next cron will retry if still scheduled.
     }
   }
+
+  const emailed = await sendDueInstallmentEmails(db, practiceId);
 
   // Mark sales past_due when they have overdue unpaid invoices.
   const overdueSales = await db
@@ -840,7 +960,10 @@ export async function generateDueInstallmentsForPractice(
         isNull(servicePackageInstallments.deletedAt),
         eq(servicePackageInstallments.status, "invoiced"),
         sql`${invoices.dueDate} < ${today}::date`,
-        sql`CAST(${invoices.paidAmount} AS numeric) < CAST(${invoices.total} AS numeric)`
+        sql`CAST(${invoices.paidAmount} AS numeric) < CAST(${invoices.total} AS numeric)`,
+        practiceId
+          ? eq(servicePackageSales.practiceId, practiceId)
+          : sql`true`
       )
     );
 
@@ -851,5 +974,58 @@ export async function generateDueInstallmentsForPractice(
       .where(eq(servicePackageSales.id, row.saleId));
   }
 
-  return { scanned: due.length, created };
+  // Mark overdue invoice status when past due and unpaid.
+  const overdueInvoiceConds = [
+    isNull(invoices.deletedAt),
+    inArray(invoices.status, ["sent", "finalized"]),
+    sql`${invoices.dueDate} < ${today}::date`,
+    sql`CAST(${invoices.paidAmount} AS numeric) < CAST(${invoices.total} AS numeric)`,
+  ];
+  if (practiceId) {
+    overdueInvoiceConds.push(eq(invoices.practiceId, practiceId));
+  }
+  await db
+    .update(invoices)
+    .set({ status: "overdue", updatedAt: new Date() })
+    .where(and(...overdueInvoiceConds));
+
+  return { scanned: due.length, created, emailed };
+}
+
+/** Auto-email installment invoices on/after their invoice date. */
+export async function sendDueInstallmentEmails(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  practiceId?: string
+) {
+  const today = todayDateStringLocal();
+  const conditions = [
+    isNull(invoices.deletedAt),
+    isNull(invoices.sentAt),
+    lte(invoices.invoiceDate, today),
+    inArray(invoices.status, ["finalized", "paid"]),
+    sql`${invoices.id} IN (SELECT invoice_id FROM service_package_installments WHERE invoice_id IS NOT NULL AND deleted_at IS NULL)`,
+  ];
+  if (practiceId) {
+    conditions.push(eq(invoices.practiceId, practiceId));
+  }
+
+  const rows = await db
+    .select({
+      id: invoices.id,
+      practiceId: invoices.practiceId,
+    })
+    .from(invoices)
+    .where(and(...conditions))
+    .limit(100);
+
+  let emailed = 0;
+  for (const row of rows) {
+    const result = await deliverInvoiceEmail(db, {
+      practiceId: row.practiceId,
+      invoiceId: row.id,
+    });
+    if (result.success) emailed += 1;
+  }
+  return emailed;
 }

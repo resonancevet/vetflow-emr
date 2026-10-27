@@ -260,7 +260,7 @@ export default function BillingPage() {
                     Due Date
                   </th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    Created
+                    Invoice date
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                     Actions
@@ -401,6 +401,8 @@ function InvoiceRow({
     total: string | null;
     paidAmount: string | null;
     dueDate: string | null;
+    invoiceDate?: string | null;
+    sentAt?: Date | string | null;
     createdAt: Date | string | null;
     isEstimate: boolean;
     isTemplate?: boolean;
@@ -480,9 +482,11 @@ function InvoiceRow({
           {invoice.dueDate ? formatVisitDate(invoice.dueDate) : "\u2014"}
         </td>
         <td className="px-4 py-3 text-muted-foreground">
-          {invoice.createdAt
-            ? new Date(invoice.createdAt).toLocaleDateString()
-            : "\u2014"}
+          {invoice.invoiceDate
+            ? formatVisitDate(invoice.invoiceDate)
+            : invoice.createdAt
+              ? new Date(invoice.createdAt).toLocaleDateString()
+              : "\u2014"}
         </td>
         <td className="px-4 py-3 text-right">
           <div className="flex items-center justify-end gap-1">
@@ -657,9 +661,11 @@ function InvoiceRow({
                             clientDisplayId: d.clientDisplayId ?? undefined,
                             patientName: d.patientName ?? undefined,
                             invoiceNumber: d.invoiceNumber ?? undefined,
-                            invoiceDate: d.createdAt
-                              ? new Date(d.createdAt).toLocaleDateString()
-                              : new Date().toLocaleDateString(),
+                            invoiceDate: d.invoiceDate
+                              ? formatVisitDate(d.invoiceDate)
+                              : d.createdAt
+                                ? new Date(d.createdAt).toLocaleDateString()
+                                : new Date().toLocaleDateString(),
                             dueDate: d.dueDate
                               ? formatVisitDate(d.dueDate)
                               : undefined,
@@ -821,9 +827,11 @@ function InvoiceRow({
                             clientDisplayId: d.clientDisplayId ?? undefined,
                             patientName: d.patientName ?? undefined,
                             invoiceNumber: d.invoiceNumber ?? undefined,
-                            invoiceDate: d.createdAt
-                              ? new Date(d.createdAt).toLocaleDateString()
-                              : new Date().toLocaleDateString(),
+                            invoiceDate: d.invoiceDate
+                              ? formatVisitDate(d.invoiceDate)
+                              : d.createdAt
+                                ? new Date(d.createdAt).toLocaleDateString()
+                                : new Date().toLocaleDateString(),
                             dueDate: d.dueDate
                               ? formatVisitDate(d.dueDate)
                               : undefined,
@@ -904,9 +912,11 @@ function InvoiceRow({
                                 clientDisplayId: d.clientDisplayId ?? undefined,
                                 patientName: d.patientName ?? undefined,
                                 invoiceNumber: d.invoiceNumber ?? undefined,
-                                invoiceDate: d.createdAt
-                                  ? new Date(d.createdAt).toLocaleDateString()
-                                  : new Date().toLocaleDateString(),
+                                invoiceDate: d.invoiceDate
+                                  ? formatVisitDate(d.invoiceDate)
+                                  : d.createdAt
+                                    ? new Date(d.createdAt).toLocaleDateString()
+                                    : new Date().toLocaleDateString(),
                                 dueDate: d.dueDate
                                   ? formatVisitDate(d.dueDate)
                                   : undefined,

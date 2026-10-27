@@ -47,3 +47,20 @@ export function todayDateStringLocal(): string {
   const dd = String(now.getDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
 }
+
+/** Add (or subtract) days to a YYYY-MM-DD date string. */
+export function addDaysToDateString(startDate: string, daysToAdd: number): string {
+  const [y, m, d] = startDate.split("-").map(Number);
+  if (!y || !m || !d) throw new Error("Invalid date");
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + daysToAdd);
+  const yy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Scheduled invoice/email date is 14 days before payment due. */
+export function invoiceDateFromDueDate(dueDate: string): string {
+  return addDaysToDateString(dueDate, -14);
+}

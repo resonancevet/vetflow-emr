@@ -85,6 +85,10 @@ export const invoices = pgTable(
       .notNull()
       .default("0"),
     dueDate: date("due_date"),
+    /** Calendar invoice / scheduled email date (e.g. dueDate − 14 for installments). */
+    invoiceDate: date("invoice_date"),
+    /** When the invoice was emailed (or marked sent). */
+    sentAt: timestamp("sent_at", { withTimezone: true }),
     /** Sequential practice invoice number (null for estimates/templates until converted). */
     invoiceNumber: integer("invoice_number"),
     isEstimate: boolean("is_estimate").notNull().default(false),

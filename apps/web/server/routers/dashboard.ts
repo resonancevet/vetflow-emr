@@ -656,6 +656,21 @@ export const dashboardRouter = createRouter({
 
     const tasks: Task[] = [];
 
+    const todayStr = (() => {
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    })();
+    const sevenDaysAgoStr = (() => {
+      const d = new Date(todayStart);
+      d.setDate(d.getDate() - 7);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    })();
+
     const invoiceRows = await ctx.db
       .select({
         id: invoices.id,
@@ -666,6 +681,12 @@ export const dashboardRouter = createRouter({
         patientName: patients.name,
         clientFirstName: clients.firstName,
         clientLastName: clients.lastName,
+        clientEmail: clients.email,
+        invoiceDate: invoices.invoiceDate,
+        dueDate: invoices.dueDate,
+        sentAt: invoices.sentAt,
+        paidAmount: invoices.paidAmount,
+        total: invoices.total,
         updatedAt: invoices.updatedAt,
         createdAt: invoices.createdAt,
       })
@@ -678,13 +699,28 @@ export const dashboardRouter = createRouter({
           eq(invoices.isEstimate, false),
           eq(invoices.isTemplate, false),
           isNull(invoices.deletedAt),
-          inArray(invoices.status, ["draft", "finalized"]),
-          gte(invoices.updatedAt, fourteenDaysAgo)
+          or(
+            and(
+              inArray(invoices.status, ["draft", "finalized"]),
+              gte(invoices.updatedAt, fourteenDaysAgo)
+            ),
+            and(
+              inArray(invoices.status, ["finalized", "paid"]),
+              isNull(invoices.sentAt),
+              lte(invoices.invoiceDate, todayStr)
+            ),
+            and(
+              inArray(invoices.status, ["sent", "overdue"]),
+              lte(invoices.dueDate, sevenDaysAgoStr),
+              sql`CAST(${invoices.paidAmount} AS numeric) < CAST(${invoices.total} AS numeric)`
+            )
+          )
         )
       )
       .orderBy(desc(invoices.updatedAt))
-      .limit(40);
+      .limit(80);
 
+    const seenInvoiceTasks = new Set<string>();
     for (const inv of invoiceRows) {
       const who = [
         inv.patientName,
@@ -693,24 +729,91 @@ export const dashboardRouter = createRouter({
         .filter(Boolean)
         .join(" · ");
       const num = inv.invoiceNumber ? `#${inv.invoiceNumber}` : "Invoice";
+      const href = `/billing?highlight=${inv.id}`;
+      const sortAt = inv.updatedAt ?? inv.createdAt;
+
       if (inv.status === "draft") {
-        tasks.push({
-          id: `invoice-finalize-${inv.id}`,
-          category: "invoice",
-          title: `Finalize ${num}`,
-          subtitle: who || "Draft invoice",
-          href: `/billing/${inv.id}`,
-          sortAt: inv.updatedAt ?? inv.createdAt,
-        });
-      } else if (inv.status === "finalized") {
-        tasks.push({
-          id: `invoice-email-${inv.id}`,
-          category: "invoice",
-          title: `Email ${num}`,
-          subtitle: who || "Finalized — not yet sent",
-          href: `/billing/${inv.id}`,
-          sortAt: inv.updatedAt ?? inv.createdAt,
-        });
+        const key = `invoice-finalize-${inv.id}`;
+        if (!seenInvoiceTasks.has(key)) {
+          seenInvoiceTasks.add(key);
+          const pastInvoiceDate =
+            inv.invoiceDate != null && inv.invoiceDate <= todayStr;
+          tasks.push({
+            id: key,
+            category: "invoice",
+            title: pastInvoiceDate
+              ? `Finalize & email ${num}`
+              : `Finalize ${num}`,
+            subtitle: pastInvoiceDate
+              ? `${who || "Draft"} — invoice date passed`
+              : who || "Draft invoice",
+            href,
+            sortAt,
+          });
+        }
+      }
+
+      if (
+        (inv.status === "finalized" || inv.status === "paid") &&
+        !inv.sentAt
+      ) {
+        const pastInvoiceDate =
+          inv.invoiceDate == null || inv.invoiceDate <= todayStr;
+        if (pastInvoiceDate) {
+          const key = `invoice-email-${inv.id}`;
+          if (!seenInvoiceTasks.has(key)) {
+            seenInvoiceTasks.add(key);
+            const missingEmail = !inv.clientEmail;
+            tasks.push({
+              id: key,
+              category: "invoice",
+              title: missingEmail
+                ? `Add client email — ${num}`
+                : `Email ${num}`,
+              subtitle: missingEmail
+                ? `${who || "Client"} — invoice date passed, no email on file`
+                : inv.status === "paid"
+                  ? `${who || "Client"} — paid invoice ready to send`
+                  : `${who || "Finalized"} — invoice date passed`,
+              href,
+              sortAt,
+            });
+          }
+        } else if (inv.status === "finalized") {
+          const key = `invoice-email-${inv.id}`;
+          if (!seenInvoiceTasks.has(key)) {
+            seenInvoiceTasks.add(key);
+            tasks.push({
+              id: key,
+              category: "invoice",
+              title: `Email ${num}`,
+              subtitle: who || "Finalized — not yet sent",
+              href,
+              sortAt,
+            });
+          }
+        }
+      }
+
+      if (
+        (inv.status === "sent" || inv.status === "overdue") &&
+        inv.dueDate &&
+        inv.dueDate <= sevenDaysAgoStr &&
+        parseFloat(String(inv.paidAmount ?? "0")) <
+          parseFloat(String(inv.total ?? "0"))
+      ) {
+        const key = `invoice-collect-${inv.id}`;
+        if (!seenInvoiceTasks.has(key)) {
+          seenInvoiceTasks.add(key);
+          tasks.push({
+            id: key,
+            category: "follow_up",
+            title: `Follow up — unpaid ${num}`,
+            subtitle: who || "Payment past due by 7+ days",
+            href,
+            sortAt: inv.dueDate ? new Date(`${inv.dueDate}T12:00:00`) : sortAt,
+          });
+        }
       }
     }
 

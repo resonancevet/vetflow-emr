@@ -297,6 +297,8 @@ export const billingRouter = createRouter({
             total: invoices.total,
             paidAmount: invoices.paidAmount,
             dueDate: invoices.dueDate,
+            invoiceDate: invoices.invoiceDate,
+            sentAt: invoices.sentAt,
             createdAt: invoices.createdAt,
             isEstimate: invoices.isEstimate,
             isTemplate: invoices.isTemplate,
@@ -337,6 +339,8 @@ export const billingRouter = createRouter({
           total: invoices.total,
           paidAmount: invoices.paidAmount,
           dueDate: invoices.dueDate,
+          invoiceDate: invoices.invoiceDate,
+          sentAt: invoices.sentAt,
           createdAt: invoices.createdAt,
           clientId: invoices.clientId,
           patientId: invoices.patientId,
@@ -441,9 +445,17 @@ export const billingRouter = createRouter({
         await ensureInvoiceNumber(ctx.db, ctx.practiceId, input.id);
       }
 
+      const statusPatch: Record<string, unknown> = {
+        status: input.status,
+        updatedAt: new Date(),
+      };
+      if (input.status === "sent") {
+        statusPatch.sentAt = new Date();
+      }
+
       const [invoice] = await ctx.db
         .update(invoices)
-        .set({ status: input.status, updatedAt: new Date() })
+        .set(statusPatch)
         .where(
           and(
             eq(invoices.id, input.id),

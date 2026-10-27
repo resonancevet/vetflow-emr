@@ -139,198 +139,21 @@ export const notificationsRouter = createRouter({
     .use(requireRole("admin", "front_desk"))
     .input(z.object({ invoiceId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const [invoice] = await ctx.db
-        .select({
-          id: invoices.id,
-          total: invoices.total,
-          paidAmount: invoices.paidAmount,
-          subtotal: invoices.subtotal,
-          tax: invoices.tax,
-          status: invoices.status,
-          dueDate: invoices.dueDate,
-          createdAt: invoices.createdAt,
-          invoiceNumber: invoices.invoiceNumber,
-          clientId: invoices.clientId,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
-          clientEmail: clients.email,
-          clientAddress: clients.address,
-          clientCity: clients.city,
-          clientState: clients.state,
-          clientZip: clients.zip,
-          clientDisplayId: clients.displayId,
-          clientAccessToken: clients.accessToken,
-          patientName: patients.name,
-        })
-        .from(invoices)
-        .leftJoin(clients, eq(invoices.clientId, clients.id))
-        .leftJoin(patients, eq(invoices.patientId, patients.id))
-        .where(
-          and(
-            eq(invoices.id, input.invoiceId),
-            eq(invoices.practiceId, ctx.practiceId),
-            isNull(invoices.deletedAt)
-          )
-        )
-        .limit(1);
-
-      if (!invoice) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
-      }
-      if (invoice.status === "draft") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Finalize the invoice before emailing it to the client",
-        });
-      }
-      if (invoice.status === "void") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot email a voided invoice",
-        });
-      }
-      if (!invoice.clientEmail) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Client does not have an email address on file" });
-      }
-
-      const emailCtx = await getPracticeEmailContext(ctx.db, ctx.practiceId);
-
-      let portalUrl: string | undefined;
-      if (invoice.clientAccessToken) {
-        portalUrl = buildPortalUrl(invoice.clientAccessToken);
-      } else if (invoice.clientId) {
-        const token = generatePortalAccessToken();
-        await ctx.db
-          .update(clients)
-          .set({ accessToken: token })
-          .where(eq(clients.id, invoice.clientId));
-        portalUrl = buildPortalUrl(token);
-      }
-
-      const invoiceNumber =
-        invoice.invoiceNumber ??
-        (await ensureInvoiceNumber(ctx.db, ctx.practiceId, invoice.id));
-      const invoiceNumberLabel = invoiceNumber
-        ? formatInvoiceNumber(invoiceNumber)
-        : undefined;
-
-      const items = await ctx.db
-        .select({
-          description: invoiceItems.description,
-          quantity: invoiceItems.quantity,
-          unitPrice: invoiceItems.unitPrice,
-          total: invoiceItems.total,
-        })
-        .from(invoiceItems)
-        .where(
-          and(
-            eq(invoiceItems.invoiceId, invoice.id),
-            isNull(invoiceItems.deletedAt)
-          )
-        );
-
-      const total = Number(invoice.total ?? 0);
-      const paid = Number(invoice.paidAmount ?? 0);
-      const balance = Math.max(0, total - paid);
-      const formatMoney = (n: number | string) =>
-        `$${Number(n).toFixed(2)}`;
-
-      const pdf = await generateInvoicePdf({
-        practiceName: emailCtx.practiceName,
-        practicePhone: emailCtx.practicePhone,
-        practiceAddress: emailCtx.practiceAddress,
-        clientName: `${invoice.clientFirstName ?? ""} ${invoice.clientLastName ?? ""}`.trim(),
-        clientEmail: invoice.clientEmail ?? undefined,
-        clientAddress: invoice.clientAddress ?? undefined,
-        clientCity: invoice.clientCity ?? undefined,
-        clientState: invoice.clientState ?? undefined,
-        clientZip: invoice.clientZip ?? undefined,
-        clientDisplayId: invoice.clientDisplayId ?? undefined,
-        patientName: invoice.patientName ?? undefined,
-        invoiceNumber: invoiceNumberLabel,
-        invoiceDate: invoice.createdAt
-          ? new Date(invoice.createdAt).toLocaleDateString()
-          : new Date().toLocaleDateString(),
-        dueDate: invoice.dueDate
-          ? formatVisitDate(invoice.dueDate)
-          : undefined,
-        status: invoice.status,
-        isPaid: balance <= 0.009 || invoice.status === "paid",
-        items: items.map((item) => ({
-          description: item.description ?? "",
-          quantity: Number(item.quantity ?? 1),
-          unitPrice: formatMoney(item.unitPrice),
-          total: formatMoney(item.total),
-        })),
-        subtotal: formatMoney(invoice.subtotal ?? 0),
-        tax: formatMoney(invoice.tax ?? 0),
-        total: formatMoney(total),
-        paidAmount: formatMoney(paid),
-        venmoHandle: emailCtx.venmoHandle || undefined,
-      });
-      const pdfBuffer = Buffer.from(pdf.output("arraybuffer"));
-
-      const result = await sendInvoiceEmail(
-        {
-          to: invoice.clientEmail,
-          clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`,
-          patientName: invoice.patientName ?? undefined,
-          invoiceTotal: formatMoney(total),
-          paidAmount: formatMoney(paid),
-          balanceDue: formatMoney(balance),
-          dueDate:
-            balance <= 0.009 || invoice.status === "paid"
-              ? "PAID"
-              : invoice.dueDate
-                ? formatVisitDate(invoice.dueDate)
-                : undefined,
-          status: invoice.status,
-          venmoHandle: emailCtx.venmoHandle || undefined,
-          practiceName: emailCtx.practiceName,
-          practicePhone: emailCtx.practicePhone,
-          portalUrl,
-          invoiceNumber: invoiceNumberLabel,
-          pdfAttachment: {
-            filename: `invoice-${invoiceNumberLabel ?? invoice.id.slice(0, 8)}.pdf`,
-            content: pdfBuffer,
-          },
-        },
-        emailCtx.templates.invoiceEmail
+      const { deliverInvoiceEmail } = await import(
+        "@/server/lib/deliver-invoice-email"
       );
-
+      const result = await deliverInvoiceEmail(ctx.db, {
+        practiceId: ctx.practiceId,
+        invoiceId: input.invoiceId,
+      });
       if (!result.success) {
+        const notFound = result.error === "Invoice not found";
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            result.error ??
-            "Failed to send email. Check Resend domain/from address and server logs.",
+          code: notFound ? "NOT_FOUND" : "BAD_REQUEST",
+          message: result.error,
         });
       }
-
-      if (invoice.status === "finalized") {
-        await ctx.db
-          .update(invoices)
-          .set({ status: "sent", updatedAt: new Date() })
-          .where(
-            and(
-              eq(invoices.id, invoice.id),
-              eq(invoices.practiceId, ctx.practiceId)
-            )
-          );
-        queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
-      }
-
-      await ctx.db.insert(communications).values({
-        practiceId: ctx.practiceId,
-        clientId: invoice.clientId,
-        channel: "email",
-        direction: "outbound",
-        subject: "Invoice",
-        content: `Invoice sent — total: $${Number(invoice.total ?? 0).toFixed(2)}`,
-        status: "sent",
-      });
-
-      return { success: true, emailId: result.id ?? null };
+      return { success: true as const, emailId: result.emailId };
     }),
 
   getUpcomingReminders: protectedProcedure.query(async ({ ctx }) => {
