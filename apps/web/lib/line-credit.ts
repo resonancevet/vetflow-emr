@@ -32,3 +32,28 @@ export function normalizeLineCreditLabel(label: string): string {
   }
   return trimmed.slice(0, 500);
 }
+
+/**
+ * Resolve a line-credit dollar amount, defaulting to the full line total.
+ * Caps at the parent line total.
+ */
+export function resolveLineCreditAmount(
+  requested: number | null | undefined,
+  lineTotal: number
+): number {
+  const max = Math.round(Math.max(0, Number(lineTotal) || 0) * 100) / 100;
+  if (!(max > 0)) {
+    throw new Error("Nothing to credit on this line");
+  }
+  const raw =
+    requested == null || !Number.isFinite(Number(requested))
+      ? max
+      : Number(requested);
+  if (!(raw > 0)) {
+    throw new Error("Credit amount must be greater than zero");
+  }
+  if (raw > max + 0.001) {
+    throw new Error("Credit cannot exceed the line total");
+  }
+  return Math.round(Math.min(raw, max) * 100) / 100;
+}

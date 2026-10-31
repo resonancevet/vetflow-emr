@@ -986,13 +986,19 @@ function InvoiceLineItemsTable({
   }, [items]);
 
   const [draftLabels, setDraftLabels] = useState<Record<string, string>>({});
+  const [draftAmounts, setDraftAmounts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const next: Record<string, string> = {};
+    const nextLabels: Record<string, string> = {};
+    const nextAmounts: Record<string, string> = {};
     for (const [linkedId, credit] of creditByLinked) {
-      next[linkedId] = credit.description;
+      nextLabels[linkedId] = credit.description;
+      nextAmounts[linkedId] = Math.abs(
+        Number(credit.total ?? 0)
+      ).toFixed(2);
     }
-    setDraftLabels(next);
+    setDraftLabels(nextLabels);
+    setDraftAmounts(nextAmounts);
   }, [creditByLinked]);
 
   const applyCredit = trpc.billing.applyLineCredit.useMutation({
@@ -1004,9 +1010,10 @@ function InvoiceLineItemsTable({
     },
     onError: (err) => toast.error(err.message),
   });
-  const updateLabel = trpc.billing.updateLineCreditLabel.useMutation({
+  const updateCredit = trpc.billing.updateLineCredit.useMutation({
     onSuccess: (result) => {
-      toast.success(`Label updated to “${result.label}”`);
+      toast.success(`Updated “${result.label}” (−$${result.amount})`);
+      void utils.billing.listInvoices.invalidate();
       void utils.billing.getInvoice.invalidate({ id: invoiceId });
       onChanged();
     },
@@ -1023,7 +1030,7 @@ function InvoiceLineItemsTable({
   });
 
   const busy =
-    applyCredit.isPending || updateLabel.isPending || removeCredit.isPending;
+    applyCredit.isPending || updateCredit.isPending || removeCredit.isPending;
 
   return (
     <table className="w-full text-sm">
@@ -1079,27 +1086,71 @@ function InvoiceLineItemsTable({
                       placeholder={DEFAULT_LINE_CREDIT_LABEL}
                       aria-label="Credit label shown on invoice"
                     />
+                    <div className="inline-flex items-center gap-1">
+                      <span className="text-muted-foreground text-xs">−$</span>
+                      <Input
+                        className="h-8 w-24 text-right text-sm tabular-nums"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        max={lineAmount > 0 ? lineAmount : undefined}
+                        value={
+                          draftAmounts[item.id] ??
+                          Math.abs(Number(linkedCredit.total ?? 0)).toFixed(2)
+                        }
+                        onChange={(e) =>
+                          setDraftAmounts((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                        aria-label="Credit amount"
+                      />
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={
-                        busy ||
-                        !(draftLabels[item.id] ?? linkedCredit.description).trim() ||
-                        (draftLabels[item.id] ?? linkedCredit.description).trim() ===
-                          linkedCredit.description
-                      }
+                      disabled={(() => {
+                        const label = (
+                          draftLabels[item.id] ?? linkedCredit.description
+                        ).trim();
+                        const amountRaw = parseFloat(
+                          draftAmounts[item.id] ??
+                            Math.abs(Number(linkedCredit.total ?? 0)).toFixed(2)
+                        );
+                        const savedAmount = Math.abs(
+                          Number(linkedCredit.total ?? 0)
+                        );
+                        const unchanged =
+                          label === linkedCredit.description &&
+                          Number.isFinite(amountRaw) &&
+                          Math.abs(amountRaw - savedAmount) < 0.001;
+                        return (
+                          busy ||
+                          !label ||
+                          !Number.isFinite(amountRaw) ||
+                          amountRaw <= 0 ||
+                          amountRaw > lineAmount + 0.001 ||
+                          unchanged
+                        );
+                      })()}
                       onClick={() => {
                         const label = (
                           draftLabels[item.id] ?? linkedCredit.description
                         ).trim();
-                        updateLabel.mutate({
+                        const amount = parseFloat(
+                          draftAmounts[item.id] ??
+                            Math.abs(Number(linkedCredit.total ?? 0)).toFixed(2)
+                        );
+                        updateCredit.mutate({
                           invoiceId,
                           discountItemId: linkedCredit.id,
                           label,
+                          amount,
                         });
                       }}
                     >
-                      Save label
+                      Save
                     </Button>
                     <button
                       type="button"
@@ -1129,7 +1180,7 @@ function InvoiceLineItemsTable({
               </td>
               <td className="py-2 text-right tabular-nums">
                 {formatCurrency(item.total)}
-                {linkedCredit ? (
+                {linkedCredit && !canEditCredits ? (
                   <div className="text-muted-foreground">
                     {formatCurrency(linkedCredit.total)}
                   </div>
@@ -1142,18 +1193,21 @@ function InvoiceLineItemsTable({
                   lineAmount > 0 ? (
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
                       disabled={busy}
+                      title="Add line credit"
+                      aria-label="Add line credit"
                       onClick={(e) => {
                         e.stopPropagation();
                         applyCredit.mutate({
                           invoiceId,
                           itemId: item.id,
                           label: DEFAULT_LINE_CREDIT_LABEL,
+                          amount: lineAmount,
                         });
                       }}
                     >
-                      No charge
+                      <Pencil className="h-4 w-4" />
                     </button>
                   ) : null}
                 </td>
