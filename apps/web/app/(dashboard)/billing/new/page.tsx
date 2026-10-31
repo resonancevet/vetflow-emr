@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -17,6 +17,10 @@ import {
   expandTemplateItems,
   applyMarkupToTemplateLines,
 } from "@/lib/treatment-template";
+import {
+  DEFAULT_LINE_CREDIT_LABEL,
+  isLineCreditDiscount,
+} from "@/lib/line-credit";
 
 interface LineItem {
   id: string;
@@ -26,6 +30,8 @@ interface LineItem {
   itemType: "service" | "product";
   itemId?: string;
   usageId?: string;
+  /** Client-facing discount wording when the line is no-charged. */
+  lineCreditLabel?: string | null;
 }
 
 function defaultDueDate(): string {
@@ -186,6 +192,11 @@ function NewInvoicePageContent() {
     }
     setIsEstimate(true);
     setEstimateName(existing.name ?? "");
+    const creditByLinked = new Map(
+      existing.items
+        .filter((item) => isLineCreditDiscount(item))
+        .map((item) => [item.linkedItemId as string, item.description])
+    );
     setItems(
       existing.items
         .filter((item) => item.itemType !== "discount")
@@ -196,6 +207,7 @@ function NewInvoicePageContent() {
           unitPrice: item.unitPrice,
           itemType: item.itemType === "product" ? ("product" as const) : ("service" as const),
           itemId: item.itemId ?? undefined,
+          lineCreditLabel: creditByLinked.get(item.id) ?? null,
         }))
     );
     setHydrated(true);
@@ -249,10 +261,15 @@ function NewInvoicePageContent() {
 
   // Calculations
   const { subtotal, tax, total } = useMemo(() => {
-    const sub = items.reduce(
+    const gross = items.reduce(
       (sum, item) => sum + item.quantity * parseFloat(item.unitPrice || "0"),
       0
     );
+    const credits = items.reduce((sum, item) => {
+      if (!item.lineCreditLabel?.trim()) return sum;
+      return sum + item.quantity * parseFloat(item.unitPrice || "0");
+    }, 0);
+    const sub = Math.round((gross - credits) * 100) / 100;
     const t = calcTax(sub, taxRatePercent);
     return {
       subtotal: sub,
@@ -322,6 +339,36 @@ function NewInvoicePageContent() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }
 
+  function applyNoCharge(id: string) {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              lineCreditLabel:
+                item.lineCreditLabel?.trim() || DEFAULT_LINE_CREDIT_LABEL,
+            }
+          : item
+      )
+    );
+  }
+
+  function clearNoCharge(id: string) {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, lineCreditLabel: null } : item
+      )
+    );
+  }
+
+  function setNoChargeLabel(id: string, label: string) {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, lineCreditLabel: label } : item
+      )
+    );
+  }
+
   async function applyVisitPlan(templateId: string) {
     if (!templateId) return;
     try {
@@ -381,6 +428,7 @@ function NewInvoicePageContent() {
         itemType: item.itemType,
         itemId: item.itemId,
         usageId: item.usageId,
+        lineCreditLabel: item.lineCreditLabel?.trim() || null,
       })),
       dueDate: dueDate || undefined,
     };
@@ -766,47 +814,87 @@ function NewInvoicePageContent() {
                     <th className="py-2 text-right font-medium text-muted-foreground">
                       Price
                     </th>
-                    <th className="py-2 w-10" />
+                    <th className="py-2 w-28" />
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b border-border/50 last:border-0"
-                    >
-                      <td className="py-2">
-                        {item.description}
-                        {item.usageId ? (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            (used)
-                          </span>
-                        ) : item.itemType === "product" ? (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            (product)
-                          </span>
+                  {items.map((item) => {
+                    const lineTotal =
+                      item.quantity * parseFloat(item.unitPrice || "0");
+                    const hasCredit = Boolean(item.lineCreditLabel?.trim());
+                    return (
+                      <Fragment key={item.id}>
+                        <tr className="border-b border-border/50 last:border-0">
+                          <td className="py-2">
+                            {item.description}
+                            {item.usageId ? (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                (used)
+                              </span>
+                            ) : item.itemType === "product" ? (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                (product)
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="py-2 text-right tabular-nums">
+                            {item.quantity}
+                          </td>
+                          <td className="py-2 text-right tabular-nums">
+                            ${lineTotal.toFixed(2)}
+                          </td>
+                          <td className="py-2 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {!hasCredit && lineTotal > 0 ? (
+                                <button
+                                  type="button"
+                                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                                  onClick={() => applyNoCharge(item.id)}
+                                >
+                                  No charge
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                onClick={() => handleRemoveItem(item.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {hasCredit ? (
+                          <tr className="border-b border-border/50 last:border-0 bg-muted/30">
+                            <td className="py-2 pl-4" colSpan={2}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Input
+                                  className="h-8 max-w-xs text-sm"
+                                  value={item.lineCreditLabel ?? ""}
+                                  onChange={(e) =>
+                                    setNoChargeLabel(item.id, e.target.value)
+                                  }
+                                  placeholder={DEFAULT_LINE_CREDIT_LABEL}
+                                  aria-label="Credit label shown on invoice"
+                                />
+                                <button
+                                  type="button"
+                                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                                  onClick={() => clearNoCharge(item.id)}
+                                >
+                                  Remove credit
+                                </button>
+                              </div>
+                            </td>
+                            <td className="py-2 text-right tabular-nums text-muted-foreground">
+                              −${lineTotal.toFixed(2)}
+                            </td>
+                            <td />
+                          </tr>
                         ) : null}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {item.quantity}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        $
-                        {(
-                          item.quantity * parseFloat(item.unitPrice)
-                        ).toFixed(2)}
-                      </td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-destructive transition-colors"
-                          onClick={() => handleRemoveItem(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

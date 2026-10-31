@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -25,6 +25,11 @@ import { formatVisitDate } from "@/lib/practice-datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/common/loading";
+import {
+  DEFAULT_LINE_CREDIT_LABEL,
+  isLineCreditDiscount,
+  isPromptPaymentDiscount,
+} from "@/lib/line-credit";
 
 const STATUS_TABS = [
   { label: "All", value: undefined, isEstimate: false as const },
@@ -717,57 +722,19 @@ function InvoiceRow({
                   )}
                 </div>
                 {detail.data.items.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="py-2 text-left font-medium text-muted-foreground">
-                          Description
-                        </th>
-                        <th className="py-2 text-right font-medium text-muted-foreground">
-                          Price
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.data.items.map((item) => (
-                        <tr
-                          key={item.id}
-                          className="border-b border-border/50 last:border-0"
-                        >
-                          <td className="py-2">{item.description}</td>
-                          <td className="py-2 text-right tabular-nums">
-                            {formatCurrency(item.total)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-border">
-                        <td className="py-2 text-right font-medium">
-                          Subtotal
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatCurrency(detail.data.subtotal)}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="py-1 text-right text-muted-foreground">
-                          Tax
-                        </td>
-                        <td className="py-1 text-right tabular-nums text-muted-foreground">
-                          {formatCurrency(detail.data.tax)}
-                        </td>
-                      </tr>
-                      <tr className="font-semibold">
-                        <td className="py-2 text-right">
-                          Total
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatCurrency(detail.data.total)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                  <InvoiceLineItemsTable
+                    invoiceId={invoice.id}
+                    status={detail.data.status}
+                    paidAmount={detail.data.paidAmount}
+                    isEstimate={Boolean(detail.data.isEstimate)}
+                    items={detail.data.items}
+                    subtotal={detail.data.subtotal}
+                    tax={detail.data.tax}
+                    total={detail.data.total}
+                    onChanged={() => {
+                      void detail.refetch();
+                    }}
+                  />
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No line items on this invoice.
@@ -971,6 +938,257 @@ function InvoiceRow({
   );
 }
 
+type InvoiceLineItemRow = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: string;
+  total: string;
+  itemType: string;
+  discountKind?: string | null;
+  linkedItemId?: string | null;
+};
+
+function InvoiceLineItemsTable({
+  invoiceId,
+  status,
+  paidAmount,
+  isEstimate,
+  items,
+  subtotal,
+  tax,
+  total,
+  onChanged,
+}: {
+  invoiceId: string;
+  status: string;
+  paidAmount: string | null;
+  isEstimate: boolean;
+  items: InvoiceLineItemRow[];
+  subtotal: string;
+  tax: string;
+  total: string;
+  onChanged: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const paid = Number(paidAmount ?? 0);
+  const canEditCredits =
+    !isEstimate && status !== "void" && status !== "paid" && paid <= 0;
+
+  const creditByLinked = useMemo(() => {
+    const map = new Map<string, InvoiceLineItemRow>();
+    for (const item of items) {
+      if (isLineCreditDiscount(item) && item.linkedItemId) {
+        map.set(item.linkedItemId, item);
+      }
+    }
+    return map;
+  }, [items]);
+
+  const [draftLabels, setDraftLabels] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const [linkedId, credit] of creditByLinked) {
+      next[linkedId] = credit.description;
+    }
+    setDraftLabels(next);
+  }, [creditByLinked]);
+
+  const applyCredit = trpc.billing.applyLineCredit.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Applied “${result.label}”`);
+      void utils.billing.listInvoices.invalidate();
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const updateLabel = trpc.billing.updateLineCreditLabel.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Label updated to “${result.label}”`);
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const removeCredit = trpc.billing.removeLineCredit.useMutation({
+    onSuccess: () => {
+      toast.success("Line credit removed");
+      void utils.billing.listInvoices.invalidate();
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const busy =
+    applyCredit.isPending || updateLabel.isPending || removeCredit.isPending;
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border">
+          <th className="py-2 text-left font-medium text-muted-foreground">
+            Description
+          </th>
+          <th className="py-2 text-right font-medium text-muted-foreground">
+            Price
+          </th>
+          {canEditCredits ? <th className="py-2 w-28" /> : null}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => {
+          const isCredit = isLineCreditDiscount(item);
+          const isPrompt = isPromptPaymentDiscount(item);
+          const linkedCredit =
+            item.itemType !== "discount" ? creditByLinked.get(item.id) : undefined;
+          const lineAmount = Number(item.total ?? 0);
+
+          if (isCredit) {
+            // Rendered under the linked positive line when present.
+            if (item.linkedItemId && items.some((row) => row.id === item.linkedItemId)) {
+              return null;
+            }
+          }
+
+          return (
+            <tr
+              key={item.id}
+              className="border-b border-border/50 last:border-0 align-top"
+            >
+              <td className="py-2">
+                <div>{item.description}</div>
+                {linkedCredit && canEditCredits ? (
+                  <div
+                    className="mt-2 flex flex-wrap items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Input
+                      className="h-8 max-w-xs text-sm"
+                      value={
+                        draftLabels[item.id] ?? linkedCredit.description
+                      }
+                      onChange={(e) =>
+                        setDraftLabels((prev) => ({
+                          ...prev,
+                          [item.id]: e.target.value,
+                        }))
+                      }
+                      placeholder={DEFAULT_LINE_CREDIT_LABEL}
+                      aria-label="Credit label shown on invoice"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        busy ||
+                        !(draftLabels[item.id] ?? linkedCredit.description).trim() ||
+                        (draftLabels[item.id] ?? linkedCredit.description).trim() ===
+                          linkedCredit.description
+                      }
+                      onClick={() => {
+                        const label = (
+                          draftLabels[item.id] ?? linkedCredit.description
+                        ).trim();
+                        updateLabel.mutate({
+                          invoiceId,
+                          discountItemId: linkedCredit.id,
+                          label,
+                        });
+                      }}
+                    >
+                      Save label
+                    </Button>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                      disabled={busy}
+                      onClick={() =>
+                        removeCredit.mutate({
+                          invoiceId,
+                          itemId: item.id,
+                        })
+                      }
+                    >
+                      Remove credit
+                    </button>
+                  </div>
+                ) : linkedCredit ? (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {linkedCredit.description}:{" "}
+                    {formatCurrency(linkedCredit.total)}
+                  </div>
+                ) : null}
+                {isPrompt ? (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Prompt payment
+                  </div>
+                ) : null}
+              </td>
+              <td className="py-2 text-right tabular-nums">
+                {formatCurrency(item.total)}
+                {linkedCredit ? (
+                  <div className="text-muted-foreground">
+                    {formatCurrency(linkedCredit.total)}
+                  </div>
+                ) : null}
+              </td>
+              {canEditCredits ? (
+                <td className="py-2 text-right">
+                  {item.itemType !== "discount" &&
+                  !linkedCredit &&
+                  lineAmount > 0 ? (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        applyCredit.mutate({
+                          invoiceId,
+                          itemId: item.id,
+                          label: DEFAULT_LINE_CREDIT_LABEL,
+                        });
+                      }}
+                    >
+                      No charge
+                    </button>
+                  ) : null}
+                </td>
+              ) : null}
+            </tr>
+          );
+        })}
+      </tbody>
+      <tfoot>
+        <tr className="border-t border-border">
+          <td className="py-2 text-right font-medium">Subtotal</td>
+          <td className="py-2 text-right tabular-nums">
+            {formatCurrency(subtotal)}
+          </td>
+          {canEditCredits ? <td /> : null}
+        </tr>
+        <tr>
+          <td className="py-1 text-right text-muted-foreground">Tax</td>
+          <td className="py-1 text-right tabular-nums text-muted-foreground">
+            {formatCurrency(tax)}
+          </td>
+          {canEditCredits ? <td /> : null}
+        </tr>
+        <tr className="font-semibold">
+          <td className="py-2 text-right">Total</td>
+          <td className="py-2 text-right tabular-nums">
+            {formatCurrency(total)}
+          </td>
+          {canEditCredits ? <td /> : null}
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
 function PromptPaymentDiscountPanel({
   invoiceId,
   status,
@@ -981,7 +1199,12 @@ function PromptPaymentDiscountPanel({
   invoiceId: string;
   status: string;
   paidAmount: string | null;
-  items: Array<{ id: string; itemType: string; description: string }>;
+  items: Array<{
+    id: string;
+    itemType: string;
+    description: string;
+    discountKind?: string | null;
+  }>;
   onChanged: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -1010,7 +1233,7 @@ function PromptPaymentDiscountPanel({
     onError: (err) => toast.error(err.message),
   });
 
-  const hasDiscount = items.some((item) => item.itemType === "discount");
+  const hasDiscount = items.some((item) => isPromptPaymentDiscount(item));
   const paid = Number(paidAmount ?? 0);
   const canEdit =
     status !== "void" && status !== "paid" && paid <= 0;

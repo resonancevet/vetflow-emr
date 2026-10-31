@@ -27,6 +27,14 @@ import {
   computePromptPaymentDiscount,
   type PromptPaymentDiscountInput,
 } from "@/lib/prompt-payment-discount";
+import {
+  DEFAULT_LINE_CREDIT_LABEL,
+  LINE_CREDIT_KIND,
+  PROMPT_PAYMENT_KIND,
+  isLineCreditDiscount,
+  isPromptPaymentDiscount,
+  normalizeLineCreditLabel,
+} from "@/lib/line-credit";
 
 function parseMoney(value: string): string {
   const n = parseFloat(value.replace(/[$,\s]/g, ""));
@@ -46,9 +54,95 @@ const invoiceItemInput = z.object({
   itemType: z.enum(["service", "product"]),
   itemId: z.string().uuid().optional(),
   usageId: z.string().uuid().optional(),
+  /** When set, insert a 100% offsetting discount line with this client-facing label. */
+  lineCreditLabel: z.string().max(500).nullable().optional(),
 });
 
 type InvoiceItemInput = z.infer<typeof invoiceItemInput>;
+
+function moneyAbs(value: string | number | null | undefined): number {
+  return Math.abs(parseFloat(String(value ?? "0")) || 0);
+}
+
+function sumPositiveItemTotals(
+  items: Array<{ itemType: string; total: string }>
+): number {
+  return items
+    .filter((item) => item.itemType !== "discount")
+    .reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
+}
+
+function sumLineCreditAbs(
+  items: Array<{ itemType: string; discountKind?: string | null; total: string }>
+): number {
+  return items
+    .filter((item) => isLineCreditDiscount(item))
+    .reduce((sum, item) => sum + moneyAbs(item.total), 0);
+}
+
+function sumPromptPaymentAbs(
+  items: Array<{ itemType: string; discountKind?: string | null; total: string }>
+): number {
+  return items
+    .filter((item) => isPromptPaymentDiscount(item))
+    .reduce((sum, item) => sum + moneyAbs(item.total), 0);
+}
+
+async function insertLineCreditsForPricedItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  invoiceId: string,
+  pricedItems: Array<InvoiceItemInput & { unitPrice: string; total: string }>,
+  insertedRows: Array<{ id: string }>
+) {
+  const creditRows: Array<{
+    invoiceId: string;
+    description: string;
+    quantity: number;
+    unitPrice: string;
+    total: string;
+    itemType: "discount";
+    itemId: null;
+    discountKind: typeof LINE_CREDIT_KIND;
+    linkedItemId: string;
+  }> = [];
+
+  for (let i = 0; i < pricedItems.length; i++) {
+    const item = pricedItems[i]!;
+    const inserted = insertedRows[i];
+    const rawLabel = item.lineCreditLabel?.trim();
+    if (!rawLabel || !inserted) continue;
+    const amount = parseFloat(item.total);
+    if (!(amount > 0)) continue;
+    let label: string;
+    try {
+      label = normalizeLineCreditLabel(rawLabel);
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "Invalid credit label",
+      });
+    }
+    const neg = (-amount).toFixed(2);
+    creditRows.push({
+      invoiceId,
+      description: label,
+      quantity: 1,
+      unitPrice: neg,
+      total: neg,
+      itemType: "discount",
+      itemId: null,
+      discountKind: LINE_CREDIT_KIND,
+      linkedItemId: inserted.id,
+    });
+  }
+
+  if (creditRows.length > 0) {
+    await db.insert(invoiceItems).values(creditRows);
+  }
+
+  return creditRows.reduce((sum, row) => sum + moneyAbs(row.total), 0);
+}
 
 async function priceInvoiceItems(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -190,10 +284,16 @@ async function applyOrReplacePromptPaymentDiscount(
   input: { invoiceId: string } & PromptPaymentDiscountInput
 ) {
   const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
-  const items = await ctx.db
+  const items: Array<{
+    id: string;
+    itemType: string;
+    discountKind: string | null;
+    total: string;
+  }> = await ctx.db
     .select({
       id: invoiceItems.id,
       itemType: invoiceItems.itemType,
+      discountKind: invoiceItems.discountKind,
       total: invoiceItems.total,
     })
     .from(invoiceItems)
@@ -204,17 +304,14 @@ async function applyOrReplacePromptPaymentDiscount(
       )
     );
 
-  const positiveSubtotal = items
-    .filter((item: { itemType: string }) => item.itemType !== "discount")
-    .reduce(
-      (sum: number, item: { total: string }) =>
-        sum + parseFloat(String(item.total ?? "0")),
-      0
-    );
+  const positiveSubtotal = sumPositiveItemTotals(items);
+  const lineCreditTotal = sumLineCreditAbs(items);
+  const discountableSubtotal =
+    Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
 
   let computed;
   try {
-    computed = computePromptPaymentDiscount(positiveSubtotal, {
+    computed = computePromptPaymentDiscount(discountableSubtotal, {
       mode: input.mode,
       value: input.value,
     });
@@ -225,14 +322,14 @@ async function applyOrReplacePromptPaymentDiscount(
     });
   }
 
-  const discountIds = items
-    .filter((item: { itemType: string }) => item.itemType === "discount")
-    .map((item: { id: string }) => item.id);
-  if (discountIds.length > 0) {
+  const promptPaymentIds = items
+    .filter((item) => isPromptPaymentDiscount(item))
+    .map((item) => item.id);
+  if (promptPaymentIds.length > 0) {
     await ctx.db
       .update(invoiceItems)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(inArray(invoiceItems.id, discountIds));
+      .where(inArray(invoiceItems.id, promptPaymentIds));
   }
 
   const unitPrice = (-computed.amount).toFixed(2);
@@ -244,9 +341,12 @@ async function applyOrReplacePromptPaymentDiscount(
     total: unitPrice,
     itemType: "discount",
     itemId: null,
+    discountKind: PROMPT_PAYMENT_KIND,
+    linkedItemId: null,
   });
 
-  const netSubtotal = Math.round((positiveSubtotal - computed.amount) * 100) / 100;
+  const netSubtotal =
+    Math.round((discountableSubtotal - computed.amount) * 100) / 100;
   await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
   void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
 
@@ -706,11 +806,9 @@ export const billingRouter = createRouter({
         markupPercent
       );
 
-      const subtotal = pricedItems.reduce((sum, item) => {
+      const positiveSubtotal = pricedItems.reduce((sum, item) => {
         return sum + item.quantity * parseFloat(item.unitPrice);
       }, 0);
-      const tax = calcTax(subtotal, taxRatePercent);
-      const total = Math.round((subtotal + tax) * 100) / 100;
 
       // Invoice numbers are assigned on finalize, not at draft creation.
       const invoiceNumber = null;
@@ -724,9 +822,9 @@ export const billingRouter = createRouter({
           appointmentId: input.appointmentId ?? null,
           name,
           status: "draft",
-          subtotal: subtotal.toFixed(2),
-          tax: tax.toFixed(2),
-          total: total.toFixed(2),
+          subtotal: positiveSubtotal.toFixed(2),
+          tax: "0.00",
+          total: positiveSubtotal.toFixed(2),
           paidAmount: "0.00",
           dueDate: input.dueDate ?? null,
           isEstimate,
@@ -752,6 +850,27 @@ export const billingRouter = createRouter({
           )
           .returning();
       }
+
+      const lineCreditTotal = await insertLineCreditsForPricedItems(
+        ctx.db,
+        invoice!.id,
+        pricedItems,
+        inserted
+      );
+      const subtotal =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      const tax = calcTax(subtotal, taxRatePercent);
+      const total = Math.round((subtotal + tax) * 100) / 100;
+
+      await ctx.db
+        .update(invoices)
+        .set({
+          subtotal: subtotal.toFixed(2),
+          tax: tax.toFixed(2),
+          total: total.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(invoices.id, invoice!.id));
 
       let stockWarned = false;
       if (!input.isEstimate) {
@@ -795,7 +914,13 @@ export const billingRouter = createRouter({
         }
       }
 
-      return { ...invoice!, stockWarned };
+      return {
+        ...invoice!,
+        subtotal: subtotal.toFixed(2),
+        tax: tax.toFixed(2),
+        total: total.toFixed(2),
+        stockWarned,
+      };
     }),
 
   updateInvoice: protectedProcedure
@@ -866,36 +991,53 @@ export const billingRouter = createRouter({
         markupPercent
       );
 
-      const existingDiscountItems = await ctx.db
-        .select({
-          id: invoiceItems.id,
-          description: invoiceItems.description,
-          quantity: invoiceItems.quantity,
-          unitPrice: invoiceItems.unitPrice,
-          total: invoiceItems.total,
-        })
-        .from(invoiceItems)
-        .where(
-          and(
-            eq(invoiceItems.invoiceId, input.id),
-            eq(invoiceItems.itemType, "discount"),
-            isNull(invoiceItems.deletedAt)
+      const existingDiscountItems: Array<{
+        id: string;
+        description: string;
+        quantity: number;
+        unitPrice: string;
+        total: string;
+        discountKind: string | null;
+        itemType: "discount";
+      }> = (
+        await ctx.db
+          .select({
+            id: invoiceItems.id,
+            description: invoiceItems.description,
+            quantity: invoiceItems.quantity,
+            unitPrice: invoiceItems.unitPrice,
+            total: invoiceItems.total,
+            discountKind: invoiceItems.discountKind,
+          })
+          .from(invoiceItems)
+          .where(
+            and(
+              eq(invoiceItems.invoiceId, input.id),
+              eq(invoiceItems.itemType, "discount"),
+              isNull(invoiceItems.deletedAt)
+            )
           )
-        );
+      ).map(
+        (item: {
+          id: string;
+          description: string;
+          quantity: number;
+          unitPrice: string;
+          total: string;
+          discountKind: string | null;
+        }) => ({
+          ...item,
+          itemType: "discount" as const,
+        })
+      );
+
+      const existingPromptPayment = existingDiscountItems.find((item) =>
+        isPromptPaymentDiscount(item)
+      );
 
       const positiveSubtotal = pricedItems.reduce((sum, item) => {
         return sum + item.quantity * parseFloat(item.unitPrice);
       }, 0);
-      const discountTotal = existingDiscountItems.reduce(
-        (sum: number, item: { total: string }) =>
-          sum + Math.abs(parseFloat(String(item.total ?? "0"))),
-        0
-      );
-      const cappedDiscount = Math.min(discountTotal, positiveSubtotal);
-      const subtotal =
-        Math.round((positiveSubtotal - cappedDiscount) * 100) / 100;
-      const tax = calcTax(subtotal, taxRatePercent);
-      const total = Math.round((subtotal + tax) * 100) / 100;
 
       await ctx.db
         .update(invoiceItems)
@@ -907,31 +1049,53 @@ export const billingRouter = createRouter({
           )
         );
 
-      await ctx.db.insert(invoiceItems).values(
-        pricedItems.map((item) => ({
-          invoiceId: input.id,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          total: item.total,
-          itemType: item.itemType as "service" | "product",
-          itemId: item.itemId ?? null,
-        }))
+      const inserted = await ctx.db
+        .insert(invoiceItems)
+        .values(
+          pricedItems.map((item) => ({
+            invoiceId: input.id,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total,
+            itemType: item.itemType as "service" | "product",
+            itemId: item.itemId ?? null,
+          }))
+        )
+        .returning();
+
+      const lineCreditTotal = await insertLineCreditsForPricedItems(
+        ctx.db,
+        input.id,
+        pricedItems,
+        inserted
       );
 
-      if (cappedDiscount > 0 && existingDiscountItems[0]) {
-        const first = existingDiscountItems[0];
-        const neg = (-cappedDiscount).toFixed(2);
+      const afterCredits =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      const priorPromptAmount = existingPromptPayment
+        ? moneyAbs(existingPromptPayment.total)
+        : 0;
+      const cappedPrompt = Math.min(priorPromptAmount, afterCredits);
+      if (cappedPrompt > 0 && existingPromptPayment) {
+        const neg = (-cappedPrompt).toFixed(2);
         await ctx.db.insert(invoiceItems).values({
           invoiceId: input.id,
-          description: first.description || "Prompt payment discount",
+          description:
+            existingPromptPayment.description || "Prompt payment discount",
           quantity: 1,
           unitPrice: neg,
           total: neg,
           itemType: "discount",
           itemId: null,
+          discountKind: PROMPT_PAYMENT_KIND,
+          linkedItemId: null,
         });
       }
+
+      const subtotal = Math.round((afterCredits - cappedPrompt) * 100) / 100;
+      const tax = calcTax(subtotal, taxRatePercent);
+      const total = Math.round((subtotal + tax) * 100) / 100;
 
       const [invoice] = await ctx.db
         .update(invoices)
@@ -1001,6 +1165,7 @@ export const billingRouter = createRouter({
         .select({
           id: invoiceItems.id,
           itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
           total: invoiceItems.total,
         })
         .from(invoiceItems)
@@ -1011,10 +1176,10 @@ export const billingRouter = createRouter({
           )
         );
 
-      const discountIds = items
-        .filter((item) => item.itemType === "discount")
+      const promptPaymentIds = items
+        .filter((item) => isPromptPaymentDiscount(item))
         .map((item) => item.id);
-      if (discountIds.length === 0) {
+      if (promptPaymentIds.length === 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No prompt payment discount on this invoice",
@@ -1024,13 +1189,286 @@ export const billingRouter = createRouter({
       await ctx.db
         .update(invoiceItems)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
-        .where(inArray(invoiceItems.id, discountIds));
+        .where(inArray(invoiceItems.id, promptPaymentIds));
 
-      const positiveSubtotal = items
-        .filter((item) => item.itemType !== "discount")
-        .reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
-      await recalcInvoiceMoney(ctx, invoice.id, positiveSubtotal);
+      const positiveSubtotal = sumPositiveItemTotals(items);
+      const lineCreditTotal = sumLineCreditAbs(items);
+      const netSubtotal =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
 
+      void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
+      return { ok: true as const };
+    }),
+
+  /** Mark a product/service line as no-charge with an editable client-facing label. */
+  applyLineCredit: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        itemId: z.string().uuid(),
+        label: z.string().max(500).default(DEFAULT_LINE_CREDIT_LABEL),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
+      let label: string;
+      try {
+        label = normalizeLineCreditLabel(input.label || DEFAULT_LINE_CREDIT_LABEL);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Invalid credit label",
+        });
+      }
+
+      const items = await ctx.db
+        .select({
+          id: invoiceItems.id,
+          itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
+          linkedItemId: invoiceItems.linkedItemId,
+          total: invoiceItems.total,
+          description: invoiceItems.description,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.invoiceId),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      const target = items.find((item) => item.id === input.itemId);
+      if (!target || target.itemType === "discount") {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Line item not found",
+        });
+      }
+
+      const amount = parseFloat(String(target.total ?? "0"));
+      if (!(amount > 0)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Nothing to credit on this line",
+        });
+      }
+
+      const existingCreditIds = items
+        .filter(
+          (item) =>
+            isLineCreditDiscount(item) && item.linkedItemId === target.id
+        )
+        .map((item) => item.id);
+      if (existingCreditIds.length > 0) {
+        await ctx.db
+          .update(invoiceItems)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(invoiceItems.id, existingCreditIds));
+      }
+
+      const neg = (-amount).toFixed(2);
+      await ctx.db.insert(invoiceItems).values({
+        invoiceId: invoice.id,
+        description: label,
+        quantity: 1,
+        unitPrice: neg,
+        total: neg,
+        itemType: "discount",
+        itemId: null,
+        discountKind: LINE_CREDIT_KIND,
+        linkedItemId: target.id,
+      });
+
+      // Recompute: keep prompt payment capped against remaining after line credits.
+      const positiveSubtotal = sumPositiveItemTotals(items);
+      const otherLineCredits = items
+        .filter(
+          (item) =>
+            isLineCreditDiscount(item) && item.linkedItemId !== target.id
+        )
+        .reduce((sum, item) => sum + moneyAbs(item.total), 0);
+      const lineCreditTotal = otherLineCredits + amount;
+      const afterCredits =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      const priorPrompt = sumPromptPaymentAbs(items);
+      const promptIds = items
+        .filter((item) => isPromptPaymentDiscount(item))
+        .map((item) => item.id);
+      let promptAmount = Math.min(priorPrompt, afterCredits);
+      if (promptIds.length > 0) {
+        await ctx.db
+          .update(invoiceItems)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(invoiceItems.id, promptIds));
+      }
+      if (promptAmount > 0) {
+        const promptDesc =
+          items.find((item) => isPromptPaymentDiscount(item))?.description ||
+          "Prompt payment discount";
+        const promptNeg = (-promptAmount).toFixed(2);
+        await ctx.db.insert(invoiceItems).values({
+          invoiceId: invoice.id,
+          description: promptDesc,
+          quantity: 1,
+          unitPrice: promptNeg,
+          total: promptNeg,
+          itemType: "discount",
+          itemId: null,
+          discountKind: PROMPT_PAYMENT_KIND,
+          linkedItemId: null,
+        });
+      }
+
+      const netSubtotal =
+        Math.round((afterCredits - promptAmount) * 100) / 100;
+      await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
+
+      return { label, amount: amount.toFixed(2) };
+    }),
+
+  updateLineCreditLabel: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        discountItemId: z.string().uuid(),
+        label: z.string().max(500),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await loadDiscountableInvoice(ctx, input.invoiceId);
+      let label: string;
+      try {
+        label = normalizeLineCreditLabel(input.label);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Invalid credit label",
+        });
+      }
+
+      const [row] = await ctx.db
+        .select({
+          id: invoiceItems.id,
+          itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.id, input.discountItemId),
+            eq(invoiceItems.invoiceId, input.invoiceId),
+            isNull(invoiceItems.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!row || !isLineCreditDiscount(row)) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Line credit not found",
+        });
+      }
+
+      await ctx.db
+        .update(invoiceItems)
+        .set({ description: label, updatedAt: new Date() })
+        .where(eq(invoiceItems.id, row.id));
+
+      void queueInvoiceSync(ctx.db, ctx.practiceId, input.invoiceId);
+      return { label };
+    }),
+
+  removeLineCredit: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        /** Either the discount row id or the linked product/service line id. */
+        itemId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
+      const items = await ctx.db
+        .select({
+          id: invoiceItems.id,
+          itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
+          linkedItemId: invoiceItems.linkedItemId,
+          total: invoiceItems.total,
+          description: invoiceItems.description,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.invoiceId),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      const creditIds = items
+        .filter(
+          (item) =>
+            isLineCreditDiscount(item) &&
+            (item.id === input.itemId || item.linkedItemId === input.itemId)
+        )
+        .map((item) => item.id);
+
+      if (creditIds.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No line credit found",
+        });
+      }
+
+      await ctx.db
+        .update(invoiceItems)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(inArray(invoiceItems.id, creditIds));
+
+      const remaining = items.filter((item) => !creditIds.includes(item.id));
+      const positiveSubtotal = sumPositiveItemTotals(remaining);
+      const lineCreditTotal = sumLineCreditAbs(remaining);
+      const afterCredits =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      const priorPrompt = sumPromptPaymentAbs(remaining);
+      const promptIds = remaining
+        .filter((item) => isPromptPaymentDiscount(item))
+        .map((item) => item.id);
+      const promptAmount = Math.min(priorPrompt, afterCredits);
+
+      if (promptIds.length > 0) {
+        await ctx.db
+          .update(invoiceItems)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(invoiceItems.id, promptIds));
+      }
+      if (promptAmount > 0) {
+        const promptDesc =
+          remaining.find((item) => isPromptPaymentDiscount(item))
+            ?.description || "Prompt payment discount";
+        const promptNeg = (-promptAmount).toFixed(2);
+        await ctx.db.insert(invoiceItems).values({
+          invoiceId: invoice.id,
+          description: promptDesc,
+          quantity: 1,
+          unitPrice: promptNeg,
+          total: promptNeg,
+          itemType: "discount",
+          itemId: null,
+          discountKind: PROMPT_PAYMENT_KIND,
+          linkedItemId: null,
+        });
+      }
+
+      const netSubtotal =
+        Math.round((afterCredits - promptAmount) * 100) / 100;
+      await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
       void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       return { ok: true as const };
     }),
