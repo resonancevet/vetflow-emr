@@ -116,6 +116,13 @@ export const invoiceItems = pgTable("invoice_items", {
   total: numeric("total", { precision: 10, scale: 2 }).notNull(),
   itemType: invoiceItemTypeEnum("item_type").notNull(),
   itemId: uuid("item_id"),
+  /**
+   * For discount lines: `prompt_payment` or `line_credit`.
+   * Null on legacy prompt-payment rows (treated as prompt_payment).
+   */
+  discountKind: varchar("discount_kind", { length: 32 }),
+  /** For line_credit discounts: the waived service/product invoice_item id. */
+  linkedItemId: uuid("linked_item_id"),
 });
 
 export const products = pgTable("products", {
