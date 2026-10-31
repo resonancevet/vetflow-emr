@@ -2,7 +2,7 @@
 
 import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Plus, Trash2, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowLeft, Pencil } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +30,10 @@ interface LineItem {
   itemType: "service" | "product";
   itemId?: string;
   usageId?: string;
-  /** Client-facing discount wording when the line is no-charged. */
+  /** Client-facing discount wording when the line has a credit. */
   lineCreditLabel?: string | null;
+  /** Dollar amount credited (defaults to full line total). */
+  lineCreditAmount?: string | null;
 }
 
 function defaultDueDate(): string {
@@ -195,20 +197,33 @@ function NewInvoicePageContent() {
     const creditByLinked = new Map(
       existing.items
         .filter((item) => isLineCreditDiscount(item))
-        .map((item) => [item.linkedItemId as string, item.description])
+        .map((item) => [
+          item.linkedItemId as string,
+          {
+            label: item.description,
+            amount: Math.abs(parseFloat(String(item.total ?? "0"))).toFixed(2),
+          },
+        ])
     );
     setItems(
       existing.items
         .filter((item) => item.itemType !== "discount")
-        .map((item) => ({
-          id: item.id,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          itemType: item.itemType === "product" ? ("product" as const) : ("service" as const),
-          itemId: item.itemId ?? undefined,
-          lineCreditLabel: creditByLinked.get(item.id) ?? null,
-        }))
+        .map((item) => {
+          const credit = creditByLinked.get(item.id);
+          return {
+            id: item.id,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            itemType:
+              item.itemType === "product"
+                ? ("product" as const)
+                : ("service" as const),
+            itemId: item.itemId ?? undefined,
+            lineCreditLabel: credit?.label ?? null,
+            lineCreditAmount: credit?.amount ?? null,
+          };
+        })
     );
     setHydrated(true);
   }, [editId, sourceId, existingQuery.data, hydrated, router]);
@@ -267,7 +282,14 @@ function NewInvoicePageContent() {
     );
     const credits = items.reduce((sum, item) => {
       if (!item.lineCreditLabel?.trim()) return sum;
-      return sum + item.quantity * parseFloat(item.unitPrice || "0");
+      const lineTotal =
+        item.quantity * parseFloat(item.unitPrice || "0");
+      const raw = parseFloat(item.lineCreditAmount || "");
+      const credit =
+        Number.isFinite(raw) && raw > 0
+          ? Math.min(raw, lineTotal)
+          : lineTotal;
+      return sum + credit;
     }, 0);
     const sub = Math.round((gross - credits) * 100) / 100;
     const t = calcTax(sub, taxRatePercent);
@@ -339,32 +361,46 @@ function NewInvoicePageContent() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function applyNoCharge(id: string) {
+  function openLineCredit(id: string) {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const lineTotal =
+          item.quantity * parseFloat(item.unitPrice || "0");
+        return {
+          ...item,
+          lineCreditLabel:
+            item.lineCreditLabel?.trim() || DEFAULT_LINE_CREDIT_LABEL,
+          lineCreditAmount:
+            item.lineCreditAmount?.trim() ||
+            (lineTotal > 0 ? lineTotal.toFixed(2) : "0.00"),
+        };
+      })
+    );
+  }
+
+  function clearLineCredit(id: string) {
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? {
-              ...item,
-              lineCreditLabel:
-                item.lineCreditLabel?.trim() || DEFAULT_LINE_CREDIT_LABEL,
-            }
+          ? { ...item, lineCreditLabel: null, lineCreditAmount: null }
           : item
       )
     );
   }
 
-  function clearNoCharge(id: string) {
+  function setLineCreditLabel(id: string, label: string) {
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, lineCreditLabel: null } : item
+        item.id === id ? { ...item, lineCreditLabel: label } : item
       )
     );
   }
 
-  function setNoChargeLabel(id: string, label: string) {
+  function setLineCreditAmount(id: string, amount: string) {
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, lineCreditLabel: label } : item
+        item.id === id ? { ...item, lineCreditAmount: amount } : item
       )
     );
   }
@@ -429,6 +465,11 @@ function NewInvoicePageContent() {
         itemId: item.itemId,
         usageId: item.usageId,
         lineCreditLabel: item.lineCreditLabel?.trim() || null,
+        lineCreditAmount: (() => {
+          if (!item.lineCreditLabel?.trim()) return null;
+          const parsed = parseFloat(item.lineCreditAmount || "");
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+        })(),
       })),
       dueDate: dueDate || undefined,
     };
@@ -822,6 +863,7 @@ function NewInvoicePageContent() {
                     const lineTotal =
                       item.quantity * parseFloat(item.unitPrice || "0");
                     const hasCredit = Boolean(item.lineCreditLabel?.trim());
+                    const creditRaw = parseFloat(item.lineCreditAmount || "");
                     return (
                       <Fragment key={item.id}>
                         <tr className="border-b border-border/50 last:border-0">
@@ -848,10 +890,12 @@ function NewInvoicePageContent() {
                               {!hasCredit && lineTotal > 0 ? (
                                 <button
                                   type="button"
-                                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                                  onClick={() => applyNoCharge(item.id)}
+                                  className="text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={() => openLineCredit(item.id)}
+                                  title="Add line credit"
+                                  aria-label="Add line credit"
                                 >
-                                  No charge
+                                  <Pencil className="h-4 w-4" />
                                 </button>
                               ) : null}
                               <button
@@ -872,7 +916,7 @@ function NewInvoicePageContent() {
                                   className="h-8 max-w-xs text-sm"
                                   value={item.lineCreditLabel ?? ""}
                                   onChange={(e) =>
-                                    setNoChargeLabel(item.id, e.target.value)
+                                    setLineCreditLabel(item.id, e.target.value)
                                   }
                                   placeholder={DEFAULT_LINE_CREDIT_LABEL}
                                   aria-label="Credit label shown on invoice"
@@ -880,14 +924,34 @@ function NewInvoicePageContent() {
                                 <button
                                   type="button"
                                   className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                                  onClick={() => clearNoCharge(item.id)}
+                                  onClick={() => clearLineCredit(item.id)}
                                 >
                                   Remove credit
                                 </button>
                               </div>
                             </td>
-                            <td className="py-2 text-right tabular-nums text-muted-foreground">
-                              −${lineTotal.toFixed(2)}
+                            <td className="py-2 text-right">
+                              <div className="inline-flex items-center justify-end gap-1">
+                                <span className="text-muted-foreground">−$</span>
+                                <Input
+                                  className="h-8 w-24 text-right text-sm tabular-nums"
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  max={lineTotal > 0 ? lineTotal : undefined}
+                                  value={item.lineCreditAmount ?? ""}
+                                  onChange={(e) =>
+                                    setLineCreditAmount(item.id, e.target.value)
+                                  }
+                                  aria-label="Credit amount"
+                                />
+                              </div>
+                              {Number.isFinite(creditRaw) &&
+                              creditRaw > lineTotal ? (
+                                <div className="mt-1 text-xs text-destructive">
+                                  Max ${lineTotal.toFixed(2)}
+                                </div>
+                              ) : null}
                             </td>
                             <td />
                           </tr>

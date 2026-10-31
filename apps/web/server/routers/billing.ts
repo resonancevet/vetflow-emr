@@ -34,6 +34,7 @@ import {
   isLineCreditDiscount,
   isPromptPaymentDiscount,
   normalizeLineCreditLabel,
+  resolveLineCreditAmount,
 } from "@/lib/line-credit";
 
 function parseMoney(value: string): string {
@@ -54,8 +55,10 @@ const invoiceItemInput = z.object({
   itemType: z.enum(["service", "product"]),
   itemId: z.string().uuid().optional(),
   usageId: z.string().uuid().optional(),
-  /** When set, insert a 100% offsetting discount line with this client-facing label. */
+  /** When set, insert an offsetting discount line with this client-facing label. */
   lineCreditLabel: z.string().max(500).nullable().optional(),
+  /** Dollar credit amount; defaults to the full line total when omitted. */
+  lineCreditAmount: z.number().positive().nullable().optional(),
 });
 
 type InvoiceItemInput = z.infer<typeof invoiceItemInput>;
@@ -112,15 +115,16 @@ async function insertLineCreditsForPricedItems(
     const inserted = insertedRows[i];
     const rawLabel = item.lineCreditLabel?.trim();
     if (!rawLabel || !inserted) continue;
-    const amount = parseFloat(item.total);
-    if (!(amount > 0)) continue;
+    const lineTotal = parseFloat(item.total);
     let label: string;
+    let amount: number;
     try {
       label = normalizeLineCreditLabel(rawLabel);
+      amount = resolveLineCreditAmount(item.lineCreditAmount, lineTotal);
     } catch (err) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: err instanceof Error ? err.message : "Invalid credit label",
+        message: err instanceof Error ? err.message : "Invalid credit",
       });
     }
     const neg = (-amount).toFixed(2);
@@ -1201,7 +1205,7 @@ export const billingRouter = createRouter({
       return { ok: true as const };
     }),
 
-  /** Mark a product/service line as no-charge with an editable client-facing label. */
+  /** Apply or replace a line credit with editable label and amount. */
   applyLineCredit: protectedProcedure
     .use(requireRole("admin", "front_desk"))
     .input(
@@ -1209,6 +1213,8 @@ export const billingRouter = createRouter({
         invoiceId: z.string().uuid(),
         itemId: z.string().uuid(),
         label: z.string().max(500).default(DEFAULT_LINE_CREDIT_LABEL),
+        /** Dollar credit; defaults to the full line total. */
+        amount: z.number().positive().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1248,11 +1254,16 @@ export const billingRouter = createRouter({
         });
       }
 
-      const amount = parseFloat(String(target.total ?? "0"));
-      if (!(amount > 0)) {
+      let amount: number;
+      try {
+        amount = resolveLineCreditAmount(
+          input.amount,
+          parseFloat(String(target.total ?? "0"))
+        );
+      } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Nothing to credit on this line",
+          message: err instanceof Error ? err.message : "Invalid credit amount",
         });
       }
 
@@ -1297,7 +1308,7 @@ export const billingRouter = createRouter({
       const promptIds = items
         .filter((item) => isPromptPaymentDiscount(item))
         .map((item) => item.id);
-      let promptAmount = Math.min(priorPrompt, afterCredits);
+      const promptAmount = Math.min(priorPrompt, afterCredits);
       if (promptIds.length > 0) {
         await ctx.db
           .update(invoiceItems)
@@ -1330,6 +1341,147 @@ export const billingRouter = createRouter({
       return { label, amount: amount.toFixed(2) };
     }),
 
+  /** Update the client-facing label and/or dollar amount of an existing line credit. */
+  updateLineCredit: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        discountItemId: z.string().uuid(),
+        label: z.string().max(500).optional(),
+        amount: z.number().positive().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.label == null && input.amount == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Provide a label and/or amount to update",
+        });
+      }
+
+      const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
+
+      const items: Array<{
+        id: string;
+        itemType: string;
+        discountKind: string | null;
+        linkedItemId: string | null;
+        total: string;
+        description: string;
+      }> = await ctx.db
+        .select({
+          id: invoiceItems.id,
+          itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
+          linkedItemId: invoiceItems.linkedItemId,
+          total: invoiceItems.total,
+          description: invoiceItems.description,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.invoiceId),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      const row = items.find((item) => item.id === input.discountItemId);
+      if (!row || !isLineCreditDiscount(row)) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Line credit not found",
+        });
+      }
+
+      let label = row.description;
+      if (input.label != null) {
+        try {
+          label = normalizeLineCreditLabel(input.label);
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: err instanceof Error ? err.message : "Invalid credit label",
+          });
+        }
+      }
+
+      let amount = moneyAbs(row.total);
+      if (input.amount != null) {
+        const parent = items.find(
+          (item) => item.id === row.linkedItemId && item.itemType !== "discount"
+        );
+        const parentTotal = parent
+          ? parseFloat(String(parent.total ?? "0"))
+          : amount;
+        try {
+          amount = resolveLineCreditAmount(input.amount, parentTotal);
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              err instanceof Error ? err.message : "Invalid credit amount",
+          });
+        }
+      }
+
+      const neg = (-amount).toFixed(2);
+      await ctx.db
+        .update(invoiceItems)
+        .set({
+          description: label,
+          unitPrice: neg,
+          total: neg,
+          updatedAt: new Date(),
+        })
+        .where(eq(invoiceItems.id, row.id));
+
+      const positiveSubtotal = sumPositiveItemTotals(items);
+      const otherLineCredits = items
+        .filter(
+          (item) => isLineCreditDiscount(item) && item.id !== row.id
+        )
+        .reduce((sum, item) => sum + moneyAbs(item.total), 0);
+      const lineCreditTotal = otherLineCredits + amount;
+      const afterCredits =
+        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+      const priorPrompt = sumPromptPaymentAbs(items);
+      const promptIds = items
+        .filter((item) => isPromptPaymentDiscount(item))
+        .map((item) => item.id);
+      const promptAmount = Math.min(priorPrompt, afterCredits);
+      if (promptIds.length > 0) {
+        await ctx.db
+          .update(invoiceItems)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(invoiceItems.id, promptIds));
+      }
+      if (promptAmount > 0) {
+        const promptDesc =
+          items.find((item) => isPromptPaymentDiscount(item))?.description ||
+          "Prompt payment discount";
+        const promptNeg = (-promptAmount).toFixed(2);
+        await ctx.db.insert(invoiceItems).values({
+          invoiceId: invoice.id,
+          description: promptDesc,
+          quantity: 1,
+          unitPrice: promptNeg,
+          total: promptNeg,
+          itemType: "discount",
+          itemId: null,
+          discountKind: PROMPT_PAYMENT_KIND,
+          linkedItemId: null,
+        });
+      }
+
+      const netSubtotal =
+        Math.round((afterCredits - promptAmount) * 100) / 100;
+      await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
+      return { label, amount: amount.toFixed(2) };
+    }),
+
+  /** @deprecated Prefer updateLineCredit — kept for older clients. */
   updateLineCreditLabel: protectedProcedure
     .use(requireRole("admin", "front_desk"))
     .input(
@@ -1340,7 +1492,8 @@ export const billingRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await loadDiscountableInvoice(ctx, input.invoiceId);
+      // Delegate to the same validation path via a nested call pattern.
+      const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
       let label: string;
       try {
         label = normalizeLineCreditLabel(input.label);
@@ -1379,7 +1532,7 @@ export const billingRouter = createRouter({
         .set({ description: label, updatedAt: new Date() })
         .where(eq(invoiceItems.id, row.id));
 
-      void queueInvoiceSync(ctx.db, ctx.practiceId, input.invoiceId);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       return { label };
     }),
 
