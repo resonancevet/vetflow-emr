@@ -218,7 +218,6 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
     ROMA_TEAL,
     ROMA_NAVY,
     ROMA_DARK,
-    ROMA_GRAY,
     ROMA_LINE,
     INVOICE_FONT,
     registerInvoiceFonts,
@@ -265,16 +264,6 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_TEAL);
   doc.text(data.practiceName, headerLeft, y + 8);
 
-  let headerTextBottom = y + 8;
-  if (data.practicePhone?.trim()) {
-    const phone = formatPhoneDisplay(data.practicePhone.trim());
-    doc.setFont(INVOICE_FONT, "normal");
-    doc.setFontSize(10);
-    setHex(ROMA_GRAY);
-    doc.text(phone, headerLeft, y + 14);
-    headerTextBottom = y + 14;
-  }
-
   const metaX = pageW - margin;
   let metaY = y + 4;
   doc.setFont(INVOICE_FONT, "normal");
@@ -300,7 +289,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const paymentDue = showPaid ? "PAID" : data.dueDate || "—";
   doc.text(`Payment Due:  ${paymentDue}`, metaX, metaY, { align: "right" });
 
-  y = Math.max(y + logoSize + 4, headerTextBottom + 6, metaY + 8);
+  y = Math.max(y + logoSize + 4, metaY + 8);
 
   // --- Bill To (name / client ID / pet on separate readable lines) ----------
   doc.setFont(INVOICE_FONT, "bold");
@@ -431,12 +420,18 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const practiceAddrLines = formatInvoiceAddressLines({
     address: data.practiceAddress,
   });
+  const practicePhone = data.practicePhone?.trim()
+    ? formatPhoneDisplay(data.practicePhone.trim())
+    : "";
   const mailBodyLines = [
     data.practiceName?.trim(),
     ...practiceAddrLines,
   ].filter(Boolean) as string[];
 
-  const mailHeightEstimate = Math.max(16, mailBodyLines.length * 5 + 10);
+  const mailHeightEstimate = Math.max(
+    16,
+    (mailBodyLines.length + (practicePhone ? 1 : 0)) * 5 + 10
+  );
   ensureY(mailHeightEstimate + 22);
 
   const colW = contentW / 2 - 6;
@@ -459,13 +454,17 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_DARK);
 
   let mailY = bodyStartY;
-  if (mailBodyLines.length === 0) {
+  if (mailBodyLines.length === 0 && !practicePhone) {
     doc.text("—", margin, mailY);
     mailY += 5;
   } else {
     // Draw each address line separately (do not reflow into one paragraph).
     for (const line of mailBodyLines) {
       doc.text(String(line), margin, mailY);
+      mailY += 5;
+    }
+    if (practicePhone) {
+      doc.text(practicePhone, margin, mailY);
       mailY += 5;
     }
   }

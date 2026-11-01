@@ -819,13 +819,11 @@ function InvoiceRow({
                             paidAmount: formatCurrency(d.paidAmount),
                             venmoHandle: venmoHandle || undefined,
                           });
-                          doc.save(
-                            `invoice-${d.invoiceNumber ?? (clientName || "unknown")}.pdf`
-                          );
+                          window.open(doc.output("bloburl"), "_blank");
                         }}
                       >
-                        <Download className="mr-1 h-3.5 w-3.5" />
-                        Download PDF
+                        <FileText className="mr-1 h-3.5 w-3.5" />
+                        PDF Preview
                       </Button>
                       {detail.data.status === "draft" ? (
                         <p className="text-xs text-muted-foreground self-center">
@@ -858,55 +856,6 @@ function InvoiceRow({
                               : null,
                             status: detail.data.status,
                             venmoHandle: venmoHandle || null,
-                            onPreviewPdf: async () => {
-                              const d = detail.data!;
-                              const clientName = [
-                                d.clientFirstName,
-                                d.clientLastName,
-                              ]
-                                .filter(Boolean)
-                                .join(" ");
-                              const doc = await generateInvoicePdf({
-                                practiceName,
-                                practicePhone: practicePhone || undefined,
-                                practiceAddress: practiceAddress || undefined,
-                                clientName,
-                                clientEmail: d.clientEmail ?? undefined,
-                                clientAddress: d.clientAddress ?? undefined,
-                                clientCity: d.clientCity ?? undefined,
-                                clientState: d.clientState ?? undefined,
-                                clientZip: d.clientZip ?? undefined,
-                                clientDisplayId: d.clientDisplayId ?? undefined,
-                                patientName: d.patientName ?? undefined,
-                                invoiceNumber: d.invoiceNumber ?? undefined,
-                                invoiceDate: d.invoiceDate
-                                  ? formatVisitDate(d.invoiceDate)
-                                  : d.createdAt
-                                    ? new Date(d.createdAt).toLocaleDateString()
-                                    : new Date().toLocaleDateString(),
-                                dueDate: d.dueDate
-                                  ? formatVisitDate(d.dueDate)
-                                  : undefined,
-                                status: d.status,
-                                isPaid:
-                                  d.status === "paid" ||
-                                  Number(d.total ?? 0) -
-                                    Number(d.paidAmount ?? 0) <=
-                                    0.009,
-                                items: d.items.map((item) => ({
-                                  description: item.description ?? "",
-                                  quantity: Number(item.quantity ?? 1),
-                                  unitPrice: formatCurrency(item.unitPrice),
-                                  total: formatCurrency(item.total),
-                                })),
-                                subtotal: formatCurrency(d.subtotal),
-                                tax: formatCurrency(d.tax),
-                                total: formatCurrency(d.total),
-                                paidAmount: formatCurrency(d.paidAmount),
-                                venmoHandle: venmoHandle || undefined,
-                              });
-                              window.open(doc.output("bloburl"), "_blank");
-                            },
                           }}
                         />
                       )}
@@ -1473,7 +1422,6 @@ function EmailInvoiceButton({
     dueDate: string | null;
     status: string;
     venmoHandle: string | null;
-    onPreviewPdf: () => void | Promise<void>;
   };
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -1571,17 +1519,6 @@ function EmailInvoiceButton({
               )}
             </dl>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void preview.onPreviewPdf();
-                }}
-              >
-                <Download className="mr-1 h-3.5 w-3.5" />
-                Open PDF preview
-              </Button>
               <Button
                 variant="ghost"
                 size="sm"
