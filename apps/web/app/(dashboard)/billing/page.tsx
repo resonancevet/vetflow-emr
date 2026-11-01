@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { generateInvoicePdf } from "@/lib/pdf";
+import { buildInvoicePdfItems } from "@/lib/invoice-line-order";
 import { formatVisitDate } from "@/lib/practice-datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -675,12 +676,7 @@ function InvoiceRow({
                               ? formatVisitDate(d.dueDate)
                               : undefined,
                             status: "estimate",
-                            items: d.items.map((item) => ({
-                              description: item.description ?? "",
-                              quantity: Number(item.quantity ?? 1),
-                              unitPrice: formatCurrency(item.unitPrice),
-                              total: formatCurrency(item.total),
-                            })),
+                            items: buildInvoicePdfItems(d.items, formatCurrency),
                             subtotal: formatCurrency(d.subtotal),
                             tax: formatCurrency(d.tax),
                             total: formatCurrency(d.total),
@@ -807,12 +803,7 @@ function InvoiceRow({
                               d.status === "paid" ||
                               Number(d.total ?? 0) - Number(d.paidAmount ?? 0) <=
                                 0.009,
-                            items: d.items.map((item) => ({
-                              description: item.description ?? "",
-                              quantity: Number(item.quantity ?? 1),
-                              unitPrice: formatCurrency(item.unitPrice),
-                              total: formatCurrency(item.total),
-                            })),
+                            items: buildInvoicePdfItems(d.items, formatCurrency),
                             subtotal: formatCurrency(d.subtotal),
                             tax: formatCurrency(d.tax),
                             total: formatCurrency(d.total),

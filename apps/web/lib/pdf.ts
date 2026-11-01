@@ -130,6 +130,8 @@ export interface InvoiceData {
     quantity: number;
     unitPrice: string;
     total: string;
+    /** When true, indent under the related charge line. */
+    isLineCredit?: boolean;
   }>;
   subtotal: string;
   tax: string;
@@ -361,13 +363,14 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_DARK);
   for (const item of data.items) {
     const desc =
-      item.quantity > 1
+      item.quantity > 1 && !item.isLineCredit
         ? `${item.description} × ${item.quantity}`
         : item.description;
-    const lines = doc.splitTextToSize(desc, contentW - 40);
+    const indent = item.isLineCredit ? 5 : 0;
+    const lines = doc.splitTextToSize(desc, contentW - 40 - indent);
     const needed = Math.max(6, lines.length * 5);
     ensureY(needed + 4);
-    doc.text(lines, margin + 3, y);
+    doc.text(lines, margin + 3 + indent, y);
     doc.text(formatPdfMoney(item.total), pageW - margin - 3, y, {
       align: "right",
     });

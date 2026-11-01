@@ -9,6 +9,7 @@ import {
 } from "@openpims/db";
 import { sendInvoiceEmail } from "@/lib/email";
 import { generateInvoicePdf } from "@/lib/pdf";
+import { buildInvoicePdfItems } from "@/lib/invoice-line-order";
 import { getEmailTemplatesFromSettings } from "@/lib/email-templates";
 import {
   buildPortalUrl,
@@ -141,10 +142,14 @@ export async function deliverInvoiceEmail(
 
   const items = await db
     .select({
+      id: invoiceItems.id,
       description: invoiceItems.description,
       quantity: invoiceItems.quantity,
       unitPrice: invoiceItems.unitPrice,
       total: invoiceItems.total,
+      itemType: invoiceItems.itemType,
+      discountKind: invoiceItems.discountKind,
+      linkedItemId: invoiceItems.linkedItemId,
     })
     .from(invoiceItems)
     .where(
@@ -181,19 +186,7 @@ export async function deliverInvoiceEmail(
     dueDate: invoice.dueDate ? formatVisitDate(invoice.dueDate) : undefined,
     status: invoice.status,
     isPaid,
-    items: items.map(
-      (item: {
-        description: string | null;
-        quantity: number | null;
-        unitPrice: string;
-        total: string;
-      }) => ({
-        description: item.description ?? "",
-        quantity: Number(item.quantity ?? 1),
-        unitPrice: formatMoney(item.unitPrice),
-        total: formatMoney(item.total),
-      })
-    ),
+    items: buildInvoicePdfItems(items, formatMoney),
     subtotal: formatMoney(invoice.subtotal ?? 0),
     tax: formatMoney(invoice.tax ?? 0),
     total: formatMoney(total),
