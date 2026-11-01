@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { formatPhoneDisplay } from "./phone-format";
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -264,6 +265,16 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_TEAL);
   doc.text(data.practiceName, headerLeft, y + 8);
 
+  let headerTextBottom = y + 8;
+  if (data.practicePhone?.trim()) {
+    const phone = formatPhoneDisplay(data.practicePhone.trim());
+    doc.setFont(INVOICE_FONT, "normal");
+    doc.setFontSize(10);
+    setHex(ROMA_GRAY);
+    doc.text(phone, headerLeft, y + 14);
+    headerTextBottom = y + 14;
+  }
+
   const metaX = pageW - margin;
   let metaY = y + 4;
   doc.setFont(INVOICE_FONT, "normal");
@@ -289,7 +300,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const paymentDue = showPaid ? "PAID" : data.dueDate || "—";
   doc.text(`Payment Due:  ${paymentDue}`, metaX, metaY, { align: "right" });
 
-  y = Math.max(y + logoSize + 4, metaY + 8);
+  y = Math.max(y + logoSize + 4, headerTextBottom + 6, metaY + 8);
 
   // --- Bill To (name / client ID / pet on separate readable lines) ----------
   doc.setFont(INVOICE_FONT, "bold");

@@ -91,6 +91,56 @@ function sumPromptPaymentAbs(
     .reduce((sum, item) => sum + moneyAbs(item.total), 0);
 }
 
+/** Recalc invoice money after line/credit changes; caps prompt payment to remaining. */
+async function rebalanceInvoiceDiscounts(
+  ctx: BillingCtx,
+  invoiceId: string,
+  items: Array<{
+    id: string;
+    itemType: string;
+    discountKind?: string | null;
+    total: string;
+    description?: string;
+  }>
+) {
+  const positiveSubtotal = sumPositiveItemTotals(items);
+  const lineCreditTotal = sumLineCreditAbs(items);
+  const afterCredits =
+    Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
+  const priorPrompt = sumPromptPaymentAbs(items);
+  const promptIds = items
+    .filter((item) => isPromptPaymentDiscount(item))
+    .map((item) => item.id);
+  const promptAmount = Math.min(priorPrompt, afterCredits);
+
+  if (promptIds.length > 0) {
+    await ctx.db
+      .update(invoiceItems)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(inArray(invoiceItems.id, promptIds));
+  }
+  if (promptAmount > 0) {
+    const promptDesc =
+      items.find((item) => isPromptPaymentDiscount(item))?.description ||
+      "Prompt payment discount";
+    const promptNeg = (-promptAmount).toFixed(2);
+    await ctx.db.insert(invoiceItems).values({
+      invoiceId,
+      description: promptDesc,
+      quantity: 1,
+      unitPrice: promptNeg,
+      total: promptNeg,
+      itemType: "discount",
+      itemId: null,
+      discountKind: PROMPT_PAYMENT_KIND,
+      linkedItemId: null,
+    });
+  }
+
+  const netSubtotal = Math.round((afterCredits - promptAmount) * 100) / 100;
+  await recalcInvoiceMoney(ctx, invoiceId, netSubtotal);
+}
+
 async function insertLineCreditsForPricedItems(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
@@ -1585,43 +1635,98 @@ export const billingRouter = createRouter({
         .where(inArray(invoiceItems.id, creditIds));
 
       const remaining = items.filter((item) => !creditIds.includes(item.id));
-      const positiveSubtotal = sumPositiveItemTotals(remaining);
-      const lineCreditTotal = sumLineCreditAbs(remaining);
-      const afterCredits =
-        Math.round((positiveSubtotal - lineCreditTotal) * 100) / 100;
-      const priorPrompt = sumPromptPaymentAbs(remaining);
-      const promptIds = remaining
-        .filter((item) => isPromptPaymentDiscount(item))
-        .map((item) => item.id);
-      const promptAmount = Math.min(priorPrompt, afterCredits);
+      await rebalanceInvoiceDiscounts(ctx, invoice.id, remaining);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
+      return { ok: true as const };
+    }),
 
-      if (promptIds.length > 0) {
-        await ctx.db
-          .update(invoiceItems)
-          .set({ deletedAt: new Date(), updatedAt: new Date() })
-          .where(inArray(invoiceItems.id, promptIds));
-      }
-      if (promptAmount > 0) {
-        const promptDesc =
-          remaining.find((item) => isPromptPaymentDiscount(item))
-            ?.description || "Prompt payment discount";
-        const promptNeg = (-promptAmount).toFixed(2);
-        await ctx.db.insert(invoiceItems).values({
-          invoiceId: invoice.id,
-          description: promptDesc,
-          quantity: 1,
-          unitPrice: promptNeg,
-          total: promptNeg,
-          itemType: "discount",
-          itemId: null,
-          discountKind: PROMPT_PAYMENT_KIND,
-          linkedItemId: null,
+  /** Soft-delete a product/service line (and its linked credit) on an unpaid invoice. */
+  removeInvoiceItem: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        itemId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await loadDiscountableInvoice(ctx, input.invoiceId);
+      const [invoiceMeta] = await ctx.db
+        .select({ isEstimate: invoices.isEstimate })
+        .from(invoices)
+        .where(eq(invoices.id, invoice.id))
+        .limit(1);
+
+      const items = await ctx.db
+        .select({
+          id: invoiceItems.id,
+          itemType: invoiceItems.itemType,
+          discountKind: invoiceItems.discountKind,
+          linkedItemId: invoiceItems.linkedItemId,
+          itemId: invoiceItems.itemId,
+          quantity: invoiceItems.quantity,
+          total: invoiceItems.total,
+          description: invoiceItems.description,
+        })
+        .from(invoiceItems)
+        .where(
+          and(
+            eq(invoiceItems.invoiceId, input.invoiceId),
+            isNull(invoiceItems.deletedAt)
+          )
+        );
+
+      const target = items.find((item) => item.id === input.itemId);
+      if (!target || target.itemType === "discount") {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Line item not found",
         });
       }
 
-      const netSubtotal =
-        Math.round((afterCredits - promptAmount) * 100) / 100;
-      await recalcInvoiceMoney(ctx, invoice.id, netSubtotal);
+      const removeIds = items
+        .filter(
+          (item) =>
+            item.id === target.id ||
+            (isLineCreditDiscount(item) && item.linkedItemId === target.id)
+        )
+        .map((item) => item.id);
+
+      await ctx.db
+        .update(invoiceItems)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(inArray(invoiceItems.id, removeIds));
+
+      // Unlink any inventory usages that pointed at this line.
+      await ctx.db
+        .update(inventoryUsages)
+        .set({ invoiceItemId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(inventoryUsages.practiceId, ctx.practiceId),
+            eq(inventoryUsages.invoiceItemId, target.id),
+            isNull(inventoryUsages.deletedAt)
+          )
+        );
+
+      // Restore stock for product lines on real invoices (estimates never deducted).
+      if (
+        !invoiceMeta?.isEstimate &&
+        target.itemType === "product" &&
+        target.itemId
+      ) {
+        const qty = Math.max(1, Math.round(Number(target.quantity) || 1));
+        await applyStockChange(ctx, {
+          productId: target.itemId,
+          quantity: qty,
+          type: "adjustment",
+          note: "Restored after removing invoice line",
+          invoiceItemId: target.id,
+        });
+      }
+
+      const remaining = items.filter((item) => !removeIds.includes(item.id));
+      await rebalanceInvoiceDiscounts(ctx, invoice.id, remaining);
       void queueInvoiceSync(ctx.db, ctx.practiceId, invoice.id);
       return { ok: true as const };
     }),

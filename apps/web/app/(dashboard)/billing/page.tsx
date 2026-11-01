@@ -1028,9 +1028,21 @@ function InvoiceLineItemsTable({
     },
     onError: (err) => toast.error(err.message),
   });
+  const removeItem = trpc.billing.removeInvoiceItem.useMutation({
+    onSuccess: () => {
+      toast.success("Line item removed");
+      void utils.billing.listInvoices.invalidate();
+      void utils.billing.getInvoice.invalidate({ id: invoiceId });
+      onChanged();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const busy =
-    applyCredit.isPending || updateCredit.isPending || removeCredit.isPending;
+    applyCredit.isPending ||
+    updateCredit.isPending ||
+    removeCredit.isPending ||
+    removeItem.isPending;
 
   return (
     <table className="w-full text-sm">
@@ -1188,27 +1200,52 @@ function InvoiceLineItemsTable({
               </td>
               {canEditCredits ? (
                 <td className="py-2 text-right">
-                  {item.itemType !== "discount" &&
-                  !linkedCredit &&
-                  lineAmount > 0 ? (
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      disabled={busy}
-                      title="Add line credit"
-                      aria-label="Add line credit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        applyCredit.mutate({
-                          invoiceId,
-                          itemId: item.id,
-                          label: DEFAULT_LINE_CREDIT_LABEL,
-                          amount: lineAmount,
-                        });
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
+                  {item.itemType !== "discount" ? (
+                    <div className="flex items-center justify-end gap-2">
+                      {!linkedCredit && lineAmount > 0 ? (
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          disabled={busy}
+                          title="Add line credit"
+                          aria-label="Add line credit"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            applyCredit.mutate({
+                              invoiceId,
+                              itemId: item.id,
+                              label: DEFAULT_LINE_CREDIT_LABEL,
+                              amount: lineAmount,
+                            });
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        disabled={busy}
+                        title="Delete line item"
+                        aria-label="Delete line item"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (
+                            !window.confirm(
+                              `Remove “${item.description}” from this invoice?`
+                            )
+                          ) {
+                            return;
+                          }
+                          removeItem.mutate({
+                            invoiceId,
+                            itemId: item.id,
+                          });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   ) : null}
                 </td>
               ) : null}
