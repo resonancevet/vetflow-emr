@@ -431,9 +431,10 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
     ...practiceAddrLines,
   ].filter(Boolean) as string[];
 
+  const venmoLines = 1 + (practicePhone ? 1 : 0);
   const mailHeightEstimate = Math.max(
     16,
-    (mailBodyLines.length + (practicePhone ? 1 : 0)) * 5 + 10
+    Math.max(mailBodyLines.length, venmoLines) * 5 + 10
   );
   ensureY(mailHeightEstimate + 22);
 
@@ -457,7 +458,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   setHex(ROMA_DARK);
 
   let mailY = bodyStartY;
-  if (mailBodyLines.length === 0 && !practicePhone) {
+  if (mailBodyLines.length === 0) {
     doc.text("—", margin, mailY);
     mailY += 5;
   } else {
@@ -466,16 +467,18 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
       doc.text(String(line), margin, mailY);
       mailY += 5;
     }
-    if (practicePhone) {
-      doc.text(practicePhone, margin, mailY);
-      mailY += 5;
-    }
   }
 
+  let venmoY = bodyStartY;
   const venmoValue = data.venmoHandle?.trim() || "—";
-  doc.text(venmoValue, venmoX, bodyStartY);
+  doc.text(venmoValue, venmoX, venmoY);
+  venmoY += 5;
+  if (practicePhone) {
+    doc.text(practicePhone, venmoX, venmoY);
+    venmoY += 5;
+  }
 
-  y = Math.max(mailY, bodyStartY + 5) + 14;
+  y = Math.max(mailY, venmoY) + 14;
 
   // --- Thank you (after payment block, never overlapping it) -----------------
   ensureY(12);
