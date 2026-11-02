@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -180,8 +180,11 @@ export default function BillingPage() {
   };
 
   const handleRecordPayment = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
     e.stopPropagation();
     setExpandedId(id);
+    // Sticky until the payment form is cancelled or saved — survives detail
+    // loading and React remounts (unlike a one-shot autoOpen pulse).
     setOpenPaymentForId(id);
   };
 
@@ -279,17 +282,19 @@ export default function BillingPage() {
                     key={invoice.id}
                     invoice={invoice}
                     isExpanded={expandedId === invoice.id}
-                    onToggle={() =>
-                      setExpandedId(
-                        expandedId === invoice.id ? null : invoice.id
-                      )
-                    }
+                    onToggle={() => {
+                      const collapsing = expandedId === invoice.id;
+                      setExpandedId(collapsing ? null : invoice.id);
+                      if (collapsing && openPaymentForId === invoice.id) {
+                        setOpenPaymentForId(null);
+                      }
+                    }}
                     onFinalize={handleFinalize}
                     onVoid={handleVoid}
                     onDeleteDraft={handleDeleteDraft}
                     onRecordPayment={handleRecordPayment}
                     openPaymentForm={openPaymentForId === invoice.id}
-                    onPaymentFormOpened={() => {
+                    onPaymentFormClose={() => {
                       if (openPaymentForId === invoice.id) {
                         setOpenPaymentForId(null);
                       }
@@ -391,7 +396,7 @@ function InvoiceRow({
   onDeleteDraft,
   onRecordPayment,
   openPaymentForm,
-  onPaymentFormOpened,
+  onPaymentFormClose,
   onConvertEstimate,
   isMutating,
   practiceName,
@@ -425,7 +430,7 @@ function InvoiceRow({
   onDeleteDraft: (e: React.MouseEvent, id: string) => void;
   onRecordPayment: (e: React.MouseEvent, id: string) => void;
   openPaymentForm: boolean;
-  onPaymentFormOpened: () => void;
+  onPaymentFormClose: () => void;
   onConvertEstimate: (e: React.MouseEvent, id: string) => void;
   isMutating: boolean;
   practiceName: string;
@@ -860,9 +865,11 @@ function InvoiceRow({
                     invoiceId={invoice.id}
                     invoiceTotal={detail.data.total}
                     invoicePaidAmount={detail.data.paidAmount}
-                    invoiceStatus={invoice.status}
-                    autoOpen={openPaymentForm}
-                    onAutoOpened={onPaymentFormOpened}
+                    invoiceStatus={
+                      detail.data.status ?? invoice.status
+                    }
+                    forceOpen={openPaymentForm}
+                    onForceOpenClose={onPaymentFormClose}
                   />
                 )}
               </div>
@@ -1551,24 +1558,34 @@ function PaymentSection({
   invoiceTotal,
   invoicePaidAmount,
   invoiceStatus,
-  autoOpen,
-  onAutoOpened,
+  forceOpen,
+  onForceOpenClose,
 }: {
   invoiceId: string;
   invoiceTotal: string | null;
   invoicePaidAmount: string | null;
   invoiceStatus: string;
-  autoOpen?: boolean;
-  onAutoOpened?: () => void;
+  /** Keep true until the form is cancelled/saved so open survives loading/remounts. */
+  forceOpen?: boolean;
+  onForceOpenClose?: () => void;
 }) {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [paymentNotes, setPaymentNotes] = useState("");
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const utils = trpc.useUtils();
 
   const paymentsQuery = trpc.billing.listPayments.useQuery({ invoiceId });
+
+  const closeForm = () => {
+    setShowPaymentForm(false);
+    setPaymentAmount("");
+    setPaymentMethod("cash");
+    setPaymentNotes("");
+    onForceOpenClose?.();
+  };
 
   const recordPayment = trpc.billing.recordPayment.useMutation({
     onSuccess: () => {
@@ -1576,10 +1593,7 @@ function PaymentSection({
       utils.billing.listPayments.invalidate({ invoiceId });
       utils.billing.listInvoices.invalidate();
       utils.billing.getInvoice.invalidate({ id: invoiceId });
-      setShowPaymentForm(false);
-      setPaymentAmount("");
-      setPaymentMethod("cash");
-      setPaymentNotes("");
+      closeForm();
     },
     onError: (err) => {
       toast.error(err.message);
@@ -1595,7 +1609,7 @@ function PaymentSection({
   const canRecord =
     invoiceStatus !== "draft" &&
     invoiceStatus !== "void" &&
-    (remaining > 0 ||
+    (remaining > 0.009 ||
       (!hasPayments &&
         !paymentsQuery.isLoading &&
         invoiceStatus === "paid" &&
@@ -1603,7 +1617,7 @@ function PaymentSection({
 
   const handleOpenForm = () => {
     setPaymentAmount(
-      (remaining > 0
+      (remaining > 0.009
         ? remaining
         : Number(invoicePaidAmount ?? invoiceTotal ?? 0)
       ).toFixed(2)
@@ -1612,11 +1626,26 @@ function PaymentSection({
   };
 
   useEffect(() => {
-    if (!autoOpen || showPaymentForm || !canRecord) return;
-    handleOpenForm();
-    onAutoOpened?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when Actions triggers expand
-  }, [autoOpen, canRecord, showPaymentForm]);
+    if (!forceOpen) return;
+    // Wait until we know whether a zero-balance "paid without rows" case applies.
+    if (paymentsQuery.isLoading && remaining <= 0.009) return;
+
+    if (!canRecord) {
+      toast.error("Nothing left to record on this invoice");
+      onForceOpenClose?.();
+      return;
+    }
+
+    if (!showPaymentForm) {
+      handleOpenForm();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sticky forceOpen from Actions $
+  }, [forceOpen, canRecord, paymentsQuery.isLoading, remaining, showPaymentForm]);
+
+  useEffect(() => {
+    if (!showPaymentForm || !formRef.current) return;
+    formRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [showPaymentForm]);
 
   const handleRecordPayment = () => {
     if (!paymentAmount || parseFloat(paymentAmount) <= 0) return;
@@ -1648,7 +1677,10 @@ function PaymentSection({
       </div>
 
       {showPaymentForm && (
-        <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+        <div
+          ref={formRef}
+          className="rounded-lg border border-border bg-background p-4 space-y-3"
+        >
           <p className="text-xs text-muted-foreground">
             Enter the amount received and how it was paid. This updates the
             invoice balance and status.
@@ -1706,11 +1738,7 @@ function PaymentSection({
             >
               {recordPayment.isPending ? "Recording..." : "Record Payment"}
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowPaymentForm(false)}
-            >
+            <Button variant="ghost" size="sm" onClick={closeForm}>
               Cancel
             </Button>
           </div>
