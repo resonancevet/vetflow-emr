@@ -263,6 +263,130 @@ type BillingCtx = {
   practiceId: string;
 };
 
+async function sumInvoicePayments(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  invoiceId: string
+): Promise<string> {
+  const [result] = await db
+    .select({ total: sum(payments.amount) })
+    .from(payments)
+    .where(
+      and(eq(payments.invoiceId, invoiceId), isNull(payments.deletedAt))
+    );
+  const total = parseFloat(String(result?.total ?? "0"));
+  return (Number.isFinite(total) ? total : 0).toFixed(2);
+}
+
+function reopenUnpaidStatus(invoice: {
+  dueDate?: string | null;
+  sentAt?: Date | string | null;
+}): "finalized" | "sent" | "overdue" {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  if (invoice.dueDate && invoice.dueDate < todayStr) {
+    return "overdue";
+  }
+  if (invoice.sentAt) {
+    return "sent";
+  }
+  return "finalized";
+}
+
+async function markInstallmentPaidForInvoice(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  invoiceId: string
+) {
+  const [installment] = await db
+    .select({
+      id: servicePackageInstallments.id,
+      saleId: servicePackageInstallments.saleId,
+    })
+    .from(servicePackageInstallments)
+    .where(
+      and(
+        eq(servicePackageInstallments.invoiceId, invoiceId),
+        isNull(servicePackageInstallments.deletedAt)
+      )
+    )
+    .limit(1);
+  if (!installment) return;
+
+  await db
+    .update(servicePackageInstallments)
+    .set({ status: "paid", updatedAt: new Date() })
+    .where(eq(servicePackageInstallments.id, installment.id));
+
+  const remaining = await db
+    .select({ id: servicePackageInstallments.id })
+    .from(servicePackageInstallments)
+    .where(
+      and(
+        eq(servicePackageInstallments.saleId, installment.saleId),
+        isNull(servicePackageInstallments.deletedAt),
+        inArray(servicePackageInstallments.status, ["scheduled", "invoiced"])
+      )
+    )
+    .limit(1);
+
+  if (remaining.length === 0) {
+    await db
+      .update(servicePackageSales)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(eq(servicePackageSales.id, installment.saleId));
+  } else {
+    await db
+      .update(servicePackageSales)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(
+        and(
+          eq(servicePackageSales.id, installment.saleId),
+          eq(servicePackageSales.status, "past_due")
+        )
+      );
+  }
+}
+
+async function reopenInstallmentForInvoice(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  invoiceId: string
+) {
+  const [installment] = await db
+    .select({
+      id: servicePackageInstallments.id,
+      saleId: servicePackageInstallments.saleId,
+      status: servicePackageInstallments.status,
+    })
+    .from(servicePackageInstallments)
+    .where(
+      and(
+        eq(servicePackageInstallments.invoiceId, invoiceId),
+        isNull(servicePackageInstallments.deletedAt)
+      )
+    )
+    .limit(1);
+  if (!installment) return;
+
+  if (installment.status === "paid") {
+    await db
+      .update(servicePackageInstallments)
+      .set({ status: "invoiced", updatedAt: new Date() })
+      .where(eq(servicePackageInstallments.id, installment.id));
+  }
+
+  await db
+    .update(servicePackageSales)
+    .set({ status: "active", updatedAt: new Date() })
+    .where(
+      and(
+        eq(servicePackageSales.id, installment.saleId),
+        eq(servicePackageSales.status, "completed")
+      )
+    );
+}
+
 async function loadDiscountableInvoice(ctx: BillingCtx, invoiceId: string) {
   const [invoice] = await ctx.db
     .select({
@@ -1750,6 +1874,38 @@ export const billingRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const [existingInvoice] = await ctx.db
+        .select({
+          id: invoices.id,
+          status: invoices.status,
+          total: invoices.total,
+          dueDate: invoices.dueDate,
+          sentAt: invoices.sentAt,
+          isEstimate: invoices.isEstimate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!existingInvoice || existingInvoice.isEstimate) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+      if (existingInvoice.status === "void" || existingInvoice.status === "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot record payment on a draft or void invoice",
+        });
+      }
+
       // Insert payment
       const [payment] = await ctx.db
         .insert(payments)
@@ -1762,9 +1918,184 @@ export const billingRouter = createRouter({
         })
         .returning();
 
-      // Sum all payments for this invoice
-      const [result] = await ctx.db
-        .select({ total: sum(payments.amount) })
+      const paidAmount = await sumInvoicePayments(ctx.db, input.invoiceId);
+      const fullyPaid =
+        parseFloat(paidAmount) >= parseFloat(String(existingInvoice.total ?? "0"));
+
+      await ctx.db
+        .update(invoices)
+        .set({
+          paidAmount,
+          ...(fullyPaid ? { status: "paid" as const } : {}),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId)
+          )
+        );
+
+      if (fullyPaid) {
+        await markInstallmentPaidForInvoice(ctx.db, input.invoiceId);
+      }
+
+      queuePaymentSync(ctx.db, ctx.practiceId, payment!.id);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, input.invoiceId);
+
+      return payment!;
+    }),
+
+  /**
+   * Soft-delete a payment and reopen the invoice if it is no longer fully paid.
+   * Use this to undo a mistaken "paid" recording.
+   */
+  removePayment: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        paymentId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [invoice] = await ctx.db
+        .select({
+          id: invoices.id,
+          status: invoices.status,
+          total: invoices.total,
+          dueDate: invoices.dueDate,
+          sentAt: invoices.sentAt,
+          isEstimate: invoices.isEstimate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!invoice || invoice.isEstimate) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+      if (invoice.status === "void") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot change payments on a void invoice",
+        });
+      }
+
+      const [payment] = await ctx.db
+        .select({
+          id: payments.id,
+          invoiceId: payments.invoiceId,
+        })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.id, input.paymentId),
+            eq(payments.invoiceId, input.invoiceId),
+            isNull(payments.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!payment) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Payment not found",
+        });
+      }
+
+      await ctx.db
+        .update(payments)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(payments.id, payment.id));
+
+      const paidAmount = await sumInvoicePayments(ctx.db, input.invoiceId);
+      const fullyPaid =
+        parseFloat(paidAmount) >= parseFloat(String(invoice.total ?? "0")) - 0.009;
+      const wasPaid = invoice.status === "paid";
+      const nextStatus = fullyPaid
+        ? ("paid" as const)
+        : reopenUnpaidStatus(invoice);
+
+      await ctx.db
+        .update(invoices)
+        .set({
+          paidAmount,
+          status: nextStatus,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId)
+          )
+        );
+
+      if (wasPaid && !fullyPaid) {
+        await reopenInstallmentForInvoice(ctx.db, input.invoiceId);
+      } else if (fullyPaid) {
+        await markInstallmentPaidForInvoice(ctx.db, input.invoiceId);
+      }
+
+      void queueInvoiceSync(ctx.db, ctx.practiceId, input.invoiceId);
+      return {
+        ok: true as const,
+        paidAmount,
+        status: nextStatus,
+      };
+    }),
+
+  /**
+   * Undo paid: soft-delete all payments on the invoice and reopen it as unpaid.
+   * Also clears paid status when there are no payment rows.
+   */
+  undoPaidInvoice: protectedProcedure
+    .use(requireRole("admin", "front_desk"))
+    .input(z.object({ invoiceId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [invoice] = await ctx.db
+        .select({
+          id: invoices.id,
+          status: invoices.status,
+          total: invoices.total,
+          dueDate: invoices.dueDate,
+          sentAt: invoices.sentAt,
+          isEstimate: invoices.isEstimate,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.id, input.invoiceId),
+            eq(invoices.practiceId, ctx.practiceId),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!invoice || invoice.isEstimate) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invoice not found",
+        });
+      }
+      if (invoice.status === "void" || invoice.status === "draft") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot undo payment on a draft or void invoice",
+        });
+      }
+
+      const existingPayments = await ctx.db
+        .select({ id: payments.id })
         .from(payments)
         .where(
           and(
@@ -1773,22 +2104,33 @@ export const billingRouter = createRouter({
           )
         );
 
-      const paidAmount = result?.total ?? "0";
-
-      // Get invoice total to check if fully paid
-      const [invoice] = await ctx.db
-        .select({ total: invoices.total })
-        .from(invoices)
-        .where(eq(invoices.id, input.invoiceId));
-
-      const updates: Record<string, any> = { paidAmount };
-      if (invoice && parseFloat(paidAmount) >= parseFloat(invoice.total)) {
-        updates.status = "paid";
+      if (invoice.status !== "paid" && existingPayments.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This invoice has no payments to undo",
+        });
       }
 
+      if (existingPayments.length > 0) {
+        await ctx.db
+          .update(payments)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(
+            inArray(
+              payments.id,
+              existingPayments.map((row: { id: string }) => row.id)
+            )
+          );
+      }
+
+      const nextStatus = reopenUnpaidStatus(invoice);
       await ctx.db
         .update(invoices)
-        .set(updates)
+        .set({
+          paidAmount: "0.00",
+          status: nextStatus,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(invoices.id, input.invoiceId),
@@ -1796,63 +2138,13 @@ export const billingRouter = createRouter({
           )
         );
 
-      if (updates.status === "paid") {
-        const [installment] = await ctx.db
-          .select({
-            id: servicePackageInstallments.id,
-            saleId: servicePackageInstallments.saleId,
-          })
-          .from(servicePackageInstallments)
-          .where(
-            and(
-              eq(servicePackageInstallments.invoiceId, input.invoiceId),
-              isNull(servicePackageInstallments.deletedAt)
-            )
-          )
-          .limit(1);
-        if (installment) {
-          await ctx.db
-            .update(servicePackageInstallments)
-            .set({ status: "paid", updatedAt: new Date() })
-            .where(eq(servicePackageInstallments.id, installment.id));
-
-          const remaining = await ctx.db
-            .select({ id: servicePackageInstallments.id })
-            .from(servicePackageInstallments)
-            .where(
-              and(
-                eq(servicePackageInstallments.saleId, installment.saleId),
-                isNull(servicePackageInstallments.deletedAt),
-                inArray(servicePackageInstallments.status, [
-                  "scheduled",
-                  "invoiced",
-                ])
-              )
-            )
-            .limit(1);
-
-          if (remaining.length === 0) {
-            await ctx.db
-              .update(servicePackageSales)
-              .set({ status: "completed", updatedAt: new Date() })
-              .where(eq(servicePackageSales.id, installment.saleId));
-          } else {
-            await ctx.db
-              .update(servicePackageSales)
-              .set({ status: "active", updatedAt: new Date() })
-              .where(
-                and(
-                  eq(servicePackageSales.id, installment.saleId),
-                  eq(servicePackageSales.status, "past_due")
-                )
-              );
-          }
-        }
-      }
-
-      queuePaymentSync(ctx.db, ctx.practiceId, payment!.id);
-
-      return payment!;
+      await reopenInstallmentForInvoice(ctx.db, input.invoiceId);
+      void queueInvoiceSync(ctx.db, ctx.practiceId, input.invoiceId);
+      return {
+        ok: true as const,
+        status: nextStatus,
+        removedPayments: existingPayments.length,
+      };
     }),
 
   listPayments: protectedProcedure

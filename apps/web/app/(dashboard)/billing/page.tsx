@@ -17,6 +17,7 @@ import {
   Copy,
   Trash2,
   Ban,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -150,6 +151,20 @@ export default function BillingPage() {
     },
   });
 
+  const undoPaidInvoice = trpc.billing.undoPaidInvoice.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        result.removedPayments > 0
+          ? `Payment undone — invoice is ${result.status}`
+          : `Paid status cleared — invoice is ${result.status}`
+      );
+      utils.billing.listInvoices.invalidate();
+      utils.billing.getInvoice.invalidate();
+      utils.billing.listPayments.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const handleFinalize = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     updateStatus.mutate({ id, status: "finalized" });
@@ -165,6 +180,18 @@ export default function BillingPage() {
       return;
     }
     updateStatus.mutate({ id, status: "void" });
+  };
+
+  const handleUndoPaid = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        "Undo paid on this invoice? Any recorded payments will be removed and the invoice will reopen as unpaid."
+      )
+    ) {
+      return;
+    }
+    undoPaidInvoice.mutate({ invoiceId: id });
   };
 
   const handleDeleteDraft = (e: React.MouseEvent, id: string) => {
@@ -291,6 +318,7 @@ export default function BillingPage() {
                     }}
                     onFinalize={handleFinalize}
                     onVoid={handleVoid}
+                    onUndoPaid={handleUndoPaid}
                     onDeleteDraft={handleDeleteDraft}
                     onRecordPayment={handleRecordPayment}
                     openPaymentForm={openPaymentForId === invoice.id}
@@ -303,7 +331,8 @@ export default function BillingPage() {
                     isMutating={
                       updateStatus.isPending ||
                       convertEstimate.isPending ||
-                      deleteDraft.isPending
+                      deleteDraft.isPending ||
+                      undoPaidInvoice.isPending
                     }
                     practiceName={
                       billingSettings.data?.practiceName || "Your Practice"
@@ -393,6 +422,7 @@ function InvoiceRow({
   onToggle,
   onFinalize,
   onVoid,
+  onUndoPaid,
   onDeleteDraft,
   onRecordPayment,
   openPaymentForm,
@@ -427,6 +457,7 @@ function InvoiceRow({
   onToggle: () => void;
   onFinalize: (e: React.MouseEvent, id: string) => void;
   onVoid: (e: React.MouseEvent, id: string) => void;
+  onUndoPaid: (e: React.MouseEvent, id: string) => void;
   onDeleteDraft: (e: React.MouseEvent, id: string) => void;
   onRecordPayment: (e: React.MouseEvent, id: string) => void;
   openPaymentForm: boolean;
@@ -585,15 +616,26 @@ function InvoiceRow({
                 </>
               )}
             {!invoice.isEstimate && invoice.status === "paid" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isMutating}
-                onClick={(e) => onVoid(e, invoice.id)}
-                title="Void invoice"
-              >
-                <Ban className="h-3.5 w-3.5" />
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={(e) => onUndoPaid(e, invoice.id)}
+                  title="Undo paid"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={(e) => onVoid(e, invoice.id)}
+                  title="Void invoice"
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                </Button>
+              </>
             )}
           </div>
         </td>
@@ -1587,17 +1629,45 @@ function PaymentSection({
     onForceOpenClose?.();
   };
 
+  const invalidateInvoice = () => {
+    utils.billing.listPayments.invalidate({ invoiceId });
+    utils.billing.listInvoices.invalidate();
+    utils.billing.getInvoice.invalidate({ id: invoiceId });
+  };
+
   const recordPayment = trpc.billing.recordPayment.useMutation({
     onSuccess: () => {
       toast.success("Payment recorded");
-      utils.billing.listPayments.invalidate({ invoiceId });
-      utils.billing.listInvoices.invalidate();
-      utils.billing.getInvoice.invalidate({ id: invoiceId });
+      invalidateInvoice();
       closeForm();
     },
     onError: (err) => {
       toast.error(err.message);
     },
+  });
+
+  const removePayment = trpc.billing.removePayment.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        result.status === "paid"
+          ? "Payment removed"
+          : `Payment undone — invoice is ${result.status}`
+      );
+      invalidateInvoice();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const undoPaidInvoice = trpc.billing.undoPaidInvoice.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        result.removedPayments > 0
+          ? `Payment undone — invoice is ${result.status}`
+          : `Paid status cleared — invoice is ${result.status}`
+      );
+      invalidateInvoice();
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const remaining = Math.max(
@@ -1614,6 +1684,13 @@ function PaymentSection({
         !paymentsQuery.isLoading &&
         invoiceStatus === "paid" &&
         Number(invoicePaidAmount ?? 0) > 0));
+  const canUndoPayments =
+    invoiceStatus !== "draft" &&
+    invoiceStatus !== "void" &&
+    !removePayment.isPending &&
+    !undoPaidInvoice.isPending;
+  const canUndoPaid =
+    invoiceStatus === "paid" && !undoPaidInvoice.isPending;
 
   const handleOpenForm = () => {
     setPaymentAmount(
@@ -1666,14 +1743,40 @@ function PaymentSection({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-medium">Payment History</h4>
-        {canRecord && !showPaymentForm && (
-          <Button variant="outline" size="sm" onClick={handleOpenForm}>
-            <DollarSign className="mr-1 h-3.5 w-3.5" />
-            Record Payment
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canUndoPaid && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={undoPaidInvoice.isPending}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    hasPayments
+                      ? "Undo all payments on this invoice and reopen it as unpaid?"
+                      : "Clear paid status and reopen this invoice as unpaid?"
+                  )
+                ) {
+                  return;
+                }
+                undoPaidInvoice.mutate({ invoiceId });
+              }}
+            >
+              {undoPaidInvoice.isPending ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Undo paid
+            </Button>
+          )}
+          {canRecord && !showPaymentForm && (
+            <Button variant="outline" size="sm" onClick={handleOpenForm}>
+              <DollarSign className="mr-1 h-3.5 w-3.5" />
+              Record Payment
+            </Button>
+          )}
+        </div>
       </div>
 
       {showPaymentForm && (
@@ -1771,6 +1874,11 @@ function PaymentSection({
               <th className="py-2 text-left font-medium text-muted-foreground">
                 Notes
               </th>
+              {canUndoPayments ? (
+                <th className="py-2 w-24 text-right font-medium text-muted-foreground">
+                  Undo
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -1796,6 +1904,30 @@ function PaymentSection({
                 <td className="py-2 text-muted-foreground">
                   {payment.notes || "\u2014"}
                 </td>
+                {canUndoPayments ? (
+                  <td className="py-2 text-right">
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline"
+                      disabled={removePayment.isPending}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Undo payment of ${formatCurrency(payment.amount)}? The invoice will reopen if it is no longer fully paid.`
+                          )
+                        ) {
+                          return;
+                        }
+                        removePayment.mutate({
+                          invoiceId,
+                          paymentId: payment.id,
+                        });
+                      }}
+                    >
+                      Undo
+                    </button>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -1804,7 +1936,7 @@ function PaymentSection({
         <p className="text-xs text-muted-foreground">
           No payments recorded yet.
           {invoiceStatus === "paid"
-            ? " Use Record Payment to document how this was paid."
+            ? " Use Undo paid to reopen this invoice."
             : ""}
         </p>
       )}
