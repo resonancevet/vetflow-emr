@@ -469,6 +469,44 @@ export default function PatientDetailPage() {
 
       <PatientAlerts patientId={patient.id} />
 
+      {patient.intakeHistory &&
+      Object.values(patient.intakeHistory).some(
+        (v) => typeof v === "string" && v.trim()
+      ) ? (
+        <div className="mt-4 rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold">Intake history</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Provided by the client on new-client paperwork. Promote vaccines and
+            prescriptions into chart records as needed.
+          </p>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                ["ageAsOfToday", "Age at intake"],
+                ["vaccinationHistory", "Vaccination history"],
+                ["allergiesText", "Allergies (as written)"],
+                ["currentMedications", "Current medications"],
+                ["diet", "Diet"],
+                ["previousVeterinarian", "Previous veterinarian"],
+                ["pastIllnessesSurgeries", "Past illnesses / surgeries"],
+                ["behavioralConcerns", "Behavioral concerns"],
+              ] as const
+            ).map(([key, label]) => {
+              const value = patient.intakeHistory?.[key];
+              if (!value?.trim()) return null;
+              return (
+                <div key={key} className="sm:col-span-1">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="mt-0.5 whitespace-pre-wrap text-sm">
+                    {value}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </div>
+      ) : null}
+
       <nav
         className="mt-4 border-b border-border"
         aria-label="Patient records"

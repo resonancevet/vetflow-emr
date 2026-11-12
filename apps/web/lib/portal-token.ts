@@ -31,4 +31,19 @@ export function buildPortalMagicLinkUrl(rawToken: string): string {
   return `${getAppOrigin()}/portal/auth/verify?token=${encodeURIComponent(rawToken)}`;
 }
 
+export function buildIntakeInviteUrl(rawToken: string): string {
+  return `${getAppOrigin()}/portal/intake/${encodeURIComponent(rawToken)}`;
+}
+
 export const PORTAL_MAGIC_LINK_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+/** New-client paperwork invite lifetime. */
+export const INTAKE_INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+export function generateIntakeInviteToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+export function hashIntakeInviteToken(rawToken: string): string {
+  return createHash("sha256").update(rawToken).digest("hex");
+}

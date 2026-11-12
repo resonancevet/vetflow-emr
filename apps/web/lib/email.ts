@@ -547,3 +547,48 @@ export async function sendPortalMagicLinkEmail(
 
   return { success: result.success, error: result.error, id: result.id };
 }
+
+// ---------------------------------------------------------------------------
+// New-client intake invite
+// ---------------------------------------------------------------------------
+
+export async function sendIntakeInviteEmail(
+  data: {
+    to: string;
+    clientName: string;
+    practiceName: string;
+    practicePhone?: string;
+    practiceAddress?: string;
+    intakeUrl: string;
+    expiresInDays: number;
+  },
+  template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.intakeInvite
+): Promise<{ success: boolean; error?: string; id?: string }> {
+  const textVars = {
+    clientName: data.clientName,
+    practiceName: data.practiceName,
+    practicePhone: data.practicePhone ?? "",
+    expiresInDays: String(data.expiresInDays),
+  };
+  const htmlVars = {
+    intakeLinkButton: ctaButtonHtml("Complete paperwork", data.intakeUrl),
+  };
+  const body = bodyToHtml(template.body, textVars, htmlVars);
+  const html = emailLayout(
+    data.practiceName,
+    body,
+    practiceFooter({
+      practiceName: data.practiceName,
+      practicePhone: data.practicePhone,
+      practiceAddress: data.practiceAddress,
+    })
+  );
+
+  const result = await sendEmail({
+    to: data.to,
+    subject: subjectFromTemplate(template.subject, textVars),
+    html,
+  });
+
+  return { success: result.success, error: result.error, id: result.id };
+}

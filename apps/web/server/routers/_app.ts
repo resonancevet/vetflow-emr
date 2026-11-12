@@ -9,6 +9,7 @@ import { dashboardRouter } from "./dashboard";
 import { whiteboardRouter } from "./whiteboard";
 import { reportsRouter } from "./reports";
 import { portalRouter } from "./portal";
+import { intakeRouter } from "./intake";
 import { settingsRouter } from "./settings";
 import { communicationsRouter } from "./communications";
 import { inventoryRouter } from "./inventory";
@@ -39,6 +40,7 @@ export const appRouter = createRouter({
   whiteboard: whiteboardRouter,
   reports: reportsRouter,
   portal: portalRouter,
+  intake: intakeRouter,
   settings: settingsRouter,
   communications: communicationsRouter,
   inventory: inventoryRouter,

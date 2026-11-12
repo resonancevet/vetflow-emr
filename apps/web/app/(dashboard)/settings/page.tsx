@@ -1800,6 +1800,7 @@ function EmailRemindersSection() {
     | "appointmentConfirmation"
     | "appointmentRequestDeclined"
     | "portalMagicLink"
+    | "intakeInvite"
     | "vaccinationReminder"
     | "invoiceEmail"
     | null

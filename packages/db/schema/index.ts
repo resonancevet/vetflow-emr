@@ -3,6 +3,7 @@ export * from "./practice-sequences";
 export * from "./users";
 export * from "./clients";
 export * from "./portal-login-tokens";
+export * from "./intake";
 export * from "./patients";
 export * from "./patient-alerts";
 export * from "./client-alerts";

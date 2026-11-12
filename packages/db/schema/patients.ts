@@ -7,6 +7,7 @@ import {
   date,
   timestamp,
   numeric,
+  jsonb,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -14,6 +15,7 @@ import { baseColumns } from "./common";
 import { practices } from "./practices";
 import { clients } from "./clients";
 import { users } from "./users";
+import type { IntakeHistoryPayload } from "./intake";
 
 export const speciesEnum = pgEnum("species", [
   "canine",
@@ -63,6 +65,8 @@ export const patients = pgTable(
     microchipNumber: varchar("microchip_number", { length: 64 }),
     photoUrl: varchar("photo_url", { length: 512 }),
     status: patientStatusEnum("status").notNull().default("active"),
+    /** New-client intake narrative history (diet, prior vet, etc.). */
+    intakeHistory: jsonb("intake_history").$type<IntakeHistoryPayload>(),
     /** Human-readable ID, e.g. P0042-01. */
     displayId: varchar("display_id", { length: 32 }),
   },

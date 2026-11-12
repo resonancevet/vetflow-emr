@@ -5,6 +5,7 @@ export type EmailTemplateKey =
   | "appointmentConfirmation"
   | "appointmentRequestDeclined"
   | "portalMagicLink"
+  | "intakeInvite"
   | "vaccinationReminder"
   | "invoiceEmail";
 
@@ -86,6 +87,22 @@ export const EMAIL_TEMPLATE_META: {
       {
         token: "{{magicLinkButton}}",
         meaning: "Open-portal button (HTML)",
+      },
+    ],
+  },
+  {
+    key: "intakeInvite",
+    label: "New client intake invite",
+    description:
+      "Sent when staff invite a client to complete paperwork before their appointment.",
+    mergeFields: [
+      { token: "{{clientName}}", meaning: "Client full name" },
+      { token: "{{practiceName}}", meaning: "Practice name" },
+      { token: "{{practicePhone}}", meaning: "Practice phone" },
+      { token: "{{expiresInDays}}", meaning: "Invite lifetime in days" },
+      {
+        token: "{{intakeLinkButton}}",
+        meaning: "Complete-paperwork button (HTML)",
       },
     ],
   },
@@ -188,6 +205,16 @@ Use the button below to open your pet portal at {{practiceName}}. This link expi
 {{magicLinkButton}}
 
 If you did not request this email, you can ignore it.`,
+  },
+  intakeInvite: {
+    subject: "Complete your new client paperwork — {{practiceName}}",
+    body: `Hi {{clientName}},
+
+Please complete your new client paperwork for {{practiceName}} before your appointment. The secure link below expires in {{expiresInDays}} days and can only be used once.
+
+{{intakeLinkButton}}
+
+If you have questions, reply to this email or call us{{#practicePhone}} at {{practicePhone}}{{/practicePhone}}.`,
   },
   vaccinationReminder: {
     subject: "Vaccination Reminder: {{vaccineName}} for {{patientName}}",

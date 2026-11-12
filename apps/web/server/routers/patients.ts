@@ -188,6 +188,7 @@ export const patientsRouter = createRouter({
           microchipNumber: patients.microchipNumber,
           photoUrl: patients.photoUrl,
           status: patients.status,
+          intakeHistory: patients.intakeHistory,
           displayId: patients.displayId,
           clientId: patients.clientId,
           clientFirstName: clients.firstName,

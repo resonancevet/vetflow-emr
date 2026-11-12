@@ -12,6 +12,7 @@ import {
 } from "@/components/communications/log-communication-modal";
 import { ClientAlertsBanner } from "@/components/clients/client-alerts-banner";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
+import { ClientIntakeInvite } from "@/components/clients/client-intake-invite";
 import { formatPhoneDisplay } from "@/lib/phone-format";
 
 const speciesEmoji: Record<string, string> = {
@@ -106,6 +107,22 @@ export default function ClientDetailPage() {
                   {address}
                 </span>
               )}
+              {(client.emergencyContact || client.emergencyPhone) && (
+                <span className="text-sm">
+                  Emergency:{" "}
+                  {[client.emergencyContact, client.emergencyPhone]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+              {client.preferredContactMethod && (
+                <span className="text-sm capitalize">
+                  Preferred contact:{" "}
+                  {client.preferredContactMethod === "sms"
+                    ? "Text / SMS"
+                    : client.preferredContactMethod}
+                </span>
+              )}
             </div>
           </div>
           <Button
@@ -126,6 +143,11 @@ export default function ClientDetailPage() {
         clientEmail={client.email}
         portalEnabled={client.portalEnabled}
         portalUrl={client.portalUrl}
+      />
+
+      <ClientIntakeInvite
+        clientId={client.id}
+        clientEmail={client.email}
       />
 
       <div className="mt-6">
