@@ -1,5 +1,5 @@
 /** Versioned new-client agreement copy (Roma packet minus day-of rabies form). */
-export const INTAKE_AGREEMENT_VERSION = "roma-v1-2026-11";
+export const INTAKE_AGREEMENT_VERSION = "roma-v1-2026-11b";
 
 export const INTAKE_AGREEMENT_TITLE =
   "Roma Veterinary Care PLLC Client Agreement";
@@ -97,7 +97,7 @@ If a dispute is not resolved first by good-faith negotiation between the parties
 
 This Agreement shall be governed by and construed in accordance with the laws of the State of New Hampshire, regardless of the conflict of laws principles thereof. Should any provision of this Agreement be or become invalid, illegal, or unenforceable under applicable law, the other provisions of this Agreement shall not be affected and shall remain in full force and effect.
 
-My signature verifies that I am the owner of the above-named pet(s) and I consent to treatment. I acknowledge that I have been advised and my questions have been answered regarding the content of this document. I understand the potential risks incidental to the services provided and I fully assume all such risks. I intend this consent form to cover the entire course of treatment for my pet(s)’ present condition(s) as well as any future conditions for which I seek treatment from Roma Veterinary Care PLLC.`,
+My signature verifies that I am the owner of the pet(s) listed and I consent to treatment. I acknowledge that I have been advised and my questions have been answered regarding the content of this document. I understand the potential risks incidental to the services provided and I fully assume all such risks. I intend this consent form to cover the entire course of treatment for my pet(s)’ present condition(s) as well as any future conditions for which I seek treatment from Roma Veterinary Care PLLC.`,
   },
 ];
 
