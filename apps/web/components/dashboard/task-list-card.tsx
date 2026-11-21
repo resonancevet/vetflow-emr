@@ -99,7 +99,7 @@ export function TaskListCard() {
             onClick={() => setScheduleOpen(true)}
           >
             <Bell className="mr-1.5 h-3.5 w-3.5" />
-            Reminder
+            New Task
           </Button>
         </div>
       </div>
