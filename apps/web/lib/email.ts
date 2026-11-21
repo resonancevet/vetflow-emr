@@ -72,9 +72,15 @@ function emailLayout(practiceName: string, body: string, footer?: string): strin
 </html>`;
 }
 
-function practiceFooter(opts: { practiceName: string; practicePhone?: string; practiceAddress?: string }): string {
+function practiceFooter(opts: {
+  practiceName: string;
+  practiceEmail?: string;
+  practicePhone?: string;
+  practiceAddress?: string;
+}): string {
   const lines: string[] = [];
   lines.push(opts.practiceName);
+  if (opts.practiceEmail) lines.push(opts.practiceEmail);
   if (opts.practicePhone) lines.push(opts.practicePhone);
   if (opts.practiceAddress) lines.push(opts.practiceAddress);
   return `<p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">${lines.join("<br/>")}</p>`;
@@ -155,6 +161,7 @@ export async function sendAppointmentReminder(
     appointmentDate: string;
     appointmentTime: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     practiceAddress?: string;
   },
@@ -183,6 +190,7 @@ export async function sendAppointmentReminder(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })
@@ -209,6 +217,7 @@ export async function sendAppointmentConfirmation(
     appointmentDate: string;
     appointmentTime: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     practiceAddress?: string;
   },
@@ -237,6 +246,7 @@ export async function sendAppointmentConfirmation(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })
@@ -264,6 +274,7 @@ export async function sendAppointmentRequestDeclined(
     preferredTime?: string | null;
     staffMessage: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     practiceAddress?: string;
   },
@@ -298,6 +309,7 @@ export async function sendAppointmentRequestDeclined(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })
@@ -324,6 +336,7 @@ export async function sendVaccinationReminder(
     vaccineName: string;
     dueDate: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
   },
   template: EmailTemplateContent = DEFAULT_EMAIL_TEMPLATES.vaccinationReminder
@@ -355,6 +368,7 @@ export async function sendVaccinationReminder(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
     })
   );
@@ -385,6 +399,7 @@ export async function sendInvoiceEmail(
     venmoHandle?: string;
     portalUrl?: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     invoiceNumber?: string;
     pdfAttachment?: { filename: string; content: Buffer };
@@ -445,6 +460,7 @@ export async function sendInvoiceEmail(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
     })
   );
@@ -475,6 +491,7 @@ export async function sendPortalInviteEmail(data: {
   to: string;
   clientName: string;
   practiceName: string;
+  practiceEmail?: string;
   practicePhone?: string;
   practiceAddress?: string;
   portalUrl: string;
@@ -491,6 +508,7 @@ export async function sendPortalInviteEmail(data: {
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })
@@ -512,6 +530,7 @@ export async function sendPortalMagicLinkEmail(
     to: string;
     clientName: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     practiceAddress?: string;
     magicLinkUrl: string;
@@ -534,6 +553,7 @@ export async function sendPortalMagicLinkEmail(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })
@@ -557,6 +577,7 @@ export async function sendIntakeInviteEmail(
     to: string;
     clientName: string;
     practiceName: string;
+    practiceEmail?: string;
     practicePhone?: string;
     practiceAddress?: string;
     intakeUrl: string;
@@ -579,6 +600,7 @@ export async function sendIntakeInviteEmail(
     body,
     practiceFooter({
       practiceName: data.practiceName,
+      practiceEmail: data.practiceEmail,
       practicePhone: data.practicePhone,
       practiceAddress: data.practiceAddress,
     })

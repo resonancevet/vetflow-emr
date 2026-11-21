@@ -313,6 +313,7 @@ export const clientsRouter = createRouter({
       const [practice] = await ctx.db
         .select({
           name: practices.name,
+          email: practices.email,
           phone: practices.phone,
           address: practices.address,
         })
@@ -325,6 +326,7 @@ export const clientsRouter = createRouter({
         to: client.email!,
         clientName: `${client.firstName} ${client.lastName}`,
         practiceName: practice?.name ?? "Your veterinary clinic",
+        practiceEmail: practice?.email ?? undefined,
         practicePhone: practice?.phone ?? undefined,
         practiceAddress: practice?.address ?? undefined,
         portalUrl,

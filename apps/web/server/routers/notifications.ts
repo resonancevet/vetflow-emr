@@ -45,6 +45,7 @@ async function getPracticeEmailContext(
   const [practice] = await db
     .select({
       name: practices.name,
+      email: practices.email,
       phone: practices.phone,
       address: practices.address,
       timezone: practices.timezone,
@@ -55,6 +56,7 @@ async function getPracticeEmailContext(
     .limit(1);
   return {
     practiceName: practice?.name ?? "",
+    practiceEmail: practice?.email ?? undefined,
     practicePhone: practice?.phone ?? undefined,
     practiceAddress: practice?.address ?? undefined,
     timezone: practice?.timezone ?? "America/New_York",
@@ -107,6 +109,7 @@ export const notificationsRouter = createRouter({
           appointmentDate: formatPracticeDate(appt.startTime, emailCtx.timezone),
           appointmentTime: formatPracticeTime(appt.startTime, emailCtx.timezone),
           practiceName: emailCtx.practiceName,
+          practiceEmail: emailCtx.practiceEmail,
           practicePhone: emailCtx.practicePhone,
           practiceAddress: emailCtx.practiceAddress,
         },
@@ -230,6 +233,7 @@ export const notificationsRouter = createRouter({
               appointmentDate: formatPracticeDate(appt.startTime, emailCtx.timezone),
               appointmentTime: formatPracticeTime(appt.startTime, emailCtx.timezone),
               practiceName: emailCtx.practiceName,
+              practiceEmail: emailCtx.practiceEmail,
               practicePhone: emailCtx.practicePhone,
               practiceAddress: emailCtx.practiceAddress,
             },
@@ -443,6 +447,7 @@ export const notificationsRouter = createRouter({
                 vaccineName: alert.protocolLabel,
                 dueDate: alert.vaccination.nextDueDate ?? "overdue",
                 practiceName: emailCtx.practiceName,
+                practiceEmail: emailCtx.practiceEmail,
                 practicePhone: emailCtx.practicePhone,
               },
               emailCtx.templates.vaccinationReminder

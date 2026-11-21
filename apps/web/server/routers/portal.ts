@@ -370,6 +370,7 @@ export const portalRouter = createRouter({
       const [practice] = await ctx.db
         .select({
           name: practices.name,
+          email: practices.email,
           phone: practices.phone,
           address: practices.address,
           settings: practices.settings,
@@ -385,6 +386,7 @@ export const portalRouter = createRouter({
           to: client.email,
           clientName: `${client.firstName} ${client.lastName}`.trim(),
           practiceName: practice?.name ?? "Your veterinary clinic",
+          practiceEmail: practice?.email ?? undefined,
           practicePhone: practice?.phone ?? undefined,
           practiceAddress: practice?.address ?? undefined,
           magicLinkUrl,

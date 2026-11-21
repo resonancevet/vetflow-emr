@@ -65,6 +65,7 @@ export async function GET(request: Request) {
       const [practice] = await db
         .select({
           name: practices.name,
+          email: practices.email,
           phone: practices.phone,
           address: practices.address,
           timezone: practices.timezone,
@@ -75,6 +76,7 @@ export async function GET(request: Request) {
         .limit(1);
       return {
         practiceName: practice?.name ?? "",
+        practiceEmail: practice?.email ?? undefined,
         practicePhone: practice?.phone ?? undefined,
         practiceAddress: practice?.address ?? undefined,
         timezone: practice?.timezone ?? "America/New_York",
@@ -109,6 +111,7 @@ export async function GET(request: Request) {
               emailCtx.timezone,
             ),
             practiceName: emailCtx.practiceName,
+            practiceEmail: emailCtx.practiceEmail,
             practicePhone: emailCtx.practicePhone,
             practiceAddress: emailCtx.practiceAddress,
           },

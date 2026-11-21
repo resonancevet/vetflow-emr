@@ -397,6 +397,7 @@ export const dashboardRouter = createRouter({
       const [practice] = await ctx.db
         .select({
           name: practices.name,
+          email: practices.email,
           phone: practices.phone,
           address: practices.address,
           timezone: practices.timezone,
@@ -435,6 +436,7 @@ export const dashboardRouter = createRouter({
             appointmentDate: formatPracticeDate(startTime, practice?.timezone),
             appointmentTime: formatPracticeTime(startTime, practice?.timezone),
             practiceName: practice?.name ?? "Your veterinary clinic",
+            practiceEmail: practice?.email ?? undefined,
             practicePhone: practice?.phone ?? undefined,
             practiceAddress: practice?.address ?? undefined,
           },
@@ -568,6 +570,7 @@ export const dashboardRouter = createRouter({
         const [practice] = await ctx.db
           .select({
             name: practices.name,
+            email: practices.email,
             phone: practices.phone,
             address: practices.address,
             settings: practices.settings,
@@ -589,6 +592,7 @@ export const dashboardRouter = createRouter({
             preferredTime: parsed.preferredTime,
             staffMessage: input.message.trim(),
             practiceName: practice?.name ?? "Your veterinary clinic",
+            practiceEmail: practice?.email ?? undefined,
             practicePhone: practice?.phone ?? undefined,
             practiceAddress: practice?.address ?? undefined,
           },
