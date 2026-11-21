@@ -19,6 +19,9 @@ type Props = {
   agreed?: boolean;
   onAgreedChange?: (agreed: boolean) => void;
   agreementLabel?: string;
+  /** When true, the pad is greyed out and non-interactive. */
+  disabled?: boolean;
+  disabledHint?: string;
 };
 
 export function IntakeSignaturePad({
@@ -29,6 +32,8 @@ export function IntakeSignaturePad({
   agreed,
   onAgreedChange,
   agreementLabel,
+  disabled = false,
+  disabledHint,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
@@ -119,14 +124,23 @@ export function IntakeSignaturePad({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-muted/50 p-4">
+    <div
+      aria-disabled={disabled}
+      className={`space-y-3 rounded-lg border border-border bg-muted/50 p-4 ${
+        disabled ? "pointer-events-none opacity-50" : ""
+      }`}
+    >
       <p className="text-sm font-medium text-foreground">{label}</p>
+      {disabled && disabledHint ? (
+        <p className="text-sm text-muted-foreground">{disabledHint}</p>
+      ) : null}
       {requireAgreementCheckbox ? (
         <label className="flex items-start gap-2 text-sm text-foreground/90">
           <input
             type="checkbox"
             className="mt-1"
             checked={Boolean(agreed)}
+            disabled={disabled}
             onChange={(e) => onAgreedChange?.(e.target.checked)}
           />
           <span>{agreementLabel ?? "I have read and agree to the above."}</span>
@@ -137,6 +151,7 @@ export function IntakeSignaturePad({
           type="button"
           size="sm"
           variant={method === "typed" ? "default" : "outline"}
+          disabled={disabled}
           onClick={() => {
             setMethod("typed");
             onChange(
@@ -152,6 +167,7 @@ export function IntakeSignaturePad({
           type="button"
           size="sm"
           variant={method === "drawn" ? "default" : "outline"}
+          disabled={disabled}
           onClick={() => {
             setMethod("drawn");
             onChange(null);
@@ -167,6 +183,7 @@ export function IntakeSignaturePad({
           </label>
           <Input
             value={typedName}
+            disabled={disabled}
             onChange={(e) => emitTyped(e.target.value)}
             placeholder="Type your full name"
           />
@@ -178,16 +195,17 @@ export function IntakeSignaturePad({
             width={600}
             height={160}
             className="h-40 w-full touch-none rounded-md border border-input bg-background"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={finishStroke}
-            onPointerCancel={finishStroke}
+            onPointerDown={disabled ? undefined : onPointerDown}
+            onPointerMove={disabled ? undefined : onPointerMove}
+            onPointerUp={disabled ? undefined : finishStroke}
+            onPointerCancel={disabled ? undefined : finishStroke}
           />
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="mt-2"
+            disabled={disabled}
             onClick={clearDrawn}
           >
             Clear

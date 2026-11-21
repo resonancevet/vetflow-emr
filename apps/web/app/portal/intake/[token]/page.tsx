@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,35 @@ export default function IntakeWizardPage() {
   const [pets, setPets] = useState<PetForm[]>([emptyPet()]);
   const [done, setDone] = useState<{ portalUrl: string } | null>(null);
   const [registrationAck, setRegistrationAck] = useState(false);
+  const [agreementReadFully, setAgreementReadFully] = useState(false);
+  const agreementScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const checkAgreementScroll = useCallback(() => {
+    const el = agreementScrollRef.current;
+    if (!el) return;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // No overflow, or within a few pixels of the bottom.
+    if (el.scrollHeight <= el.clientHeight + 4 || remaining <= 12) {
+      setAgreementReadFully(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (step !== 1) return;
+    setAgreementReadFully(false);
+    // Layout may settle after paint / fonts.
+    const id = window.requestAnimationFrame(() => checkAgreementScroll());
+    const el = agreementScrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") {
+      return () => window.cancelAnimationFrame(id);
+    }
+    const ro = new ResizeObserver(() => checkAgreementScroll());
+    ro.observe(el);
+    return () => {
+      window.cancelAnimationFrame(id);
+      ro.disconnect();
+    };
+  }, [step, inviteQuery.data?.agreement, checkAgreementScroll]);
 
   useEffect(() => {
     if (!inviteQuery.data || prefilled) return;
@@ -135,7 +164,7 @@ export default function IntakeWizardPage() {
       );
     }
     if (step === 1) {
-      return agreementAgreed && Boolean(agreementSig);
+      return agreementReadFully && agreementAgreed && Boolean(agreementSig);
     }
     if (step === 2) {
       return mediaConsent !== null && Boolean(mediaSig);
@@ -150,6 +179,7 @@ export default function IntakeWizardPage() {
   }, [
     step,
     clientForm,
+    agreementReadFully,
     agreementAgreed,
     agreementSig,
     mediaConsent,
@@ -397,20 +427,37 @@ export default function IntakeWizardPage() {
 
       {step === 1 && agreement && (
         <div className="space-y-4">
-          <div className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-border bg-card p-4 text-foreground">
-            <h2 className="text-lg font-semibold text-teal-800 dark:text-teal-300">
-              {agreement.title}
-            </h2>
-            {agreement.sections.map((section) => (
-              <div key={section.heading}>
-                <h3 className="text-sm font-semibold text-foreground">
-                  {section.heading}
-                </h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
-                  {section.body}
-                </p>
+          <div className="relative">
+            <div
+              ref={agreementScrollRef}
+              onScroll={checkAgreementScroll}
+              className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-border bg-card p-4 text-foreground"
+            >
+              <h2 className="text-lg font-semibold text-teal-800 dark:text-teal-300">
+                {agreement.title}
+              </h2>
+              {agreement.sections.map((section) => (
+                <div key={section.heading}>
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {section.heading}
+                  </h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
+                    {section.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {!agreementReadFully ? (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center rounded-b-lg bg-gradient-to-t from-card via-card/90 to-transparent pb-2"
+              >
+                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  Scroll to read the full agreement
+                </span>
               </div>
-            ))}
+            ) : null}
           </div>
           <IntakeSignaturePad
             label="Sign the client agreement"
@@ -420,6 +467,8 @@ export default function IntakeWizardPage() {
             agreed={agreementAgreed}
             onAgreedChange={setAgreementAgreed}
             agreementLabel="I have read and agree to the Client Agreement and Consent to Treatment."
+            disabled={!agreementReadFully}
+            disabledHint="Scroll to the bottom of the agreement above before signing."
           />
         </div>
       )}
