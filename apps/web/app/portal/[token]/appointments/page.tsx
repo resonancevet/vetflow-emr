@@ -5,13 +5,13 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 
 const statusStyles: Record<string, string> = {
-  scheduled: "bg-blue-100 text-blue-700",
-  confirmed: "bg-teal-100 text-teal-700",
-  checked_in: "bg-amber-100 text-amber-700",
-  in_exam: "bg-purple-100 text-purple-700",
-  checked_out: "bg-green-100 text-green-700",
-  no_show: "bg-red-100 text-red-700",
-  cancelled: "bg-gray-100 text-gray-500",
+  scheduled: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+  confirmed: "bg-teal-100 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300",
+  checked_in: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+  in_exam: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300",
+  checked_out: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300",
+  no_show: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 const speciesEmoji: Record<string, string> = {
@@ -56,7 +56,7 @@ export default function AppointmentsPage() {
   if (error) {
     return (
       <div className="text-center py-20">
-        <p className="text-lg text-gray-500">Unable to load appointments.</p>
+        <p className="text-lg text-muted-foreground">Unable to load appointments.</p>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export default function AppointmentsPage() {
     <div>
       <Link
         href={`/portal/${token}`}
-        className="inline-flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700 mb-6"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -77,46 +77,46 @@ export default function AppointmentsPage() {
         Back to portal
       </Link>
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-8">Appointments</h1>
+      <h1 className="text-2xl font-bold text-foreground mb-8">Appointments</h1>
 
       {/* Upcoming */}
       <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-teal-500" />
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-teal-50 dark:bg-teal-950/400" />
           Upcoming
         </h2>
         {upcoming.length === 0 ? (
-          <p className="text-gray-400 text-sm">No upcoming appointments.</p>
+          <p className="text-muted-foreground text-sm">No upcoming appointments.</p>
         ) : (
           <div className="space-y-3">
             {upcoming.map((appt) => (
               <div
                 key={appt.id}
-                className="rounded-xl border border-gray-200 p-4 hover:border-teal-200 transition-colors"
+                className="rounded-xl border border-border p-4 hover:border-teal-300 dark:hover:border-teal-700 dark:border-teal-800 transition-colors"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-medium text-gray-900">
+                    <p className="font-medium text-foreground">
                       {formatDateTime(appt.startTime)}
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {appt.patientSpecies && (
                         <span className="mr-1">{speciesEmoji[appt.patientSpecies] || "🐾"}</span>
                       )}
                       {appt.patientName || "No patient"}
                       {appt.typeName && (
-                        <span className="text-gray-400"> &middot; {appt.typeName}</span>
+                        <span className="text-muted-foreground"> &middot; {appt.typeName}</span>
                       )}
                     </p>
                     {appt.doctorName && (
-                      <p className="text-sm text-gray-400 mt-0.5">
+                      <p className="text-sm text-muted-foreground mt-0.5">
                         with {appt.doctorName}
                       </p>
                     )}
                   </div>
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-xs font-medium flex-shrink-0 ${
-                      statusStyles[appt.status] || "bg-gray-100 text-gray-600"
+                      statusStyles[appt.status] || "bg-muted text-muted-foreground"
                     }`}
                   >
                     {formatStatusLabel(appt.status)}
@@ -130,42 +130,42 @@ export default function AppointmentsPage() {
 
       {/* Past */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-gray-400" />
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-muted-foreground/60" />
           Past
         </h2>
         {past.length === 0 ? (
-          <p className="text-gray-400 text-sm">No past appointments.</p>
+          <p className="text-muted-foreground text-sm">No past appointments.</p>
         ) : (
           <div className="space-y-3">
             {past.map((appt) => (
               <div
                 key={appt.id}
-                className="rounded-xl border border-gray-100 p-4 bg-gray-50/50"
+                className="rounded-xl border border-border p-4 bg-muted/40"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-medium text-gray-700">
+                    <p className="font-medium text-foreground/90">
                       {formatDateTime(appt.startTime)}
                     </p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {appt.patientSpecies && (
                         <span className="mr-1">{speciesEmoji[appt.patientSpecies] || "🐾"}</span>
                       )}
                       {appt.patientName || "No patient"}
                       {appt.typeName && (
-                        <span className="text-gray-400"> &middot; {appt.typeName}</span>
+                        <span className="text-muted-foreground"> &middot; {appt.typeName}</span>
                       )}
                     </p>
                     {appt.doctorName && (
-                      <p className="text-sm text-gray-400 mt-0.5">
+                      <p className="text-sm text-muted-foreground mt-0.5">
                         with {appt.doctorName}
                       </p>
                     )}
                   </div>
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-xs font-medium flex-shrink-0 ${
-                      statusStyles[appt.status] || "bg-gray-100 text-gray-600"
+                      statusStyles[appt.status] || "bg-muted text-muted-foreground"
                     }`}
                   >
                     {formatStatusLabel(appt.status)}

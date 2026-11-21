@@ -41,28 +41,28 @@ function PortalLoginForm() {
 
   return (
     <div className="mx-auto max-w-md py-10">
-      <h1 className="font-heading text-2xl font-semibold text-gray-900">
+      <h1 className="font-heading text-2xl font-semibold text-foreground">
         Pet portal sign-in
       </h1>
-      <p className="mt-2 text-sm text-gray-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         Enter the email on file with your veterinary clinic. We&apos;ll send a
         one-time link to open your pets&apos; portal.
       </p>
 
       {errorMessage && (
-        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
           {errorMessage}
         </p>
       )}
 
       {statusMessage && !requestLink.error ? (
-        <div className="mt-6 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+        <div className="mt-6 rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-4 py-3 text-sm text-teal-900 dark:text-teal-100">
           {statusMessage}
         </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-gray-800">Email</span>
+            <span className="text-sm font-medium text-foreground">Email</span>
             <Input
               type="email"
               required
@@ -73,7 +73,7 @@ function PortalLoginForm() {
             />
           </label>
           {requestLink.error && (
-            <p className="text-sm text-red-600">{requestLink.error.message}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{requestLink.error.message}</p>
           )}
           <Button
             type="submit"
@@ -85,7 +85,7 @@ function PortalLoginForm() {
         </form>
       )}
 
-      <p className="mt-8 text-center text-xs text-gray-500">
+      <p className="mt-8 text-center text-xs text-muted-foreground">
         Prefer a permanent link from your clinic? Use the portal URL from an
         invoice or invite email.
       </p>
@@ -97,7 +97,7 @@ export default function PortalLoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-16 text-center text-sm text-gray-500">Loading…</div>
+        <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
       }
     >
       <PortalLoginForm />

@@ -6,11 +6,11 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 
 const statusStyles: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-600",
-  sent: "bg-blue-100 text-blue-700",
-  paid: "bg-green-100 text-green-700",
-  overdue: "bg-red-100 text-red-700",
-  void: "bg-gray-100 text-gray-400",
+  draft: "bg-muted text-muted-foreground",
+  sent: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+  paid: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300",
+  overdue: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+  void: "bg-muted text-muted-foreground",
 };
 
 function formatDate(d: string | Date | null): string {
@@ -74,7 +74,7 @@ function PayButton({ token, invoiceId }: { token: string; invoiceId: string }) {
       >
         {loading ? "Redirecting..." : "Pay Online"}
       </button>
-      {error && <p className="max-w-[12rem] text-right text-xs text-red-600">{error}</p>}
+      {error && <p className="max-w-[12rem] text-right text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }
@@ -96,7 +96,7 @@ export default function InvoicesPage() {
   if (error) {
     return (
       <div className="text-center py-20">
-        <p className="text-lg text-gray-500">Unable to load invoices.</p>
+        <p className="text-lg text-muted-foreground">Unable to load invoices.</p>
       </div>
     );
   }
@@ -105,7 +105,7 @@ export default function InvoicesPage() {
     <div>
       <Link
         href={`/portal/${token}`}
-        className="inline-flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700 mb-6"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -113,10 +113,10 @@ export default function InvoicesPage() {
         Back to portal
       </Link>
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-8">Invoices</h1>
+      <h1 className="text-2xl font-bold text-foreground mb-8">Invoices</h1>
 
       {!data || data.length === 0 ? (
-        <p className="text-gray-400 text-center py-12">No invoices yet.</p>
+        <p className="text-muted-foreground text-center py-12">No invoices yet.</p>
       ) : (
         <>
           {/* Mobile cards */}
@@ -124,35 +124,35 @@ export default function InvoicesPage() {
             {data.map((inv) => {
               const balance = parseFloat(String(inv.total)) - parseFloat(String(inv.paidAmount));
               return (
-                <div key={inv.id} className="rounded-xl border border-gray-200 p-4">
+                <div key={inv.id} className="rounded-xl border border-border p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="font-medium text-gray-900">{formatCurrency(inv.total)}</p>
-                      <p className="text-sm text-gray-500">{formatDate(inv.createdAt)}</p>
+                      <p className="font-medium text-foreground">{formatCurrency(inv.total)}</p>
+                      <p className="text-sm text-muted-foreground">{formatDate(inv.createdAt)}</p>
                     </div>
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
-                        statusStyles[inv.status] || "bg-gray-100 text-gray-600"
+                        statusStyles[inv.status] || "bg-muted text-muted-foreground"
                       }`}
                     >
                       {inv.status}
                     </span>
                   </div>
                   {inv.patientName && (
-                    <p className="text-sm text-gray-500">Patient: {inv.patientName}</p>
+                    <p className="text-sm text-muted-foreground">Patient: {inv.patientName}</p>
                   )}
                   <div className="flex justify-between mt-2 text-sm">
-                    <span className="text-gray-400">
+                    <span className="text-muted-foreground">
                       Paid: {formatCurrency(inv.paidAmount)}
                     </span>
                     {balance > 0 && (
-                      <span className="font-medium text-red-600">
+                      <span className="font-medium text-red-600 dark:text-red-400">
                         Balance: {formatCurrency(balance)}
                       </span>
                     )}
                   </div>
                   {inv.dueDate && (
-                    <p className="text-xs text-gray-400 mt-1">Due: {formatDate(inv.dueDate)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Due: {formatDate(inv.dueDate)}</p>
                   )}
                   {balance > 0 && inv.status !== "void" && (
                     <div className="mt-3">
@@ -168,7 +168,7 @@ export default function InvoicesPage() {
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-gray-500">
+                <tr className="border-b border-border text-left text-muted-foreground">
                   <th className="pb-2 font-medium">Date</th>
                   <th className="pb-2 font-medium">Patient</th>
                   <th className="pb-2 font-medium text-right">Total</th>
@@ -185,27 +185,27 @@ export default function InvoicesPage() {
                     parseFloat(String(inv.total)) - parseFloat(String(inv.paidAmount));
                   return (
                     <tr key={inv.id}>
-                      <td className="py-3 text-gray-600">{formatDate(inv.createdAt)}</td>
-                      <td className="py-3 text-gray-900">{inv.patientName || "-"}</td>
-                      <td className="py-3 text-right font-medium text-gray-900">
+                      <td className="py-3 text-muted-foreground">{formatDate(inv.createdAt)}</td>
+                      <td className="py-3 text-foreground">{inv.patientName || "-"}</td>
+                      <td className="py-3 text-right font-medium text-foreground">
                         {formatCurrency(inv.total)}
                       </td>
-                      <td className="py-3 text-right text-gray-600">
+                      <td className="py-3 text-right text-muted-foreground">
                         {formatCurrency(inv.paidAmount)}
                       </td>
-                      <td className={`py-3 text-right font-medium ${balance > 0 ? "text-red-600" : "text-green-600"}`}>
+                      <td className={`py-3 text-right font-medium ${balance > 0 ? "text-red-600 dark:text-red-400" : "text-green-600"}`}>
                         {formatCurrency(balance)}
                       </td>
                       <td className="py-3">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
-                            statusStyles[inv.status] || "bg-gray-100 text-gray-600"
+                            statusStyles[inv.status] || "bg-muted text-muted-foreground"
                           }`}
                         >
                           {inv.status}
                         </span>
                       </td>
-                      <td className="py-3 text-gray-500">{formatDate(inv.dueDate)}</td>
+                      <td className="py-3 text-muted-foreground">{formatDate(inv.dueDate)}</td>
                       <td className="py-3">
                         {balance > 0 && inv.status !== "void" && (
                           <PayButton token={token} invoiceId={inv.id} />

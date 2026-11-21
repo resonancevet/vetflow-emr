@@ -208,29 +208,29 @@ export default function IntakeWizardPage() {
   if (inviteQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-teal-600 dark:text-teal-400" />
       </div>
     );
   }
 
   if (inviteQuery.error) {
     return (
-      <div className="mx-auto max-w-lg rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-        <h1 className="text-lg font-semibold text-red-800">
+      <div className="mx-auto max-w-lg rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40 p-6 text-center">
+        <h1 className="text-lg font-semibold text-red-800 dark:text-red-200">
           Unable to open intake form
         </h1>
-        <p className="mt-2 text-sm text-red-700">{inviteQuery.error.message}</p>
+        <p className="mt-2 text-sm text-red-700 dark:text-red-300">{inviteQuery.error.message}</p>
       </div>
     );
   }
 
   if (done) {
     return (
-      <div className="mx-auto max-w-lg rounded-lg border border-emerald-200 bg-emerald-50 p-8 text-center">
-        <h1 className="text-xl font-semibold text-emerald-900">
+      <div className="mx-auto max-w-lg rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40 p-8 text-center">
+        <h1 className="text-xl font-semibold text-emerald-900 dark:text-emerald-100">
           Paperwork received
         </h1>
-        <p className="mt-2 text-sm text-emerald-800">
+        <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">
           Thank you. Your information has been saved for{" "}
           {inviteQuery.data?.practiceName}.
         </p>
@@ -244,9 +244,9 @@ export default function IntakeWizardPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <p className="text-sm text-gray-500">{inviteQuery.data?.practiceName}</p>
-        <h1 className="text-2xl font-semibold text-gray-900">New Client</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">{inviteQuery.data?.practiceName}</p>
+        <h1 className="text-2xl font-semibold text-foreground">New Client</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Step {step + 1} of {STEPS.length}: {STEPS[step]}
         </p>
       </div>
@@ -256,15 +256,15 @@ export default function IntakeWizardPage() {
           <div
             key={STEPS[i]}
             className={`h-1.5 flex-1 rounded-full ${
-              i <= step ? "bg-teal-600" : "bg-gray-200"
+              i <= step ? "bg-teal-600" : "bg-muted"
             }`}
           />
         ))}
       </div>
 
       {step === 0 && (
-        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-          <p className="text-sm text-gray-600">
+        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
             Only list adult clients (18+) who have full legal and financial
             authority for the pet(s).
           </p>
@@ -376,7 +376,7 @@ export default function IntakeWizardPage() {
           </div>
           <Field label="Preferred communication">
             <select
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
               value={clientForm.preferredContactMethod}
               onChange={(e) =>
                 setClientForm((f) => ({
@@ -397,16 +397,16 @@ export default function IntakeWizardPage() {
 
       {step === 1 && agreement && (
         <div className="space-y-4">
-          <div className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-gray-200 bg-white p-4 text-gray-900">
-            <h2 className="text-lg font-semibold text-teal-800">
+          <div className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-border bg-card p-4 text-foreground">
+            <h2 className="text-lg font-semibold text-teal-800 dark:text-teal-300">
               {agreement.title}
             </h2>
             {agreement.sections.map((section) => (
               <div key={section.heading}>
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-foreground">
                   {section.heading}
                 </h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">
+                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
                   {section.body}
                 </p>
               </div>
@@ -426,14 +426,14 @@ export default function IntakeWizardPage() {
 
       {step === 2 && agreement && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 text-gray-900">
-            <h2 className="text-lg font-semibold text-teal-800">
+          <div className="rounded-lg border border-border bg-card p-4 text-foreground">
+            <h2 className="text-lg font-semibold text-teal-800 dark:text-teal-300">
               Consent to use of media
             </h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+            <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
               {agreement.mediaConsentText}
             </p>
-            <div className="mt-4 flex flex-col gap-2 text-gray-900">
+            <div className="mt-4 flex flex-col gap-2 text-foreground">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="radio"
@@ -467,7 +467,7 @@ export default function IntakeWizardPage() {
           {pets.map((pet, index) => (
             <div
               key={index}
-              className="space-y-3 rounded-lg border border-gray-200 bg-white p-4"
+              className="space-y-3 rounded-lg border border-border bg-card p-4"
             >
               <div className="flex items-center justify-between">
                 <h3 className="font-medium">Pet {index + 1}</h3>
@@ -496,7 +496,7 @@ export default function IntakeWizardPage() {
                 </Field>
                 <Field label="Species *">
                   <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                     value={pet.species}
                     onChange={(e) =>
                       updatePet(setPets, index, {
@@ -531,7 +531,7 @@ export default function IntakeWizardPage() {
                 </Field>
                 <Field label="Sex / reproductive status">
                   <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                     value={pet.sex}
                     onChange={(e) =>
                       updatePet(setPets, index, {
@@ -648,7 +648,7 @@ export default function IntakeWizardPage() {
 
       {step === 4 && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+          <div className="rounded-lg border border-border bg-card p-4 text-sm text-foreground/90">
             <p>
               <span className="font-medium">Client:</span>{" "}
               {clientForm.firstName} {clientForm.lastName} · {clientForm.email}
@@ -726,7 +726,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-gray-500">
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
       </label>
       {children}
@@ -743,7 +743,7 @@ function TextArea({
 }) {
   return (
     <textarea
-      className="min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+      className="min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />

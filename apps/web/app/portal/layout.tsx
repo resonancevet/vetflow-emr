@@ -12,11 +12,11 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background text-foreground">
       <PortalHeader />
       <main className="mx-auto max-w-4xl px-4 py-6">{children}</main>
-      <footer className="mt-12 border-t border-gray-100">
-        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-gray-400">
+      <footer className="mt-12 border-t border-border">
+        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-muted-foreground">
           Secure pet portal
         </div>
       </footer>

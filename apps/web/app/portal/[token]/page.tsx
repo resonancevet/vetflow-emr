@@ -91,12 +91,12 @@ function PortalHomePageContent() {
   if (error) {
     return (
       <div className="text-center py-20">
-        <p className="text-lg text-gray-500">
+        <p className="text-lg text-muted-foreground">
           This portal link is invalid or has been disabled.
         </p>
-        <p className="text-sm text-gray-400 mt-2">
+        <p className="text-sm text-muted-foreground mt-2">
           Please contact your veterinary clinic for a new link, or{" "}
-          <a href="/portal/login" className="text-teal-700 underline">
+          <a href="/portal/login" className="text-teal-700 dark:text-teal-400 underline">
             request a sign-in email
           </a>
           .
@@ -110,39 +110,39 @@ function PortalHomePageContent() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-foreground">
           Welcome, {data.firstName}!
         </h1>
-        <p className="text-gray-500 mt-1">
+        <p className="text-muted-foreground mt-1">
           Here is everything about your pets at {data.practiceName}.
         </p>
       </div>
 
       {/* Pet Cards */}
       <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Your Pets</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Your Pets</h2>
         {data.patients.length === 0 ? (
-          <p className="text-gray-400">No pets on file yet.</p>
+          <p className="text-muted-foreground">No pets on file yet.</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {data.patients.map((pet) => (
               <Link
                 key={pet.id}
                 href={`/portal/${token}/pets/${pet.id}`}
-                className="block rounded-xl border border-gray-200 p-5 hover:border-teal-400 hover:shadow-md transition-all"
+                className="block rounded-xl border border-border p-5 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-md transition-all"
               >
                 <div className="flex items-start gap-3">
-                  <div className="h-12 w-12 rounded-full bg-teal-50 flex items-center justify-center text-2xl flex-shrink-0">
+                  <div className="h-12 w-12 rounded-full bg-teal-50 dark:bg-teal-950/40 flex items-center justify-center text-2xl flex-shrink-0">
                     {speciesEmoji[pet.species] || "🐾"}
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">
+                    <h3 className="font-semibold text-foreground truncate">
                       {pet.name}
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-muted-foreground">
                       {pet.breed || pet.species}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {calculateAge(pet.dob)}
                     </p>
                   </div>
@@ -167,7 +167,7 @@ function PortalHomePageContent() {
               setShowApptForm(true);
               setApptSuccess("");
             }}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-300 p-4 text-teal-700 font-medium hover:bg-teal-50 hover:border-teal-400 transition-all"
+            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-300 dark:border-teal-700 p-4 text-teal-700 dark:text-teal-400 font-medium hover:bg-teal-50 dark:hover:bg-teal-950/40 hover:border-teal-400 dark:hover:border-teal-500 transition-all"
           >
             <svg
               className="h-5 w-5"
@@ -185,8 +185,8 @@ function PortalHomePageContent() {
             Request an Appointment
           </button>
         ) : (
-          <div className="rounded-xl border border-gray-200 p-5">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="rounded-xl border border-border p-5">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
               Request an Appointment
             </h3>
             <form
@@ -203,14 +203,14 @@ function PortalHomePageContent() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-foreground/90 mb-1">
                   Pet
                 </label>
                 <select
                   required
                   value={apptPatientId}
                   onChange={(e) => setApptPatientId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-teal-500 focus:ring-teal-500"
                 >
                   <option value="">Select a pet...</option>
                   {data?.patients.map((pet) => (
@@ -222,7 +222,7 @@ function PortalHomePageContent() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-foreground/90 mb-1">
                   Preferred Date
                 </label>
                 <input
@@ -231,18 +231,18 @@ function PortalHomePageContent() {
                   value={apptDate}
                   onChange={(e) => setApptDate(e.target.value)}
                   min={new Date().toISOString().split("T")[0]}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-teal-500 focus:ring-teal-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-foreground/90 mb-1">
                   Preferred Time
                 </label>
                 <select
                   value={apptTime}
                   onChange={(e) => setApptTime(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-teal-500 focus:ring-teal-500"
                 >
                   <option value="morning">Morning (8am - 12pm)</option>
                   <option value="afternoon">Afternoon (12pm - 5pm)</option>
@@ -251,7 +251,7 @@ function PortalHomePageContent() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-foreground/90 mb-1">
                   Reason / Notes
                 </label>
                 <textarea
@@ -260,12 +260,12 @@ function PortalHomePageContent() {
                   onChange={(e) => setApptReason(e.target.value)}
                   rows={3}
                   placeholder="e.g. Annual checkup, limping on front left leg..."
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-teal-500 focus:ring-teal-500"
                 />
               </div>
 
               {requestAppt.error && (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 dark:text-red-400">
                   {requestAppt.error.message}
                 </p>
               )}
@@ -281,7 +281,7 @@ function PortalHomePageContent() {
                 <button
                   type="button"
                   onClick={() => setShowApptForm(false)}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-lg border border-input px-4 py-2 text-sm font-medium text-foreground/90 hover:bg-muted/50"
                 >
                   Cancel
                 </button>
@@ -293,11 +293,11 @@ function PortalHomePageContent() {
 
       {/* Quick Links */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Quick Links</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Quick Links</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <Link
             href={`/portal/${token}/appointments`}
-            className="flex items-center gap-3 rounded-xl border border-gray-200 p-4 hover:border-teal-400 hover:shadow-sm transition-all"
+            className="flex items-center gap-3 rounded-xl border border-border p-4 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-sm transition-all"
           >
             <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -305,13 +305,13 @@ function PortalHomePageContent() {
               </svg>
             </div>
             <div>
-              <p className="font-medium text-gray-900">Appointments</p>
-              <p className="text-sm text-gray-500">View upcoming and past visits</p>
+              <p className="font-medium text-foreground">Appointments</p>
+              <p className="text-sm text-muted-foreground">View upcoming and past visits</p>
             </div>
           </Link>
           <Link
             href={`/portal/${token}/invoices`}
-            className="flex items-center gap-3 rounded-xl border border-gray-200 p-4 hover:border-teal-400 hover:shadow-sm transition-all"
+            className="flex items-center gap-3 rounded-xl border border-border p-4 hover:border-teal-400 dark:hover:border-teal-500 hover:shadow-sm transition-all"
           >
             <div className="h-10 w-10 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -319,8 +319,8 @@ function PortalHomePageContent() {
               </svg>
             </div>
             <div>
-              <p className="font-medium text-gray-900">Invoices</p>
-              <p className="text-sm text-gray-500">View billing and payments</p>
+              <p className="font-medium text-foreground">Invoices</p>
+              <p className="text-sm text-muted-foreground">View billing and payments</p>
             </div>
           </Link>
         </div>

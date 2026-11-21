@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,6 +32,7 @@ export function IntakeSignaturePad({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
+  const { resolvedTheme } = useTheme();
   const [method, setMethod] = useState<"typed" | "drawn">(
     value?.method ?? "typed"
   );
@@ -42,7 +44,7 @@ export function IntakeSignaturePad({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.strokeStyle = "#111827";
+    ctx.strokeStyle = resolvedTheme === "dark" ? "#f3f4f6" : "#111827";
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -51,8 +53,8 @@ export function IntakeSignaturePad({
       img.onload = () => ctx.drawImage(img, 0, 0);
       img.src = value.signatureData;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- init canvas once when switching to drawn
-  }, [method]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init canvas when switching to drawn / theme
+  }, [method, resolvedTheme]);
 
   const emitTyped = (name: string) => {
     setTypedName(name);
@@ -117,10 +119,10 @@ export function IntakeSignaturePad({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-      <p className="text-sm font-medium text-gray-900">{label}</p>
+    <div className="space-y-3 rounded-lg border border-border bg-muted/50 p-4">
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {requireAgreementCheckbox ? (
-        <label className="flex items-start gap-2 text-sm text-gray-700">
+        <label className="flex items-start gap-2 text-sm text-foreground/90">
           <input
             type="checkbox"
             className="mt-1"
@@ -160,7 +162,7 @@ export function IntakeSignaturePad({
       </div>
       {method === "typed" ? (
         <div>
-          <label className="mb-1 block text-xs text-gray-500">
+          <label className="mb-1 block text-xs text-muted-foreground">
             Full legal name
           </label>
           <Input
@@ -175,7 +177,7 @@ export function IntakeSignaturePad({
             ref={canvasRef}
             width={600}
             height={160}
-            className="h-40 w-full touch-none rounded-md border border-gray-300 bg-white"
+            className="h-40 w-full touch-none rounded-md border border-input bg-background"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={finishStroke}
