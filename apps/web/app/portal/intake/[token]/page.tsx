@@ -626,6 +626,17 @@ export default function IntakeWizardPage() {
                   />
                 </Field>
               </div>
+              <p className="text-sm text-muted-foreground">
+                Please have your pet&apos;s records emailed to{" "}
+                <a
+                  href="mailto:RomaVet@proton.me"
+                  className="font-medium text-teal-700 underline underline-offset-2 hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300"
+                >
+                  RomaVet@proton.me
+                </a>{" "}
+                or enter the information below, include dates when vaccines were
+                given, conditions were diagnosed, medications prescribed, etc.
+              </p>
               <Field label="Vaccination history">
                 <TextArea
                   value={pet.vaccinationHistory}
