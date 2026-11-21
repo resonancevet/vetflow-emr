@@ -723,7 +723,7 @@ export default function IntakeWizardPage() {
             requireAgreementCheckbox
             agreed={registrationAck}
             onAgreedChange={setRegistrationAck}
-            agreementLabel="I confirm the information above is accurate to the best of my knowledge."
+            agreementLabel="I confirm the information I have provided is true and accurate to the best of my knowledge."
           />
         </div>
       )}
