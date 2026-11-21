@@ -210,7 +210,7 @@ If you did not request this email, you can ignore it.`,
     subject: "Complete your new client paperwork — {{practiceName}}",
     body: `Hi {{clientName}},
 
-Please complete your new client paperwork for {{practiceName}} before your appointment. The secure link below expires in {{expiresInDays}} days and can only be used once.
+Please complete these forms before your appointment. The secure link below expires in 14 days and can only be used once.
 
 {{intakeLinkButton}}
 
