@@ -1,5 +1,5 @@
 /** Versioned new-client agreement copy (Roma packet minus day-of rabies form). */
-export const INTAKE_AGREEMENT_VERSION = "roma-v1-2026-03";
+export const INTAKE_AGREEMENT_VERSION = "roma-v1-2026-11";
 
 export const INTAKE_AGREEMENT_TITLE =
   "Roma Veterinary Care PLLC Client Agreement";
@@ -63,7 +63,7 @@ Telemedicine is limited to a discussion of a medical condition your pet is exper
     heading: "Payment",
     body: `For all new clients the consult and exam fee is due when the initial appointment is scheduled. This fee is non-refundable, however the appointment may be rescheduled.
 
-For existing clients payment is due at time of service unless other arrangements are agreed to in advance. Cash, check, credit card, and Venmo are acceptable forms of payment.
+For existing clients payment is due at time of service unless other arrangements are agreed to in advance. Cash, check, or Venmo are acceptable forms of payment.
 
 Please note that prices are subject to change at any time. Unpaid balances may be subject to collections and additional fees.`,
   },
@@ -75,13 +75,11 @@ At this time Roma Veterinary Care PLLC does not prescribe or carry any controlle
   },
   {
     heading: "Rabies legal compliance",
-    body: `New Hampshire law requires that every dog and cat 3 months of age and older be vaccinated against rabies. The veterinarian giving the rabies vaccine is required to complete a certificate of rabies vaccination and a copy of this certificate must be sent to the town or city clerk where the pet is kept. It is your responsibility to know and comply with your town’s ordinances and licensing rules.
-
-A separate same-day rabies vaccination sworn statement (RSA 436:101) is completed only when a rabies vaccine is given, in the veterinarian’s presence — it is not part of this pre-visit intake.`,
+    body: `New Hampshire law requires that every dog and cat 3 months of age and older be vaccinated against rabies. The veterinarian giving the rabies vaccine is required to complete a certificate of rabies vaccination and a copy of this certificate must be sent to the town or city clerk where the pet is kept. It is your responsibility to know and comply with your town’s ordinances and licensing rules.`,
   },
   {
     heading: "Consent to treatment and assumption of liability",
-    body: `By signing this consent form, I (the Client) do hereby voluntarily give permission and consent for my pet(s) listed in this intake to be treated by Dr. Mumford, and any associate veterinarians, registered veterinary technicians, veterinary assistants, consultants or agents (herein collectively “Roma Veterinary Care PLLC”).
+    body: `By signing this consent form, I (the Client) do hereby voluntarily give permission and consent for my pet(s) listed in this document to be treated by Dr. Mumford, and any associate veterinarians, registered veterinary technicians, veterinary assistants, consultants or agents (herein collectively “Roma Veterinary Care PLLC”).
 
 I consent to receive communication via text, email, and voice message regarding my pet’s care.
 
@@ -99,9 +97,7 @@ If a dispute is not resolved first by good-faith negotiation between the parties
 
 This Agreement shall be governed by and construed in accordance with the laws of the State of New Hampshire, regardless of the conflict of laws principles thereof. Should any provision of this Agreement be or become invalid, illegal, or unenforceable under applicable law, the other provisions of this Agreement shall not be affected and shall remain in full force and effect.
 
-My signature verifies that I am the owner of the above-named pet(s) and I consent to treatment. I acknowledge that I have been advised and my questions have been answered regarding the content of this document. I understand the potential risks incidental to the services provided and I fully assume all such risks. I intend this consent form to cover the entire course of treatment for my pet(s)’ present condition(s) as well as any future conditions for which I seek treatment from Roma Veterinary Care PLLC.
-
-Visit-specific informed consent (options, risks, benefits, and estimates) will still be documented separately for recommended care as required by New Hampshire veterinary board rules.`,
+My signature verifies that I am the owner of the above-named pet(s) and I consent to treatment. I acknowledge that I have been advised and my questions have been answered regarding the content of this document. I understand the potential risks incidental to the services provided and I fully assume all such risks. I intend this consent form to cover the entire course of treatment for my pet(s)’ present condition(s) as well as any future conditions for which I seek treatment from Roma Veterinary Care PLLC.`,
   },
 ];
 

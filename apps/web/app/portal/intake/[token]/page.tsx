@@ -245,9 +245,7 @@ export default function IntakeWizardPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <p className="text-sm text-gray-500">{inviteQuery.data?.practiceName}</p>
-        <h1 className="text-2xl font-semibold text-gray-900">
-          New client paperwork
-        </h1>
+        <h1 className="text-2xl font-semibold text-gray-900">New Client</h1>
         <p className="mt-1 text-sm text-gray-600">
           Step {step + 1} of {STEPS.length}: {STEPS[step]}
         </p>
@@ -399,8 +397,10 @@ export default function IntakeWizardPage() {
 
       {step === 1 && agreement && (
         <div className="space-y-4">
-          <div className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-gray-200 bg-white p-4">
-            <h2 className="text-lg font-semibold">{agreement.title}</h2>
+          <div className="max-h-[28rem] space-y-4 overflow-y-auto rounded-lg border border-gray-200 bg-white p-4 text-gray-900">
+            <h2 className="text-lg font-semibold text-teal-800">
+              {agreement.title}
+            </h2>
             {agreement.sections.map((section) => (
               <div key={section.heading}>
                 <h3 className="text-sm font-semibold text-gray-900">
@@ -426,12 +426,14 @@ export default function IntakeWizardPage() {
 
       {step === 2 && agreement && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h2 className="text-lg font-semibold">Consent to use of media</h2>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-gray-900">
+            <h2 className="text-lg font-semibold text-teal-800">
+              Consent to use of media
+            </h2>
             <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
               {agreement.mediaConsentText}
             </p>
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-4 flex flex-col gap-2 text-gray-900">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="radio"
