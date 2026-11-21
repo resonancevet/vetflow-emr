@@ -23,6 +23,7 @@ import {
   Trash2,
   LineChart as LineChartIcon,
   List,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -50,6 +51,10 @@ import {
   PatientAlertsManageButton,
 } from "@/components/patients/patient-alerts-banner";
 import { ClientAlertIcon } from "@/components/clients/client-alerts-banner";
+import {
+  ScheduleReminderModal,
+  StaffRemindersPanel,
+} from "@/components/reminders/schedule-reminder-modal";
 import { formatVisitDate } from "@/lib/practice-datetime";
 import { vaccineProtocolKeys } from "@/lib/vaccination-due";
 import { recordPatientView } from "@/lib/recent-patients";
@@ -122,6 +127,7 @@ export default function PatientDetailPage() {
   const [weightUnit, setWeightUnit] = useWeightUnit();
   const [weightView, setWeightView] = useState<"list" | "graph">("list");
   const [chartSection, setChartSection] = useState<ChartSection>("medical");
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   const formatWeight = (kgString: string | null) => {
     if (!kgString) return "\u2014";
@@ -302,6 +308,14 @@ export default function PatientDetailPage() {
           >
             <Pencil className="mr-2 h-4 w-4" />
             Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setReminderOpen(true)}
+          >
+            <Bell className="mr-2 h-4 w-4" />
+            Reminder
           </Button>
           {canManageClinicalRecords && (
             <PatientAlertsManageButton patientId={patient.id} />
@@ -630,15 +644,37 @@ export default function PatientDetailPage() {
         )}
 
         {activeChartSection === "communication" && patient.clientId && (
-          <section>
-            <h3 className="mb-3 font-heading text-base font-semibold">
-              Communication
-            </h3>
-            <PatientCommunicationsTab
-              patientId={patient.id}
-              clientId={patient.clientId}
-              clientLabel={`${patient.clientFirstName ?? ""} ${patient.clientLastName ?? ""}`.trim()}
-            />
+          <section className="space-y-6">
+            <div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-heading text-base font-semibold">
+                  Reminders
+                </h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setReminderOpen(true)}
+                >
+                  <Bell className="mr-1.5 h-3.5 w-3.5" />
+                  Schedule
+                </Button>
+              </div>
+              <StaffRemindersPanel
+                patientId={patient.id}
+                clientId={patient.clientId}
+              />
+            </div>
+            <div>
+              <h3 className="mb-3 font-heading text-base font-semibold">
+                Communication
+              </h3>
+              <PatientCommunicationsTab
+                patientId={patient.id}
+                clientId={patient.clientId}
+                clientLabel={`${patient.clientFirstName ?? ""} ${patient.clientLastName ?? ""}`.trim()}
+              />
+            </div>
           </section>
         )}
 
@@ -776,6 +812,14 @@ export default function PatientDetailPage() {
           </section>
         )}
       </div>
+
+      <ScheduleReminderModal
+        open={reminderOpen}
+        onClose={() => setReminderOpen(false)}
+        patientId={patient.id}
+        clientId={patient.clientId ?? undefined}
+        contextLabel={patient.name}
+      />
     </div>
   );
 }

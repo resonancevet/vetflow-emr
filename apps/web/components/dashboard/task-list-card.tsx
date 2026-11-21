@@ -1,17 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bell,
+  Check,
   ClipboardList,
   FileText,
+  Loader2,
   Mail,
   Phone,
   Receipt,
   CalendarPlus,
-  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ScheduleReminderModal } from "@/components/reminders/schedule-reminder-modal";
 
 const categoryMeta: Record<
   string,
@@ -42,6 +48,11 @@ const categoryMeta: Record<
     icon: Phone,
     className: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
   },
+  reminder: {
+    label: "Reminder",
+    icon: Bell,
+    className: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  },
   other: {
     label: "Task",
     icon: ClipboardList,
@@ -51,24 +62,46 @@ const categoryMeta: Record<
 
 export function TaskListCard() {
   const router = useRouter();
+  const utils = trpc.useUtils();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const { data, isLoading, isError, error } = trpc.dashboard.listTasks.useQuery();
   const tasks = data ?? [];
 
+  const completeReminder = trpc.staffReminders.complete.useMutation({
+    onSuccess: () => {
+      utils.dashboard.listTasks.invalidate();
+      utils.staffReminders.listOpen.invalidate();
+      toast.success("Reminder completed");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   return (
     <div className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <h2 className="font-heading text-lg font-semibold">Task List</h2>
           <p className="text-xs text-muted-foreground">
-            Invoices, SOAPs, mailings, follow-ups, and calls that still need
-            attention
+            Invoices, SOAPs, mailings, follow-ups, reminders, and calls that
+            still need attention
           </p>
         </div>
-        {tasks.length > 0 && (
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {tasks.length}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {tasks.length > 0 && (
+            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              {tasks.length}
+            </span>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setScheduleOpen(true)}
+          >
+            <Bell className="mr-1.5 h-3.5 w-3.5" />
+            Reminder
+          </Button>
+        </div>
       </div>
       <div className="space-y-2 p-4">
         {isLoading ? (
@@ -88,43 +121,68 @@ export function TaskListCard() {
             const meta = categoryMeta[task.category] ?? categoryMeta.other;
             const Icon = meta.icon;
             return (
-              <button
+              <div
                 key={task.id}
-                type="button"
-                onClick={() => router.push(task.href)}
-                className="flex w-full items-start gap-3 rounded-md border border-border px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full items-start gap-3 rounded-md border border-border px-4 py-3 transition-colors hover:bg-muted/50"
               >
-                <span
-                  className={cn(
-                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-                    meta.className
-                  )}
+                <button
+                  type="button"
+                  onClick={() => router.push(task.href)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">{task.title}</span>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                        meta.className
-                      )}
-                    >
-                      {meta.label}
-                    </span>
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+                      meta.className
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
                   </span>
-                  {task.subtitle ? (
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {task.subtitle}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{task.title}</span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                          meta.className
+                        )}
+                      >
+                        {meta.label}
+                      </span>
                     </span>
-                  ) : null}
-                </span>
-              </button>
+                    {task.subtitle ? (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {task.subtitle}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+                {task.reminderId ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={completeReminder.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      completeReminder.mutate({ id: task.reminderId! });
+                    }}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    Done
+                  </Button>
+                ) : null}
+              </div>
             );
           })
         )}
       </div>
+
+      <ScheduleReminderModal
+        open={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+      />
     </div>
   );
 }

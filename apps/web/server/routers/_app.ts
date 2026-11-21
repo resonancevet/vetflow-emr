@@ -28,6 +28,7 @@ import { inventoryKitsRouter } from "./inventory-kits";
 import { servicePackagesRouter } from "./service-packages";
 import { quickbooksRouter } from "./quickbooks";
 import { visitChecklistsRouter } from "./visit-checklists";
+import { staffRemindersRouter } from "./staff-reminders";
 
 export const appRouter = createRouter({
   auth: authRouter,
@@ -59,6 +60,7 @@ export const appRouter = createRouter({
   servicePackages: servicePackagesRouter,
   quickbooks: quickbooksRouter,
   visitChecklists: visitChecklistsRouter,
+  staffReminders: staffRemindersRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Mail, MessageSquarePlus, Phone, MapPin } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  Mail,
+  MessageSquarePlus,
+  Phone,
+  MapPin,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +20,10 @@ import {
 import { ClientAlertsBanner } from "@/components/clients/client-alerts-banner";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { ClientIntakeInvite } from "@/components/clients/client-intake-invite";
+import {
+  ScheduleReminderModal,
+  StaffRemindersPanel,
+} from "@/components/reminders/schedule-reminder-modal";
 import { formatPhoneDisplay } from "@/lib/phone-format";
 
 const speciesEmoji: Record<string, string> = {
@@ -29,6 +40,7 @@ export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [commModalOpen, setCommModalOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
   const [editingComm, setEditingComm] =
     useState<CommunicationListItem | null>(null);
 
@@ -152,6 +164,23 @@ export default function ClientDetailPage() {
 
       <div className="mt-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-heading text-lg font-semibold">Reminders</h3>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => setReminderOpen(true)}
+          >
+            <Bell className="mr-2 h-4 w-4" />
+            Schedule reminder
+          </Button>
+        </div>
+        <StaffRemindersPanel clientId={client.id} />
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-heading text-lg font-semibold">Communications</h3>
           <Button
             type="button"
@@ -263,6 +292,13 @@ export default function ClientDetailPage() {
               }
             : null
         }
+      />
+
+      <ScheduleReminderModal
+        open={reminderOpen}
+        onClose={() => setReminderOpen(false)}
+        clientId={client.id}
+        contextLabel={clientLabel}
       />
     </div>
   );

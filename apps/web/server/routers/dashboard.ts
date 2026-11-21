@@ -24,6 +24,7 @@ import {
   invoices,
   visitChecklists,
   visitChecklistItems,
+  staffReminders,
 } from "@openpims/db";
 import {
   isCallbackAppointmentRequestSubject,
@@ -651,11 +652,14 @@ export const dashboardRouter = createRouter({
         | "mailing"
         | "follow_up"
         | "phone"
+        | "reminder"
         | "other";
       title: string;
       subtitle: string;
       href: string;
       sortAt: Date;
+      /** Present for staff-scheduled reminders so the UI can mark them done. */
+      reminderId?: string;
     };
 
     const tasks: Task[] = [];
@@ -1106,6 +1110,67 @@ export const dashboardRouter = createRouter({
           sortAt: a.checkedOutAt ?? a.startTime,
         });
       }
+    }
+
+    const endOfToday = new Date(todayStart);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const reminderRows = await ctx.db
+      .select({
+        id: staffReminders.id,
+        title: staffReminders.title,
+        notes: staffReminders.notes,
+        dueAt: staffReminders.dueAt,
+        clientId: staffReminders.clientId,
+        patientId: staffReminders.patientId,
+        patientName: patients.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+      })
+      .from(staffReminders)
+      .leftJoin(patients, eq(staffReminders.patientId, patients.id))
+      .leftJoin(clients, eq(staffReminders.clientId, clients.id))
+      .where(
+        and(
+          eq(staffReminders.practiceId, ctx.practiceId),
+          isNull(staffReminders.deletedAt),
+          isNull(staffReminders.completedAt),
+          lte(staffReminders.dueAt, endOfToday)
+        )
+      )
+      .orderBy(desc(staffReminders.dueAt))
+      .limit(40);
+
+    for (const row of reminderRows) {
+      const who = [
+        row.patientName,
+        [row.clientFirstName, row.clientLastName].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const dueLabel = row.dueAt
+        ? row.dueAt.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : "";
+      const href = row.patientId
+        ? `/patients/${row.patientId}`
+        : row.clientId
+          ? `/clients/${row.clientId}`
+          : "/";
+      tasks.push({
+        id: `reminder-${row.id}`,
+        category: "reminder",
+        title: row.title,
+        subtitle: [who, dueLabel ? `Due ${dueLabel}` : null, row.notes]
+          .filter(Boolean)
+          .join(" — "),
+        href,
+        sortAt: row.dueAt,
+        reminderId: row.id,
+      });
     }
 
     tasks.sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime());
