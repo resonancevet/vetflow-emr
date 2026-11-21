@@ -51,15 +51,19 @@ export const communications = pgTable(
     content: text("content"),
     status: commStatusEnum("status").notNull().default("pending"),
     assignedTo: uuid("assigned_to").references(() => users.id),
+    /** When the communication actually took place (may differ from createdAt). */
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     patientIdx: index("communications_patient_idx").on(
       table.patientId,
-      table.createdAt
+      table.occurredAt
     ),
     clientIdx: index("communications_client_idx").on(
       table.clientId,
-      table.createdAt
+      table.occurredAt
     ),
   })
 );

@@ -18,6 +18,7 @@ const commListSelect = {
   content: communications.content,
   status: communications.status,
   assignedTo: communications.assignedTo,
+  occurredAt: communications.occurredAt,
   createdAt: communications.createdAt,
   updatedAt: communications.updatedAt,
   clientFirstName: clients.firstName,
@@ -70,7 +71,7 @@ export const communicationsRouter = createRouter({
           .leftJoin(patients, eq(communications.patientId, patients.id))
           .leftJoin(users, eq(communications.assignedTo, users.id))
           .where(and(...conditions))
-          .orderBy(desc(communications.createdAt))
+          .orderBy(desc(communications.occurredAt), desc(communications.createdAt))
           .limit(input.limit)
           .offset(input.offset),
         ctx.db
@@ -100,7 +101,7 @@ export const communicationsRouter = createRouter({
             eq(communications.clientId, input.clientId)
           )
         )
-        .orderBy(desc(communications.createdAt));
+        .orderBy(desc(communications.occurredAt), desc(communications.createdAt));
     }),
 
   getByPatient: protectedProcedure
@@ -118,7 +119,7 @@ export const communicationsRouter = createRouter({
             eq(communications.patientId, input.patientId)
           )
         )
-        .orderBy(desc(communications.createdAt));
+        .orderBy(desc(communications.occurredAt), desc(communications.createdAt));
     }),
 
   create: protectedProcedure
@@ -130,6 +131,7 @@ export const communicationsRouter = createRouter({
         direction: z.enum(["inbound", "outbound"]),
         subject: z.string().optional(),
         content: z.string().min(1),
+        occurredAt: z.coerce.date().optional(),
         status: z
           .enum(["pending", "sent", "delivered", "read", "failed"])
           .optional(),
@@ -176,6 +178,7 @@ export const communicationsRouter = createRouter({
           content: input.content,
           assignedTo: ctx.user.id,
           status: input.status ?? "read",
+          occurredAt: input.occurredAt ?? new Date(),
         })
         .returning();
       return comm!;
@@ -190,6 +193,7 @@ export const communicationsRouter = createRouter({
         subject: z.string().optional(),
         content: z.string().min(1).optional(),
         patientId: z.string().uuid().nullable().optional(),
+        occurredAt: z.coerce.date().optional(),
         clientUpdatedAt: clientUpdatedAtSchema,
       })
     )

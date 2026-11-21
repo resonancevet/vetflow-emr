@@ -79,6 +79,7 @@ export function PatientCommunicationsTab({
                 subject: editingItem.subject,
                 content: editingItem.content,
                 patientId: editingItem.patientId ?? null,
+                occurredAt: editingItem.occurredAt ?? editingItem.createdAt,
                 updatedAt: editingItem.updatedAt,
               }
             : null

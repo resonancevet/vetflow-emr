@@ -258,6 +258,7 @@ export default function ClientDetailPage() {
                 subject: editingComm.subject,
                 content: editingComm.content,
                 patientId: editingComm.patientId ?? null,
+                occurredAt: editingComm.occurredAt ?? editingComm.createdAt,
                 updatedAt: editingComm.updatedAt,
               }
             : null

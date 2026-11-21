@@ -17,6 +17,7 @@ export type CommunicationListItem = {
   direction: Direction;
   subject: string | null;
   content: string | null;
+  occurredAt?: Date | string | null;
   createdAt: Date | string | null;
   updatedAt?: Date | string | null;
   patientId?: string | null;
@@ -31,8 +32,22 @@ type EditingItem = {
   subject: string | null;
   content: string | null;
   patientId: string | null;
+  occurredAt?: Date | string | null;
   updatedAt?: Date | string | null;
 };
+
+/** Format a Date for `<input type="datetime-local">` in local time. */
+function toDatetimeLocalValue(value: Date | string | null | undefined): string {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return toDatetimeLocalValue(new Date());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromDatetimeLocalValue(value: string): Date {
+  // datetime-local is wall time without zone; Date parses as local.
+  return new Date(value);
+}
 
 export function LogCommunicationModal({
   open,
@@ -58,6 +73,9 @@ export function LogCommunicationModal({
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const [linkPatientId, setLinkPatientId] = useState(patientId ?? "");
+  const [occurredAtLocal, setOccurredAtLocal] = useState(() =>
+    toDatetimeLocalValue(new Date())
+  );
 
   const { data: client } = trpc.clients.getById.useQuery(
     { id: clientId },
@@ -72,12 +90,16 @@ export function LogCommunicationModal({
       setSubject(editingItem.subject ?? "");
       setContent(editingItem.content ?? "");
       setLinkPatientId(editingItem.patientId ?? patientId ?? "");
+      setOccurredAtLocal(
+        toDatetimeLocalValue(editingItem.occurredAt ?? null)
+      );
     } else {
       setLinkPatientId(patientId ?? "");
       setChannel("phone");
       setDirection("outbound");
       setSubject("");
       setContent("");
+      setOccurredAtLocal(toDatetimeLocalValue(new Date()));
     }
   }, [open, patientId, editingItem]);
 
@@ -152,6 +174,15 @@ export function LogCommunicationModal({
               toast.error("Please enter what was discussed");
               return;
             }
+            if (!occurredAtLocal) {
+              toast.error("Please enter the date and time");
+              return;
+            }
+            const occurredAt = fromDatetimeLocalValue(occurredAtLocal);
+            if (Number.isNaN(occurredAt.getTime())) {
+              toast.error("Invalid date or time");
+              return;
+            }
             if (isEditing && editingItem) {
               update.mutate({
                 id: editingItem.id,
@@ -160,6 +191,7 @@ export function LogCommunicationModal({
                 subject: subject.trim() || undefined,
                 content: content.trim(),
                 patientId: linkPatientId || null,
+                occurredAt,
                 clientUpdatedAt: editingItem.updatedAt
                   ? new Date(editingItem.updatedAt)
                   : undefined,
@@ -172,6 +204,7 @@ export function LogCommunicationModal({
                 direction,
                 subject: subject.trim() || undefined,
                 content: content.trim(),
+                occurredAt,
                 status: "read",
               });
             }
@@ -182,6 +215,19 @@ export function LogCommunicationModal({
               Client: <span className="font-medium text-foreground">{clientLabel}</span>
             </p>
           )}
+
+          <div>
+            <label className="mb-1 block text-xs font-medium">
+              Date &amp; time of communication
+            </label>
+            <Input
+              type="datetime-local"
+              value={occurredAtLocal}
+              onChange={(e) => setOccurredAtLocal(e.target.value)}
+              className="min-h-11"
+              required
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -336,8 +382,8 @@ export function CommunicationList({
               </>
             )}
             <span className="ml-auto">
-              {item.createdAt
-                ? new Date(item.createdAt).toLocaleString()
+              {item.occurredAt || item.createdAt
+                ? new Date(item.occurredAt ?? item.createdAt!).toLocaleString()
                 : ""}
             </span>
             {canManage && (
