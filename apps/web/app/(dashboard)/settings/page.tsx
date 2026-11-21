@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
   Check,
   ScrollText,
+  Mail,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { QuickBooksSettings } from "@/components/settings/quickbooks-settings";
 type Tab =
   | "practice"
   | "staff"
+  | "emailReminders"
   | "appointmentTypes"
   | "rooms"
   | "data"
@@ -41,6 +43,7 @@ type Tab =
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "practice", label: "Practice Info", icon: Settings },
   { id: "staff", label: "Staff", icon: Users },
+  { id: "emailReminders", label: "Email Reminders", icon: Mail },
   { id: "appointmentTypes", label: "Appointment Types", icon: Calendar },
   { id: "rooms", label: "Rooms", icon: DoorOpen },
   { id: "data", label: "Data", icon: Database },
@@ -189,6 +192,7 @@ function SettingsPageContent() {
       <div className="mt-6">
         {activeTab === "practice" && <PracticeInfoTab />}
         {activeTab === "staff" && <StaffTab />}
+        {activeTab === "emailReminders" && <EmailRemindersSection />}
         {activeTab === "appointmentTypes" && <AppointmentTypesTab />}
         {activeTab === "rooms" && <RoomsTab />}
         {activeTab === "data" && <DataTab />}
@@ -1764,9 +1768,6 @@ function RoomsTab() {
             )}
           </tbody>
         </table>
-      </div>
-      <div className="mt-8 border-t border-border pt-6">
-        <EmailRemindersSection />
       </div>
     </div>
   );
